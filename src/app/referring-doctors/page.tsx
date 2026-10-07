@@ -280,7 +280,7 @@ export default function ReferringDoctorsPage() {
                     <TableCell className="hidden sm:table-cell">{doctor.location}</TableCell>
                     <TableCell className="hidden md:table-cell">{doctor.phoneNumber}</TableCell>
                     <TableCell className="hidden lg:table-cell">{doctor.email}</TableCell>
-                    <TableCell className="hidden sm:table-cell text-right">{doctor.defaultReferralFee != null ? `₹${doctor.defaultReferralFee.toFixed(2)}` : '—'}</TableCell>
+                    <TableCell className="hidden sm:table-cell text-right">{[doctor.defaultReferralFee != null ? `₹${doctor.defaultReferralFee.toFixed(2)}` : null, doctor.defaultReferralPercent != null ? `${doctor.defaultReferralPercent}%` : null].filter(Boolean).join(' or ') || '—'}</TableCell>
                     <TableCell className="text-right space-x-2">
                       <Link href={`/referring-doctors/form?id=${doctor.id}`} passHref>
                         <Button variant="outline" size="sm" aria-label={`Edit ${doctor.name}`}>

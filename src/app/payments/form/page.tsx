@@ -638,6 +638,7 @@ export default function PaymentFormPage() {
                             <List className="mr-2 h-4 w-4 text-primary"/>
                             {isEditMode ? 'Referrals paid by this payment' : 'Unpaid referrals by this doctor (tick the ones this payment covers)'}
                         </CardTitle>
+                        <p className="text-xs text-muted-foreground">Referral fees are paid by the hospital to the referring doctor; they are not charged to the patient.</p>
                     </CardHeader>
                     <CardContent className="p-0 max-h-48 overflow-y-auto text-sm space-y-2">
                         {referredPatientsList.map(patient => (
@@ -652,7 +653,7 @@ export default function PaymentFormPage() {
                                     <span className="block text-xs text-muted-foreground">Reason: {patient.reasonForVisit || "N/A"}</span>
                                 </Label>
                                 <span className="text-sm font-medium whitespace-nowrap">
-                                    {(() => { const { fee, isDefault } = referralFeeFor(patient); return fee != null ? `₹${fee.toFixed(2)}${isDefault ? ' (default)' : ''}` : 'No fee set'; })()}
+                                    {(() => { const { fee, isDefault } = referralFeeFor(patient); return fee != null ? `₹${fee.toFixed(2)}${isDefault ? ' (default)' : ''}${patient.referralFeeBasis?.mode === 'percent' ? ' (% of procedures)' : ''}` : 'No fee set — set it on the patient page'; })()}
                                 </span>
                             </div>
                         ))}

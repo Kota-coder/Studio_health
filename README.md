@@ -40,6 +40,7 @@ devices, protected by login and backed up.
       with the earlier version; fixes "Could not find the 'id_card_images' column")
    3. `20261008000000_departments.sql` (departments, care teams, doctor fees)
    4. `20261009000000_referral_fees.sql` (referral fees)
+   5. `20261010000000_referral_percent.sql` (referral fees as a % of billed procedures)
 3. **Auth settings** (*Authentication*):
    - *Sign In / Providers*: keep Email enabled and **turn off "Allow new users to sign up"**.
    - *URL Configuration*: set *Site URL* to your app's address (e.g. `https://clinic.example.com`)
@@ -79,10 +80,16 @@ devices, protected by login and backed up.
   Accounts can set or change it (the database enforces this).
 - **Payments → Record New Payment → Doctor Fee** (Super Admin, Admin, Accounts): choose a
   doctor, tick the unpaid cases, and the amount is filled in. The cases are then marked paid.
-- **Referral fees**: give each referring doctor a default referral fee (Referring Doctors).
-  The patient page shows the referral fee for that patient (finance roles can change it), and
+- **Referral fees** are paid by the hospital to the referring doctor; they are never added to
+  the patient's bill. Give each referring doctor a default fixed fee and/or a default % (Referring
+  Doctors). On the patient page, finance roles choose **Fixed amount** or **% of procedures**;
+  with a percentage, every procedure type billed to the patient is listed with its own % box
+  (prefilled from the doctor's default, pharmacy items at 0%) and the fee is the total.
   **Payments → Referral/CC** lists the doctor's unpaid referrals, totals their fees and marks
   them paid.
+- **Treatment Summary** (button on the patient page): a printable summary for the patient of
+  key procedures and tests, medications prescribed and dispensed, recent care notes and billing
+  totals. Use *Print / Save as PDF* to hand it over.
 - The Patient Dashboard filters by department or "My Patients", and the Financial Dashboard
   lists paid and pending doctor fees and referral fees.
 

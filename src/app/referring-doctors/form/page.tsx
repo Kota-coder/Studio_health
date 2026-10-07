@@ -44,6 +44,7 @@ export default function ReferringDoctorFormPage() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [email, setEmail] = useState("");
   const [defaultReferralFee, setDefaultReferralFee] = useState("");
+  const [defaultReferralPercent, setDefaultReferralPercent] = useState("");
 
   const [emailError, setEmailError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
@@ -77,6 +78,7 @@ export default function ReferringDoctorFormPage() {
           setPhoneNumber(doctorToEdit.phoneNumber || "");
           setEmail(doctorToEdit.email || "");
           setDefaultReferralFee(doctorToEdit.defaultReferralFee != null ? String(doctorToEdit.defaultReferralFee) : "");
+          setDefaultReferralPercent(doctorToEdit.defaultReferralPercent != null ? String(doctorToEdit.defaultReferralPercent) : "");
         } else {
           toast({ title: "Error", description: "Referring doctor profile not found.", variant: "destructive" });
           router.push('/referring-doctors');
@@ -109,9 +111,15 @@ export default function ReferringDoctorFormPage() {
       toast({ title: "Validation Error", description: "Default referral fee must be 0 or more, or left empty.", variant: "destructive" });
       return;
     }
+    const referralPercent = defaultReferralPercent.trim() === "" ? null : Number(defaultReferralPercent);
+    if (referralPercent !== null && (!Number.isFinite(referralPercent) || referralPercent < 0 || referralPercent > 100)) {
+      toast({ title: "Validation Error", description: "Default referral percentage must be between 0 and 100, or left empty.", variant: "destructive" });
+      return;
+    }
 
     const doctorData: Omit<ReferringDoctor, 'id'> = {
       defaultReferralFee: referralFee,
+      defaultReferralPercent: referralPercent,
       name: name.trim(),
       location: hospitalClinicName.trim(), // Save hospitalClinicName to location
       phoneNumber: phoneNumber.trim() || "",
@@ -192,11 +200,23 @@ export default function ReferringDoctorFormPage() {
             }} placeholder="name@example.com"/>
             {emailError && <p className="text-destructive text-sm mt-1">{emailError}</p>}
           </div>
-          <div>
-            <Label htmlFor="defaultReferralFee">Default referral fee per patient (₹, optional)</Label>
-            <Input id="defaultReferralFee" type="number" inputMode="decimal" min={0} value={defaultReferralFee}
-              onChange={(e) => setDefaultReferralFee(e.target.value)} placeholder="e.g. 500" />
-            <p className="text-xs text-muted-foreground mt-1">Suggested fee for each patient this doctor refers. Paid through Payments → Referral/CC.</p>
+          <div className="rounded-md border p-3 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Referral fees are paid by the hospital to this doctor, not by the patient. Set either default; both can be changed for each patient.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="defaultReferralFee">Fixed fee per patient (₹, optional)</Label>
+                <Input id="defaultReferralFee" type="number" inputMode="decimal" min={0} value={defaultReferralFee}
+                  onChange={(e) => setDefaultReferralFee(e.target.value)} placeholder="e.g. 500" />
+              </div>
+              <div>
+                <Label htmlFor="defaultReferralPercent">Or % of billed procedures (optional)</Label>
+                <Input id="defaultReferralPercent" type="number" inputMode="decimal" min={0} max={100} step="0.5" value={defaultReferralPercent}
+                  onChange={(e) => setDefaultReferralPercent(e.target.value)} placeholder="e.g. 10" />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">Paid through Payments → Referral/CC.</p>
           </div>
         </CardContent>
         <CardFooter className="flex justify-between mt-4">

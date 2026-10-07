@@ -96,7 +96,11 @@ function table<T extends { id: string | number }>(name: string, orderBy: string,
 
 const referringDoctorTable = table<ReferringDoctor>('referring_doctors', 'name', ['created_at', 'audit_log']);
 const referringDoctorFromRow = (doctor: ReferringDoctor): ReferringDoctor =>
-  ({ ...doctor, defaultReferralFee: doctor.defaultReferralFee == null ? null : Number(doctor.defaultReferralFee) });
+  ({
+    ...doctor,
+    defaultReferralFee: doctor.defaultReferralFee == null ? null : Number(doctor.defaultReferralFee),
+    defaultReferralPercent: doctor.defaultReferralPercent == null ? null : Number(doctor.defaultReferralPercent),
+  });
 export const referringDoctors = {
   ...referringDoctorTable,
   async list(): Promise<ReferringDoctor[]> {
