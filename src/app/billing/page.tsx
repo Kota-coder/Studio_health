@@ -23,6 +23,13 @@ import { PAGE_ROLES } from '@/config/permissions';
 const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.billing;
 const ALL_PAYMENT_STATUSES: (PaymentStatus | "All")[] = ["All", "Paid", "Unpaid", "Partially Paid", "Cancelled"];
 
+const STATUS_COLORS: Record<string, string> = {
+  'Unpaid': 'text-red-600',
+  'Partially Paid': 'text-yellow-600',
+  'Paid': 'text-emerald-700',
+  'Cancelled': 'text-gray-500',
+};
+
 export default function BillingOverviewPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -279,7 +286,7 @@ export default function BillingOverviewPage() {
             <CardDescription>List of all generated bills. Use filters above to narrow down results.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Table>
+            <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-4 sm:[&_th]:px-4">
               <TableHeader>
                 <TableRow>
                   <TableHead>Bill ID</TableHead>
@@ -287,7 +294,7 @@ export default function BillingOverviewPage() {
                   <TableHead className="hidden sm:table-cell">Bill Type</TableHead>
                   <TableHead className="hidden md:table-cell">Bill Date</TableHead>
                   <TableHead>Total Amount</TableHead>
-                  <TableHead>Payment Status</TableHead>
+                  <TableHead className="hidden sm:table-cell">Payment Status</TableHead>
                   <TableHead className="hidden lg:table-cell">Payment Date</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -302,8 +309,12 @@ export default function BillingOverviewPage() {
                       {bill.billType || 'N/A'}
                     </TableCell>
                     <TableCell className="hidden md:table-cell">{formatDateSafe(bill.billDate)}</TableCell>
-                    <TableCell>₹{bill.totalAmount.toFixed(2)}</TableCell>
                     <TableCell>
+                      ₹{bill.totalAmount.toFixed(2)}
+                      {/* On phones the status column is hidden, so show it under the amount. */}
+                      <span className={cn("block text-xs font-semibold sm:hidden", STATUS_COLORS[bill.paymentStatus] )}>{bill.paymentStatus || 'N/A'}</span>
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell">
                       <span className={cn("font-semibold",{
                         'text-red-600': bill.paymentStatus === 'Unpaid',
                         'text-yellow-600': bill.paymentStatus === 'Partially Paid',
@@ -316,7 +327,7 @@ export default function BillingOverviewPage() {
                     <TableCell className="hidden lg:table-cell">
                       {bill.paymentStatus === 'Paid' && bill.paymentDate ? formatDateSafe(bill.paymentDate) : 'N/A'}
                     </TableCell>
-                    <TableCell className="text-right space-x-1 sm:space-x-2">
+                    <TableCell className="text-right whitespace-nowrap space-x-1 sm:space-x-2">
                       <Link href={`/billing/form?billId=${bill.id}`} passHref>
                         <Button variant="outline" size="sm" aria-label={`View or Edit ${bill.id}`}>
                           <Eye className="h-4 w-4" />
@@ -328,6 +339,7 @@ export default function BillingOverviewPage() {
                           size="sm" 
                           className="text-destructive hover:bg-destructive/10"
                           onClick={async () => {
+                            if (!confirm(`Delete unpaid bill ${bill.id}?`)) return;
                             try {
                               await billsRepo.remove(bill.id);
                               setBills(prev => prev.filter(b => b.id !== bill.id));

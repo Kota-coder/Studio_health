@@ -466,10 +466,12 @@ export default function PatientDetailPage() {
 
   const handleTestTypeChange = useCallback((typeId: string) => {
     setSelectedTestTypeId(typeId);
-    const definition = TEST_DEFINITIONS.find(def => def.id === typeId);
+    // Catalog tests (ids like "test_cat_3") use the matching built-in form by name, e.g. "ECG".
+    const catalogName = testCatalog.find(t => t.id === typeId)?.name.trim().toLowerCase();
+    const definition = TEST_DEFINITIONS.find(def => def.id === typeId || def.name.toLowerCase() === catalogName);
     setCurrentTestDefinition(definition || null);
     setDynamicTestFieldValues({});
-  }, []);
+  }, [testCatalog]);
 
   const handleDynamicTestFieldChange = useCallback((fieldId: string, value: string | number) => {
     setDynamicTestFieldValues(prev => ({ ...prev, [fieldId]: value }));
@@ -542,7 +544,7 @@ export default function PatientDetailPage() {
     try {
       await patientsRepo.addTest(patient.id, {
         testTypeId: selectedTestTypeId,
-        testTypeName: currentTestDefinition?.name || "Unknown Test",
+        testTypeName: testCatalog.find(t => t.id === selectedTestTypeId)?.name || currentTestDefinition?.name || "Unknown Test",
         datePerformed: finalTestDateString,
         testData: { ...dynamicTestFieldValues },
         overallResults: newTestOverallResults.trim() || undefined,
@@ -571,11 +573,12 @@ export default function PatientDetailPage() {
     setSelectedStaffForTest("");
     setShowAddTestForm(false);
     clearTestAttachment();
-  }, [selectedTestTypeId, patient, currentUser, newTestDate, newTestDateInput, currentTestDefinition, dynamicTestFieldValues, newTestOverallResults, newTestNotes, selectedStaffForTest, newTestAttachments, toast, reloadPatient, availableStaff, clearTestAttachment]);
+  }, [selectedTestTypeId, patient, currentUser, newTestDate, newTestDateInput, currentTestDefinition, dynamicTestFieldValues, newTestOverallResults, newTestNotes, selectedStaffForTest, newTestAttachments, toast, reloadPatient, availableStaff, clearTestAttachment, testCatalog]);
 
   const handleCreateTestBill = useCallback(async (test: TestEntry) => {
     if (!patient) return;
-    const testCatalogItem = testCatalog.find(t => t.id === test.testTypeId);
+    const testCatalogItem = testCatalog.find(t => t.id === test.testTypeId)
+      ?? testCatalog.find(t => t.name.trim().toLowerCase() === test.testTypeName.trim().toLowerCase());
     const billItem: BillItem = {
       id: `${test.id}-${Date.now()}`,
       description: test.testTypeName,

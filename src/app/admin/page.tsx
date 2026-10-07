@@ -2,20 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Database, CheckCircle, AlertCircle } from 'lucide-react';
+import { Database, CheckCircle, AlertCircle, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/context/AuthContext';
-import { loadSampleDataIntoDatabase, type SampleDataSummary } from '@/lib/seedData';
+import { loadSampleDataIntoDatabase, removeSampleDataFromDatabase } from '@/lib/seedData';
 
-// Super Admin tool for trying the app out: loads demo records into an empty database.
+// Super Admin tool for trying the app out: loads demo records into an empty
+// database, and removes them again before real use.
 export default function AdminPage() {
   const { currentUser, isLoading: authIsLoading } = useAuth();
   const router = useRouter();
-  const [summary, setSummary] = useState<SampleDataSummary | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (!authIsLoading && !currentUser) router.replace('/login');
@@ -26,19 +27,36 @@ export default function AdminPage() {
     return <div className="flex justify-center items-center min-h-screen"><p>{authIsLoading ? 'Loading...' : 'Access Denied. Redirecting...'}</p></div>;
   }
 
-  const handleLoad = async () => {
-    if (!confirm('Load sample patients, bills, medications and referring doctors into the database?')) return;
-    setIsLoading(true);
+  const run = async (task: () => Promise<string>) => {
     setError(null);
-    setSummary(null);
+    setResult(null);
     try {
-      setSummary(await loadSampleDataIntoDatabase(currentUser));
+      setResult(await task());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load sample data.');
+      setError(e instanceof Error ? e.message : 'Something went wrong.');
     } finally {
-      setIsLoading(false);
+      setProgress(null);
     }
   };
+
+  const handleLoad = () => {
+    if (!confirm('Load about six months of sample patients, bills, payments, staff and catalogs into the database?')) return;
+    setProgress('Starting...');
+    run(async () => {
+      const s = await loadSampleDataIntoDatabase(currentUser, setProgress);
+      return `Loaded ${s.patients} patients (${s.careNotes} care notes, ${s.tests} tests), ${s.bills} bills, ${s.payments} payments, `
+        + `${s.staff} staff, ${s.referringDoctors} referring doctors, ${s.medications} medications, ${s.materials} materials, `
+        + `${s.vendors} vendors and ${s.testCatalog} catalog tests.`;
+    });
+  };
+
+  const handleRemove = () => {
+    if (!confirm('Remove all sample data? Records your staff entered are not touched.')) return;
+    setProgress('Starting...');
+    run(async () => `Removed ${await removeSampleDataFromDatabase(setProgress)} sample records and the sample staff.`);
+  };
+
+  const busy = progress !== null;
 
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8 max-w-3xl">
@@ -46,22 +64,30 @@ export default function AdminPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Database className="h-6 w-6" /> Sample Data</CardTitle>
           <CardDescription>
-            For trying the app out. Loads demo patients (with care notes and tests), bills, medications and
-            referring doctors. Only works while the database has no patients, so it never mixes with real records.
-            Demo patients are assigned to you.
+            For trying the app out. Loads about six months of a small clinic&apos;s activity: 30 patients with care notes
+            and tests, bills, salary and supply payments, sample doctors and nurses, referring doctors, medications,
+            materials, vendors and a test catalog. It only loads into a database with no patients, and everything it
+            adds can be removed again before you start using the app for real.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Button onClick={handleLoad} disabled={isLoading} className="w-full sm:w-auto">
-            {isLoading ? 'Loading sample data...' : 'Load Sample Data'}
-          </Button>
-          {summary && (
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button onClick={handleLoad} disabled={busy}>
+              <Database className="mr-2 h-4 w-4" /> Load Sample Data
+            </Button>
+            <Button variant="outline" onClick={handleRemove} disabled={busy} className="text-destructive">
+              <Trash2 className="mr-2 h-4 w-4" /> Remove Sample Data
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Sample staff appear in Staff Management and can be assigned to patients, but cannot log in. To test what other
+            roles see, invite yourself on a second email address from Staff Management.
+          </p>
+          {progress && <p className="text-sm text-muted-foreground" role="status">{progress}</p>}
+          {result && (
             <Alert>
               <CheckCircle className="h-4 w-4" />
-              <AlertDescription>
-                Loaded {summary.patients} patients ({summary.careNotes} care notes, {summary.tests} tests), {summary.bills} bills,
-                {' '}{summary.medications} medications and {summary.referringDoctors} referring doctors.
-              </AlertDescription>
+              <AlertDescription>{result}</AlertDescription>
             </Alert>
           )}
           {error && (

@@ -21,9 +21,10 @@ interface DatepickerProps {
   triggerClassName?: string; 
   placeholderText?: string; // Added for explicit placeholder on button text
   disabled?: (date: Date) => boolean; // Optional disabled prop
+  defaultMonth?: Date; // Month to show when nothing is selected (e.g. 1980 for a date of birth)
 }
 
-const Datepicker = ({ selected, onDateChange, placeholder = "Pick a date", triggerClassName, placeholderText, disabled }: DatepickerProps) => {
+const Datepicker = ({ selected, onDateChange, placeholder = "Pick a date", triggerClassName, placeholderText, disabled, defaultMonth }: DatepickerProps) => {
   const [isOpen, setIsOpen] = React.useState(false);
 
   return (
@@ -50,7 +51,13 @@ const Datepicker = ({ selected, onDateChange, placeholder = "Pick a date", trigg
             setIsOpen(false); // Close popover on date select
           }}
           disabled={disabled || ((date) => date > new Date() || date < new Date("1900-01-01"))} // Use passed disabled or default
-          initialFocus
+          // Only focus a day when one is selected; otherwise the focused day looks chosen.
+          initialFocus={!!selected}
+          // Month and year dropdowns, so jumping to e.g. 1978 is two taps instead of hundreds.
+          captionLayout="dropdown-buttons"
+          fromYear={1900}
+          toYear={new Date().getFullYear() + 1}
+          defaultMonth={selected && isValid(selected) ? selected : defaultMonth}
         />
       </PopoverContent>
     </Popover>

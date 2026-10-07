@@ -70,8 +70,8 @@ export const config = {
      * - api (API routes)
      * - _next/static (static files)
      * - _next/image (image optimization files)
-     * - favicon.ico, apple-icon.png, manifest.webmanifest and /icons (home-screen app files)
+     * - favicon.ico, apple-icon.png, manifest.webmanifest, /icons, sw.js and offline.html (installed-app files)
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|apple-icon.png|manifest.webmanifest|icons/).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|apple-icon.png|manifest.webmanifest|icons/|sw.js|offline.html).*)',
   ],
 };

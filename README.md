@@ -59,11 +59,31 @@ devices, protected by login and backed up.
      from auth.users where email = 'you@example.com';
      ```
    - Log in with that account and add everyone else from *Staff Management*.
-   - Optional: *Sample Data* in the menu (Super Admin only) loads demo patients, bills and
-     catalogs into an empty database for trying the app out.
+   - Optional: load sample data to try the app out (see below).
 5. **Environment variables**: copy `.env.example` to `.env` (or set them in your host / Replit
    Secrets) and fill in the values from *Project Settings → API*.
    `SUPABASE_SERVICE_ROLE_KEY` and `GOOGLE_GENAI_API_KEY` are server-only secrets.
+
+## Sample data for testing
+
+Log in as the Super Admin and open **Sample Data** in the menu (under Organization Setup).
+
+- **Load Sample Data** adds about six months of activity: 30 patients with care notes and
+  tests, bills, salary/supply/electricity payments, 6 sample staff (2 doctors, 2 nurses, a
+  receptionist and an accountant), referring doctors, medications, materials, vendors and a
+  test catalog. It only runs while the database has no patients.
+- **Remove Sample Data** deletes everything it added and leaves records your staff entered.
+- Sample staff can't log in. To see what another role sees, invite yourself on a second email
+  address from Staff Management.
+
+## Using it on phones and tablets
+
+The app works in any browser and can be installed like an app:
+- **Android (Chrome):** menu ⋮ → *Add to Home screen* / *Install app*.
+- **iPhone/iPad (Safari):** Share → *Add to Home Screen*.
+
+It then opens full screen with its own icon. It needs an internet connection; without one it
+shows a "You're offline" page (no patient data is stored on the device).
 
 ## Running
 

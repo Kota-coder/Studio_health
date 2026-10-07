@@ -87,15 +87,16 @@ export default function ReferringDoctorFormPage() {
 
   const handleSubmit = async () => {
     let hasError = false;
-    if (!name.trim()) { toast({ title: "Validation Error", description: "Name is required.", variant: "destructive" }); hasError = true; }
-    if (!hospitalClinicName.trim()) { toast({ title: "Validation Error", description: "Hospital/Clinic Name is required.", variant: "destructive" }); hasError = true; }
-    if (phoneNumber && !isValidPhoneNumberOptional(phoneNumber)) { setPhoneError("Please enter a valid phone number if provided."); hasError = true; } else { setPhoneError(null); }
-    if (email && !isValidEmailOptional(email)) { setEmailError("Please enter a valid email address if provided."); hasError = true; } else { setEmailError(null); }
+    const problems: string[] = [];
+    if (!name.trim()) { problems.push("Name is required."); hasError = true; }
+    if (!hospitalClinicName.trim()) { problems.push("Hospital/Clinic Name is required."); hasError = true; }
+    if (phoneNumber && !isValidPhoneNumberOptional(phoneNumber)) { setPhoneError("Please enter a valid phone number if provided."); problems.push("Please enter a valid phone number if provided."); hasError = true; } else { setPhoneError(null); }
+    if (email && !isValidEmailOptional(email)) { setEmailError("Please enter a valid email address if provided."); problems.push("Please enter a valid email address if provided."); hasError = true; } else { setEmailError(null); }
 
     if (hasError) {
       toast({
             title: "Validation Error",
-            description: "Please correct the highlighted fields.",
+            description: problems.join(" ") || "Please check the form.",
             variant: "destructive",
         });
       return;
