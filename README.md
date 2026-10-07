@@ -19,6 +19,33 @@ devices, protected by login and backed up.
   `audit_log`. The database records who made each change.
 - **Who can open what** is set in `src/config/permissions.ts` (menu and pages use the same list).
 
+## Going live with your first hospital
+
+Seva runs as **one copy per hospital**: its own Supabase project and its own Vercel project, both
+built from this repository. Start with one hospital; a second one later is added the same way
+with no code changes (see *Running Seva for several hospitals*).
+
+Expected cost for one hospital at small volumes (~10 new patients a day): about **$45/month**
+(Supabase Pro $25, which includes the first project's database, plus Vercel Pro about $20).
+A second hospital adds about $10/month for its database. Check current prices first.
+
+1. **Supabase** (supabase.com): create an organization on the **Pro** plan and one project in
+   region **South Asia (Mumbai)**. Then follow *Supabase setup* below: run every script in
+   `supabase/migrations` in order, set the Auth settings (turn off sign-ups, add custom SMTP),
+   and create the hospital's first Super Admin.
+2. **Vercel** (vercel.com, **Pro** plan): *Add New → Project*, import this GitHub repository
+   (branch `main`), add the four environment variables from `.env.example` with this hospital's
+   Supabase URL and keys, and deploy. `vercel.json` already runs the app in Mumbai (`bom1`), next
+   to the database. Add the hospital's web address under *Settings → Domains*.
+3. **Connect the two:** in Supabase *Authentication → URL Configuration*, set *Site URL* to that
+   web address and add `https://<address>/**` to *Redirect URLs*.
+4. **In the app:** log in as the Super Admin, open **Organization Setup → Hospital Profile**
+   (name, logo, colour, contact details), review **Payment Methods** and **Departments**, then
+   invite staff from **Staff Management**. Don't load sample data on the live hospital.
+5. **Later updates:** merging to `main` redeploys automatically. When an update adds a database
+   script, run it in the SQL Editor, or list the hospital in `hospitals.json` once and run
+   `npm run migrate:hospitals` (this also covers every hospital once there are more).
+
 ## India compliance (DPDP Act 2023, UIDAI)
 
 - **Consent**: a patient can't be registered until staff tick the consent box. The time,
