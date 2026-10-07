@@ -66,8 +66,8 @@ devices, protected by login and backed up.
      ```
    - Log in with that account and add everyone else from *Staff Management*.
    - Optional: load sample data to try the app out (see below).
-5. **Environment variables**: copy `.env.example` to `.env` (or set them in your host / Replit
-   Secrets) and fill in the values from *Project Settings → API*.
+5. **Environment variables**: copy `.env.example` to `.env` (or set them in your hosting
+   provider's settings) and fill in the values from *Project Settings → API*.
    `SUPABASE_SERVICE_ROLE_KEY` and `GOOGLE_GENAI_API_KEY` are server-only secrets.
 
 ## Departments, care teams and doctor fees
