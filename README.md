@@ -34,7 +34,7 @@ devices, protected by login and backed up.
 1. **Create a project** at supabase.com in region **South Asia (Mumbai)**. The Pro plan
    (about $25/month) is recommended for daily backups and no pausing.
 2. **Create the schema**: open *SQL Editor* and run each file in `supabase/migrations`, in
-   order (paste the contents, click *Run*). Files 2–8 are safe to run again, so when you
+   order (paste the contents, click *Run*). Files 2–9 are safe to run again, so when you
    update the app you can simply run them all again in order; never run file 1 a second time.
    1. `20261007000000_init.sql` (tables, security rules, photo storage)
    2. `20261007120000_upgrade_previous_schema.sql` (only changes anything on a database set up
@@ -45,6 +45,8 @@ devices, protected by login and backed up.
    6. `20261011000000_staff_duty.sql` (duty roster and attendance)
    7. `20261012000000_dashboard_summary.sql` (Financial Dashboard totals worked out in the database)
    8. `20261013000000_date_columns.sql` (date filters on the Payments and Billing lists)
+   9. `20261014000000_payment_methods.sql` (managed payment methods, who processed each bill and
+      payment, Financial Dashboard by period)
 3. **Auth settings** (*Authentication*):
    - *Sign In / Providers*: keep Email enabled and **turn off "Allow new users to sign up"**.
    - *URL Configuration*: set *Site URL* to your app's address (e.g. `https://clinic.example.com`)
@@ -117,6 +119,23 @@ devices, protected by login and backed up.
   (On time, Late, Left early, Absent, On duty) and every time record. Admins can add or correct
   entries for someone who forgot to clock in or out; these are marked *Manual* with the admin's
   name. Super Admin, Admin and Accounts see everyone; other staff see only their own.
+
+## Payment methods, who processed it, and filters
+
+- **Organization Setup → Payment Methods** (Super Admin): the choices offered on bills (money
+  received) and payments (money paid out), such as Cash, UPI, Card, Bank Transfer, Arogyasree or
+  Insurance. Add new ones, choose whether each is for bills, payments or both, change the order,
+  or switch one off (records that used it keep it). Renaming a method renames it on existing
+  bills and payments too.
+- **Processed by**: every bill and payment records who processed it. Staff are recorded as
+  themselves automatically; only the Super Admin can record or change it to someone else (the
+  database enforces this too).
+- **Filters**: Billing filters by period, status, payment method and who processed it; Payments
+  by period, payment type, payment method and who processed it. Both show totals per method for
+  what is listed (e.g. "Cash ₹12,400 · UPI ₹8,150"), and the CSV includes "Processed By".
+- **Financial Dashboard**: choose a period (this month, last month, custom dates, …). Totals and
+  charts cover that period, with money received and paid out by payment method. The doctor and
+  referral fee tables show what is owed now.
 
 ## Keeping Supabase usage low
 

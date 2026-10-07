@@ -12,7 +12,8 @@ export interface BillItem {
   total: number; // Calculated: quantity * unitPrice
 }
 
-export type PaymentMethod = "Cash" | "UPI" | "Online/Card" | "Arogyasree" | "Insurance" | "Other";
+// The name of one of the managed payment methods (payment_methods table), e.g. "Cash", "UPI".
+export type PaymentMethod = string;
 export type PaymentStatus = "Paid" | "Unpaid" | "Partially Paid" | "Cancelled"; // Changed "Pending" to "Cancelled"
 export type BillType = "Pharmacy" | "Treatment" | "";
 
@@ -31,4 +32,7 @@ export interface Bill {
   auditLog: AuditLogEntry[];
   attachments?: string[]; // Storage paths in the patient-files bucket (data: URLs only before upload)
   paymentDate?: string; // dd/MM/yyyy format
+  // Who processed the bill. Set to whoever creates it; only the Super Admin can choose someone else.
+  processedByStaffId?: number | null;
+  processedByStaffName?: string | null; // Filled in by the database from the staff record
 }

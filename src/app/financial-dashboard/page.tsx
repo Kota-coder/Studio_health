@@ -11,7 +11,8 @@ import { AreaChart, DollarSign, TrendingUp, TrendingDown, AlertTriangle, Receipt
 import { format, parseISO } from 'date-fns';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
-import { financialSummary as loadFinancialSummary, type FinancialSummary } from '@/lib/data';
+import { financialSummary as loadFinancialSummary, financialSummaryKey, type FinancialSummary } from '@/lib/data';
+import { DEFAULT_DATE_FILTER, DateRangeFilter, dateFilterRange, describeDateFilter, type DateFilterValue } from '@/components/date-range-filter';
 import { cachedAt, invalidate } from '@/lib/data/cache';
 import { RefreshStamp } from '@/components/refresh-stamp';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -43,6 +44,9 @@ export default function FinancialDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Totals and charts cover this period (bills by bill date, payments by payment date).
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>({ ...DEFAULT_DATE_FILTER, preset: 'all' });
+  const [isFiltering, setIsFiltering] = useState(false);
 
   useEffect(() => {
     if (!authIsLoading && currentUser && !ALLOWED_ROLES.includes(currentUser.role)) {
@@ -55,20 +59,22 @@ export default function FinancialDashboardPage() {
   const load = useCallback(async (refresh = false) => {
     if (refresh) invalidate('summary:');
     try {
-      setSummary(await loadFinancialSummary());
-      setLoadedAt(cachedAt('summary:financial'));
+      const range = dateFilterRange(dateFilter);
+      setSummary(await loadFinancialSummary(range));
+      setLoadedAt(cachedAt(financialSummaryKey(range)));
     } catch (error) {
       console.error("Error loading financial data:", error);
     }
-  }, []);
+  }, [dateFilter]);
 
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
-      setIsLoading(true);
-      load().finally(() => setIsLoading(false));
+      if (summary) setIsFiltering(true); else setIsLoading(true);
+      load().finally(() => { setIsLoading(false); setIsFiltering(false); });
     } else if (!currentUser && !authIsLoading) {
       setIsLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- summary only picks the loading style
   }, [currentUser, authIsLoading, load]);
 
   const handleRefresh = () => {
@@ -171,16 +177,26 @@ export default function FinancialDashboardPage() {
         <AreaChart className="h-8 w-8 text-primary" />
         <h1 className="text-3xl font-bold text-foreground">Financial Dashboard</h1>
       </header>
-      <RefreshStamp loadedAt={loadedAt} onRefresh={handleRefresh} isRefreshing={isRefreshing} className="justify-end" />
+      <Card className="shadow-md">
+        <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-end sm:justify-between">
+          <DateRangeFilter value={dateFilter} onChange={setDateFilter} idPrefix="financeDate" />
+          <div className="flex flex-col items-start gap-1 sm:items-end">
+            <p className="text-sm text-muted-foreground" role="status">{isFiltering ? 'Loading…' : `Showing ${describeDateFilter(dateFilter)}`}</p>
+            <RefreshStamp loadedAt={loadedAt} onRefresh={handleRefresh} isRefreshing={isRefreshing} />
+          </div>
+        </CardContent>
+      </Card>
 
       {!summary || (summary.billCount === 0 && summary.paymentCount === 0) ? (
         <Card className="text-center shadow-lg">
           <CardHeader>
-            <CardTitle>No Financial Data Yet</CardTitle>
+            <CardTitle>{dateFilter.preset === 'all' ? 'No Financial Data Yet' : 'Nothing in This Period'}</CardTitle>
           </CardHeader>
           <CardContent>
             <CardDescription className="mb-4">
-              There are no bills or payments recorded to display on the dashboard. Start by creating some bills or recording payments.
+              {dateFilter.preset === 'all'
+                ? 'There are no bills or payments recorded to display on the dashboard. Start by creating some bills or recording payments.'
+                : 'No bills or payments are dated in this period. Choose a longer period or "All time".'}
             </CardDescription>
             <AlertTriangle data-ai-hint="empty finance data" className="mx-auto h-24 w-24 text-muted-foreground opacity-50 mt-4" />
           </CardContent>
@@ -228,7 +244,7 @@ export default function FinancialDashboardPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Income & Expenditure (Last 6 Months)</CardTitle>
+              <CardTitle>Income & Expenditure ({dateFilter.preset === 'all' ? 'Last 6 Months' : 'by month'})</CardTitle>
             </CardHeader>
             <CardContent className="h-[350px]">
               <ChartContainer config={chartConfig} className="h-full w-full">
@@ -340,8 +356,47 @@ export default function FinancialDashboardPage() {
 
           <Card className="shadow-lg mt-6">
             <CardHeader>
+              <CardTitle>By Payment Method</CardTitle>
+              <CardDescription>Money received on bills (partly paid bills count as half) and paid out, for {describeDateFilter(dateFilter)}.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              {([['Received', summary.receivedByMethod], ['Paid out', summary.paidOutByMethod]] as const).map(([title, values]) => {
+                const rows = Object.entries(values ?? {}).map(([method, amount]) => [method, Number(amount)] as const).sort((a, b) => b[1] - a[1]);
+                const total = rows.reduce((sum, [, amount]) => sum + amount, 0);
+                return (
+                  <div key={title}>
+                    <h3 className="mb-2 font-semibold">{title}</h3>
+                    {rows.length === 0 ? <p className="text-sm text-muted-foreground">None in this period.</p> : (
+                      <Table className="[&_td]:px-2 [&_th]:px-2">
+                        <TableHeader>
+                          <TableRow><TableHead>Method</TableHead><TableHead className="text-right">Amount</TableHead><TableHead className="text-right">Share</TableHead></TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {rows.map(([method, amount]) => (
+                            <TableRow key={method}>
+                              <TableCell>{method}</TableCell>
+                              <TableCell className="text-right tabular-nums">{formatCurrency(amount)}</TableCell>
+                              <TableCell className="text-right tabular-nums text-muted-foreground">{total ? `${Math.round((amount / total) * 100)}%` : '—'}</TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="font-semibold">
+                            <TableCell>Total</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatCurrency(total)}</TableCell>
+                            <TableCell />
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg mt-6">
+            <CardHeader>
               <CardTitle>Doctor Fees</CardTitle>
-              <CardDescription>Fees earned per case by each attending doctor. Pay pending fees from Payments → Record New Payment → Doctor Fee.</CardDescription>
+              <CardDescription>Fees earned per case by each attending doctor, as they stand now (not limited by the period above). Pay pending fees from Payments → Record New Payment → Doctor Fee.</CardDescription>
             </CardHeader>
             <CardContent>
               {doctorFeeRows.length === 0 ? (
@@ -376,7 +431,7 @@ export default function FinancialDashboardPage() {
           <Card className="shadow-lg mt-6">
             <CardHeader>
               <CardTitle>Referral Fees</CardTitle>
-              <CardDescription>Fees owed to referring doctors for the patients they referred. Pay them from Payments → Record New Payment → Referral/CC.</CardDescription>
+              <CardDescription>Fees owed to referring doctors for the patients they referred, as they stand now (not limited by the period above). Pay them from Payments → Record New Payment → Referral/CC.</CardDescription>
             </CardHeader>
             <CardContent>
               {referralFeeRows.length === 0 ? (

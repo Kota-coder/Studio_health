@@ -30,10 +30,12 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { compressImageFiles } from '@/lib/images';
 import { uploadNewImages } from '@/lib/storage';
 import { StoredImage } from '@/components/stored-image';
-import { bills as billsRepo, patients as patientsRepo, type BillFields } from '@/lib/data';
+import { bills as billsRepo, patients as patientsRepo, staff as staffRepo, type BillFields } from '@/lib/data';
+import { usePaymentMethods } from '@/hooks/use-payment-methods';
+import { methodChoices } from '@/types/paymentMethod';
+import { ProcessedByField } from '@/components/processed-by-field';
 
 
-const PAYMENT_METHODS: PaymentMethod[] = ["Cash", "UPI", "Online/Card", "Arogyasree", "Insurance", "Other"];
 const PAYMENT_STATUSES: PaymentStatus[] = ["Paid", "Unpaid", "Partially Paid", "Cancelled"];
 const BILL_TYPES: { value: BillType; label: string; icon: React.ElementType }[] = [
   { value: "Pharmacy", label: "Pharmacy Bill", icon: Pill },
@@ -66,6 +68,12 @@ export default function BillingForm() {
     { id: Date.now().toString(), description: "", quantity: 1, unitPrice: 0, originalUnitPrice: 0, total: 0 }
   ]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | "">("");
+  const methodOptions = usePaymentMethods();
+  // Who processed the bill: the person creating it, unless the Super Admin picks someone else.
+  const [processedById, setProcessedById] = useState<string>("");
+  const [processedByName, setProcessedByName] = useState<string | null>(null);
+  const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const canAssignProcessor = currentUser?.role === 'Super Admin';
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus | "">("");
   const [notes, setNotes] = useState<string>("");
   const [currentBillId, setCurrentBillId] = useState<string | null>(null);
@@ -93,6 +101,11 @@ export default function BillingForm() {
     const load = async () => {
     try {
     setPatients(await patientsRepo.listNames());
+    if (canAssignProcessor) setStaffList(await staffRepo.list());
+    if (!isEditMode && currentUser) {
+      setProcessedById(String(currentUser.id));
+      setProcessedByName(currentUser.name);
+    }
 
     if (patientIdFromQuery && !isEditMode) {
       const unpaddedPatientId = parseInt(patientIdFromQuery, 10).toString();
@@ -109,6 +122,8 @@ export default function BillingForm() {
           setIsBillTypeSelected(true);
           setSelectedPatientId(billToEdit.patientId.toString());
           setPaymentMethod(billToEdit.paymentMethod);
+          setProcessedById(billToEdit.processedByStaffId ? String(billToEdit.processedByStaffId) : "");
+          setProcessedByName(billToEdit.processedByStaffName ?? null);
           setPaymentStatus(billToEdit.paymentStatus);
           setNotes(billToEdit.notes || "");
           setBillItems(billToEdit.items.map(item => ({
@@ -400,6 +415,7 @@ export default function BillingForm() {
         paymentDate: finalPaymentDateString,
         notes: notes.trim(),
         attachments: await uploadNewImages(billAttachments, `patients/${selectedPatientId}/bills`),
+        processedByStaffId: processedById ? Number(processedById) : null,
       };
 
       if (isEditMode && currentBillId) {
@@ -520,7 +536,7 @@ export default function BillingForm() {
                     placeholder="dd/MM/yyyy"
                     value={billDateInput}
                     onChange={handleBillDateInputChange}
-                    className="rounded-r-none"
+                    className="rounded-r-none min-w-0"
                     required
                 />
                 <Datepicker
@@ -535,8 +551,8 @@ export default function BillingForm() {
           <Card className="p-4 bg-muted/50">
              <CardTitle className="text-lg mb-3">{billType === "Pharmacy" ? "Pharmacy Items" : "Services/Treatments Rendered"}</CardTitle>
             {billItems.map((item, index) => (
-              <div key={item.id} className="grid grid-cols-[1fr_auto_auto_auto_auto] items-end gap-2 mb-3 pb-3 border-b last:border-b-0 last:mb-0 last:pb-0">
-                <div className="col-span-5 md:col-span-1">
+              <div key={item.id} className="grid grid-cols-[1fr_1fr_1fr_auto] sm:grid-cols-[1fr_auto_auto_auto_auto] items-end gap-2 mb-3 pb-3 border-b last:border-b-0 last:mb-0 last:pb-0">
+                <div className="col-span-4 sm:col-span-1">
                   <Label htmlFor={`itemDesc-${index}`}>Description *</Label>
                   <Input
                     id={`itemDesc-${index}`}
@@ -552,7 +568,7 @@ export default function BillingForm() {
                     type="number"
                     value={item.quantity}
                     onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
-                    className="w-16 text-center"
+                    className="w-full sm:w-16 px-2 text-center"
                     min="1"
                   />
                 </div>
@@ -573,14 +589,14 @@ export default function BillingForm() {
                     type="number"
                     value={item.unitPrice}
                     onChange={(e) => handleItemChange(index, 'unitPrice', e.target.value)}
-                    className="w-32 text-right"
+                    className="w-full sm:w-32 px-2 text-right"
                     min="0"
                     step="0.01"
                   />
                 </div>
                 <div className="text-right">
                   <Label>Amount</Label>
-                  <Input value={`₹${item.total.toFixed(2)}`} readOnly className="w-28 text-right bg-muted" />
+                  <Input value={`₹${item.total.toFixed(2)}`} readOnly className="w-full sm:w-28 px-2 text-right bg-muted" />
                 </div>
                 <Button variant="ghost" size="icon" onClick={() => removeItem(index)} className="text-destructive hover:bg-destructive/10 self-end mb-1" title="Remove Item">
                   <Trash2 className="h-4 w-4" />
@@ -605,7 +621,7 @@ export default function BillingForm() {
                   <SelectValue placeholder="Select Payment Method" />
                 </SelectTrigger>
                 <SelectContent>
-                  {PAYMENT_METHODS.map(method => <SelectItem key={method} value={method}>{method}</SelectItem>)}
+                  {methodChoices(methodOptions, 'Bills', paymentMethod).map(method => <SelectItem key={method} value={method}>{method}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -620,6 +636,8 @@ export default function BillingForm() {
                 </SelectContent>
               </Select>
             </div>
+            <ProcessedByField id="processedBy" value={processedById} onChange={setProcessedById}
+              staff={staffList} canAssign={canAssignProcessor} displayName={processedByName ?? (isEditMode ? null : currentUser?.name)} />
           </div>
 
           {paymentStatus === "Paid" && (

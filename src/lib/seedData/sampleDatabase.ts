@@ -146,6 +146,10 @@ export async function loadSampleDataIntoDatabase(
   const staff = await sampleStaffApi('POST');
   summary.staff = staff.length;
   const doctors = staff.filter(s => s.role === 'Doctor');
+  // Bills are processed at the front desk or by accounts, payments by accounts.
+  const billingDesk = staff.filter(s => s.role === 'Receptionist' || s.role === 'Accounts');
+  const accounts = staff.find(s => s.role === 'Accounts');
+  const paymentProcessor = accounts ?? currentStaff;
   const nurses = staff.filter(s => s.role === 'Nurse');
 
   // Departments, each with one sample doctor and nurse (in order).
@@ -348,7 +352,9 @@ export async function loadSampleDataIntoDatabase(
       const status: PaymentStatus = when.getTime() > Date.now() - 10 * DAY
         ? random.pick<PaymentStatus>(['Unpaid', 'Paid', 'Partially Paid'])
         : random.pick<PaymentStatus>(['Paid', 'Paid', 'Paid', 'Partially Paid']);
+      const processor = billingDesk.length ? random.pick(billingDesk) : currentStaff;
       billPlans.push({
+        processedByStaffId: processor.id,
         patientId: created.id,
         patientName: `${plan.fields.firstName} ${plan.fields.lastName}`,
         billDate: dmy(when),
@@ -381,8 +387,8 @@ export async function loadSampleDataIntoDatabase(
       ...fields,
       paymentDate: dmy(when),
       transactionId: `${SAMPLE_PAYMENT_PREFIX}${String(paymentNumber++).padStart(3, '0')}`,
-      recordedByStaffId: currentStaff.id,
-      recordedByStaffName: currentStaff.name,
+      recordedByStaffId: paymentProcessor.id,
+      recordedByStaffName: paymentProcessor.name,
       notes: SAMPLE_MARK,
       createdAt: when.toISOString(),
     });
@@ -436,7 +442,7 @@ export async function loadSampleDataIntoDatabase(
       amount: paidCases.reduce((sum, c) => sum + (c.fee ?? 0), 0),
       paymentMethod: 'Bank Transfer',
       transactionId: `${SAMPLE_PAYMENT_PREFIX}${String(paymentNumber++).padStart(3, '0')}`,
-      recordedByStaffId: currentStaff.id, recordedByStaffName: currentStaff.name,
+      recordedByStaffId: paymentProcessor.id, recordedByStaffName: paymentProcessor.name,
       notes: SAMPLE_MARK,
       createdAt: when.toISOString(),
     } as WithCreatedAt<Omit<Payment, 'id' | 'createdAt' | 'auditLog'>>, 'Sample doctor fee payment loaded for testing.');
@@ -477,7 +483,7 @@ export async function loadSampleDataIntoDatabase(
       amount: Math.round(amount * 100) / 100,
       paymentMethod: 'Bank Transfer',
       transactionId: `${SAMPLE_PAYMENT_PREFIX}${String(paymentNumber++).padStart(3, '0')}`,
-      recordedByStaffId: currentStaff.id, recordedByStaffName: currentStaff.name,
+      recordedByStaffId: paymentProcessor.id, recordedByStaffName: paymentProcessor.name,
       notes: SAMPLE_MARK,
       createdAt: when.toISOString(),
     } as WithCreatedAt<Omit<Payment, 'id' | 'createdAt' | 'auditLog'>>, 'Sample referral fee payment loaded for testing.');

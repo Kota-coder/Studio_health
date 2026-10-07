@@ -12,7 +12,7 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Menu as MenuIcon, LayoutDashboard, FileText, CreditCard, Receipt, Pill, Archive, Truck, Users, FlaskConical, HeartHandshake, LogIn, LogOut, UserCircle, AreaChart, Database, Building2, CalendarClock } from 'lucide-react';
+import { Menu as MenuIcon, LayoutDashboard, FileText, CreditCard, Receipt, Pill, Archive, Truck, Users, FlaskConical, HeartHandshake, LogIn, LogOut, UserCircle, AreaChart, Database, Building2, CalendarClock, Wallet } from 'lucide-react';
 import React from 'react';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
@@ -48,6 +48,7 @@ const allMenuItems: MenuItemConfig[] = [
   { href: '/materials', label: 'Materials', icon: Archive, allowedRoles: PAGE_ROLES.materials, isPrimary: false },
   { href: '/vendors', label: 'Material Vendors', icon: Truck, allowedRoles: PAGE_ROLES.vendors, isPrimary: false },
   { href: '/departments', label: 'Departments', icon: Building2, allowedRoles: PAGE_ROLES.departments, isPrimary: false },
+  { href: '/payment-methods', label: 'Payment Methods', icon: Wallet, allowedRoles: PAGE_ROLES.paymentMethods, isPrimary: false },
   { href: '/staff', label: 'Staff Management', icon: Users, allowedRoles: PAGE_ROLES.staff, isPrimary: false },
   { href: '/medical-tests', label: 'Medical Tests Catalog', icon: FlaskConical, allowedRoles: PAGE_ROLES.medicalTests, isPrimary: false },
   { href: '/referring-doctors', label: 'Referring Doctors', icon: HeartHandshake, allowedRoles: PAGE_ROLES.referringDoctors, isPrimary: false },

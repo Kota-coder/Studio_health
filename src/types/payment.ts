@@ -2,7 +2,8 @@
 import type { AuditLogEntry } from './patient';
 
 export type PaymentType = "Referral/CC" | "Material" | "Pharmacy" | "Salary" | "Doctor Fee" | "Other" | "";
-export type PaymentMethodSpent = "Cash" | "Cheque" | "Bank Transfer" | "UPI" | "Card" | "Other" | "";
+// The name of one of the managed payment methods (payment_methods table), or "" before one is chosen.
+export type PaymentMethodSpent = string;
 
 export interface PurchasedMedicationItem {
   medicationId: string;
