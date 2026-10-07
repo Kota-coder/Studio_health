@@ -13,8 +13,9 @@ import { PlusCircle, Edit3, Users, ArrowLeft, Upload } from 'lucide-react';
 import { format, parse, isValid } from 'date-fns';
 import { useAuth } from '@/context/AuthContext'; 
 import { PAGE_ROLES } from '@/config/permissions';
+import { staff as staffRepo } from '@/lib/data';
 
-const SYSTEM_STAFF_ROLES: StaffRole[] = ["Doctor", "Nurse", "Admin", "Receptionist"]; // Renamed for clarity
+const SYSTEM_STAFF_ROLES: StaffRole[] = ["Doctor", "Nurse", "Admin", "Receptionist", "Accounts", "Super Admin"];
 const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.staff;
 
 export default function StaffPage() {
@@ -35,23 +36,16 @@ export default function StaffPage() {
     }
   }, [authIsLoading, currentUser, router, toast]);
 
-
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) { 
       setIsLoading(true);
-      try {
-        const storedStaff = localStorage.getItem('staffMembers');
-        if (storedStaff) {
-          setStaffMembers(JSON.parse(storedStaff));
-        }
-        if (!localStorage.getItem('nextStaffId')) {
-          localStorage.setItem('nextStaffId', '1');
-        }
-      } catch (error) {
-        console.error("Error loading staff from localStorage:", error);
-        toast({ title: "Error", description: "Could not load staff data.", variant: "destructive" });
-      }
-      setIsLoading(false);
+      staffRepo.list()
+        .then(setStaffMembers)
+        .catch(error => {
+          console.error("Error loading staff:", error);
+          toast({ title: "Error", description: "Could not load staff data.", variant: "destructive" });
+        })
+        .finally(() => setIsLoading(false));
     } else if (currentUser && !ALLOWED_ROLES.includes(currentUser.role)){
         setIsLoading(false); // Stop loading if not authorized, redirect will handle it
     } else {
@@ -110,7 +104,7 @@ export default function StaffPage() {
     }
   };
 
-  const processCSV = (csvText: string) => {
+  const processCSV = async (csvText: string) => {
     const rows = csvText.split(/\r\n|\n/).filter(row => row.trim() !== '');
     if (rows.length < 2) {
       toast({ title: "CSV Error", description: "CSV file must contain a header row and at least one data row.", variant: "destructive" });
@@ -133,12 +127,7 @@ export default function StaffPage() {
     const hireDateIndex = header.indexOf('hiredate');
     const salaryIndex = header.indexOf(salaryHeader); // Will be -1 if not present
 
-    let currentStaff = [...staffMembers];
-    let nextIdStr = localStorage.getItem('nextStaffId') || '1';
-    let nextIdNum = 1;
-    try { nextIdNum = parseInt(nextIdStr, 10); } catch { /* keep 1 */ }
-    // Never reuse an id that already exists (e.g. after seed data was loaded)
-    nextIdNum = Math.max(nextIdNum || 1, ...staffMembers.map(s => Number(s.id) + 1).filter(Number.isFinite));
+    let currentStaff: Omit<StaffMember, 'id'>[] = [];
 
     let importedCount = 0;
     let failedCount = 0;
@@ -190,8 +179,7 @@ export default function StaffPage() {
         continue;
       }
 
-      const newStaffMember: StaffMember = {
-        id: nextIdNum++,
+      const newStaffMember: Omit<StaffMember, 'id'> = {
         name,
         phoneNumber,
         email,
@@ -205,13 +193,14 @@ export default function StaffPage() {
 
     if (importedCount > 0) {
         try {
-            localStorage.setItem('staffMembers', JSON.stringify(currentStaff));
-            localStorage.setItem('nextStaffId', nextIdNum.toString());
-            setStaffMembers(currentStaff);
-            toast({ title: "Import Successful", description: `${importedCount} staff members imported. ${failedCount > 0 ? `${failedCount} rows failed.` : ''}` });
-        } catch (e) {
+            const result = await staffRepo.createMany(currentStaff);
+            failures.push(...result.failures);
+            failedCount += result.failures.length;
+            setStaffMembers(await staffRepo.list());
+            toast({ title: "Import Complete", description: `${result.created.length} staff members imported and emailed an invite to set their password. ${failedCount > 0 ? `${failedCount} rows failed.` : ''}` });
+        } catch (e: any) {
             console.error("Error saving imported staff:", e);
-            toast({ title: "Storage Error", description: "Could not save imported staff.", variant: "destructive" });
+            toast({ title: "Save Error", description: e?.message || "Could not save imported staff.", variant: "destructive" });
         }
     } else if (failedCount > 0) {
          toast({ title: "Import Failed", description: `No staff members imported. ${failedCount} rows had errors. Check console for details.`, variant: "destructive" });
@@ -243,7 +232,7 @@ export default function StaffPage() {
           <Users className="h-8 w-8 text-primary" />
           <h1 className="text-3xl font-bold text-foreground">Staff Management</h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-center sm:justify-end gap-2">
           <Button variant="outline" onClick={() => router.push('/dashboard')}>
              <ArrowLeft className="mr-2 h-4 w-4" /> Dashboard
           </Button>

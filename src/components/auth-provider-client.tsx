@@ -49,9 +49,8 @@ const allMenuItems: MenuItemConfig[] = [
   { href: '/staff', label: 'Staff Management', icon: Users, allowedRoles: PAGE_ROLES.staff, isPrimary: false },
   { href: '/medical-tests', label: 'Medical Tests Catalog', icon: FlaskConical, allowedRoles: PAGE_ROLES.medicalTests, isPrimary: false },
   { href: '/referring-doctors', label: 'Referring Doctors', icon: HeartHandshake, allowedRoles: PAGE_ROLES.referringDoctors, isPrimary: false },
-  { href: '/admin', label: 'Sample Data & Reset', icon: Database, allowedRoles: PAGE_ROLES.admin, isPrimary: false },
+  { href: '/admin', label: 'Sample Data', icon: Database, allowedRoles: PAGE_ROLES.admin, isPrimary: false },
 ];
-
 
 // Extracted Header logic into a client component that uses the useAuth hook
 export function AppHeaderMenu() {

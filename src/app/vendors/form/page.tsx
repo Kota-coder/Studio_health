@@ -11,12 +11,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from "@/hooks/use-toast";
 import { Vendor } from '@/types/vendor';
 import { ArrowLeft, Save, Truck } from 'lucide-react';
+import { vendors as vendorsRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
 
-const VENDORS_STORAGE_KEY = 'materialVendorsData';
-const VENDOR_ID_COUNTER_KEY = 'nextVendorId';
 const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.vendors;
 
 const isValidEmailOptional = (email?: string): boolean => {
@@ -31,7 +30,6 @@ const isValidPhoneNumberOptional = (number?: string): boolean => {
   const phoneRegex = /^[0-9\s\-()+]{7,15}$/; 
   return phoneRegex.test(number);
 };
-
 
 export default function VendorFormPage() {
   const router = useRouter();
@@ -70,11 +68,11 @@ export default function VendorFormPage() {
     }
     setFormIsLoading(true);
 
-    if (isEditMode && vendorIdToEdit) {
-      const storedData = localStorage.getItem(VENDORS_STORAGE_KEY);
-      if (storedData) {
-        const vendors: Vendor[] = JSON.parse(storedData);
-        const vendorToEdit = vendors.find(v => v.id === vendorIdToEdit);
+    if (!(isEditMode && vendorIdToEdit)) {
+      setFormIsLoading(false);
+      return;
+    }
+    vendorsRepo.get(vendorIdToEdit).then(vendorToEdit => {
         if (vendorToEdit) {
           setCurrentVendorId(vendorToEdit.id);
           setName(vendorToEdit.name);
@@ -87,12 +85,13 @@ export default function VendorFormPage() {
           toast({ title: "Error", description: "Vendor not found.", variant: "destructive" });
           router.push('/vendors');
         }
-      }
-    }
-    setFormIsLoading(false);
+    }).catch(error => {
+      console.error("Error loading vendor:", error);
+      toast({ title: "Error", description: "Could not load vendor.", variant: "destructive" });
+    }).finally(() => setFormIsLoading(false));
   }, [isEditMode, vendorIdToEdit, router, toast, currentUser, authIsLoading]);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     let hasError = false;
     if (!name.trim()) { 
         toast({ title: "Validation Error", description: "Vendor Name is required.", variant: "destructive" }); 
@@ -110,7 +109,6 @@ export default function VendorFormPage() {
     } else { 
         setEmailError(null); 
     }
-
 
     if (hasError) {
       toast({
@@ -131,34 +129,19 @@ export default function VendorFormPage() {
     };
 
     try {
-      const storedData = localStorage.getItem(VENDORS_STORAGE_KEY);
-      let vendors: Vendor[] = storedData ? JSON.parse(storedData) : [];
-      
       if (isEditMode && currentVendorId) {
-        vendors = vendors.map(v => v.id === currentVendorId ? { ...vendorData, id: currentVendorId } : v);
+        await vendorsRepo.update(currentVendorId, vendorData);
         toast({ title: "Success", description: "Vendor details updated." });
       } else {
-        const nextIdStr = localStorage.getItem(VENDOR_ID_COUNTER_KEY) || 'vendor_1';
-        let nextIdNum = 1;
-        if (nextIdStr.startsWith('vendor_')) {
-            try { nextIdNum = parseInt(nextIdStr.split('_')[1], 10) + 1; } catch { /* keep 1 */ }
-        }
-        const newVendorId = `vendor_${nextIdNum}`;
-        
-        const newVendor: Vendor = { ...vendorData, id: newVendorId };
-        vendors.push(newVendor);
-        localStorage.setItem(VENDOR_ID_COUNTER_KEY, `vendor_${nextIdNum}`);
+        await vendorsRepo.create(vendorData);
         toast({ title: "Success", description: "New vendor added." });
       }
-      
-      localStorage.setItem(VENDORS_STORAGE_KEY, JSON.stringify(vendors));
       router.push('/vendors');
-
     } catch (e) {
-      console.error("Failed to save vendor to localStorage", e);
+      console.error("Failed to save vendor", e);
       toast({
-        title: "Storage Error",
-        description: "Could not save vendor data. LocalStorage might be full or disabled.",
+        title: "Save Error",
+        description: "Could not save vendor. Please check your connection and try again.",
         variant: "destructive",
       });
     }

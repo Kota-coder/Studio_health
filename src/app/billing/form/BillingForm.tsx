@@ -27,8 +27,10 @@ import {
 } from "@/components/ui/accordion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { addAuditLogEntry } from '@/lib/audit';
-import { imageFilesToDataUrls } from '@/lib/image';
+import { compressImageFiles } from '@/lib/images';
+import { uploadNewImages } from '@/lib/storage';
+import { StoredImage } from '@/components/stored-image';
+import { bills as billsRepo, patients as patientsRepo, type BillFields } from '@/lib/data';
 
 
 const PAYMENT_METHODS: PaymentMethod[] = ["Cash", "UPI", "Online/Card", "Arogyasree", "Insurance", "Other"];
@@ -70,7 +72,7 @@ export default function BillingForm() {
   const [formIsLoading, setFormIsLoading] = useState(true);
   const [currentBillAuditLog, setCurrentBillAuditLog] = useState<AuditLogEntry[]>([]);
   
-  const [billAttachmentPreview, setBillAttachmentPreview] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [billAttachments, setBillAttachments] = useState<string[]>([]);
   const billAttachmentInputRef = useRef<HTMLInputElement>(null);
 
@@ -87,19 +89,10 @@ export default function BillingForm() {
         return;
     }
     setFormIsLoading(true);
-    const storedPatients = localStorage.getItem('patients');
-    if (storedPatients) {
-      let rawPatients = JSON.parse(storedPatients);
-      const sanitizedPatients: Patient[] = rawPatients.map((p: any) => ({
-          ...p,
-          id: parseInt(p.id, 10),
-          careNotes: Array.isArray(p.careNotes) ? p.careNotes : [],
-          assignedStaffIds: Array.isArray(p.assignedStaffIds) ? p.assignedStaffIds : [],
-          tests: Array.isArray(p.tests) ? p.tests : [],
-          auditLog: Array.isArray(p.auditLog) ? p.auditLog : [],
-      }));
-      setPatients(sanitizedPatients);
-    }
+    let cancelled = false;
+    const load = async () => {
+    try {
+    setPatients(await patientsRepo.listBasic());
 
     if (patientIdFromQuery && !isEditMode) {
       const unpaddedPatientId = parseInt(patientIdFromQuery, 10).toString();
@@ -107,14 +100,9 @@ export default function BillingForm() {
     }
 
     if (isEditMode && billIdToEdit) {
-      const storedBills = localStorage.getItem('bills');
-      if (storedBills) {
-        const bills: Bill[] = JSON.parse(storedBills).map((b: any) => ({
-            ...b,
-            auditLog: Array.isArray(b.auditLog) ? b.auditLog : [],
-            attachmentDataUrl: b.attachmentDataUrl || null,
-        }));
-        const billToEdit = bills.find(b => b.id === billIdToEdit);
+      {
+        const billToEdit = await billsRepo.get(billIdToEdit);
+        if (cancelled) return;
         if (billToEdit) {
           setCurrentBillId(billToEdit.id);
           setBillType(billToEdit.billType || "Treatment");
@@ -129,7 +117,6 @@ export default function BillingForm() {
               originalUnitPrice: item.originalUnitPrice !== undefined ? item.originalUnitPrice : item.unitPrice
             })));
           setCurrentBillAuditLog(billToEdit.auditLog || []);
-          setBillAttachmentPreview(billToEdit.attachmentDataUrl || null);
           setBillAttachments(billToEdit.attachments || []);
 
 
@@ -179,11 +166,18 @@ export default function BillingForm() {
     } else {
         setIsBillTypeSelected(false);
         setCurrentBillAuditLog([]);
-        setBillAttachmentPreview(null);
         setPaymentDate(null);
         setPaymentDateInput("");
     }
-    setFormIsLoading(false);
+    } catch (error) {
+      console.error("Error loading bill form data:", error);
+      toast({ title: "Error", description: "Could not load bill details.", variant: "destructive" });
+    } finally {
+      if (!cancelled) setFormIsLoading(false);
+    }
+    };
+    load();
+    return () => { cancelled = true; };
   }, [isEditMode, billIdToEdit, patientIdFromQuery, router, toast, currentUser]);
 
   const handleBillTypeSelectionContinue = () => {
@@ -309,7 +303,7 @@ export default function BillingForm() {
     const files = event.target.files;
     if (files && files.length > 0) {
         const fileArray = Array.from(files);
-        const readers = imageFilesToDataUrls(fileArray);
+        const readers = compressImageFiles(fileArray);
 
         readers.then(results => {
             setBillAttachments(prev => [...prev, ...results]);
@@ -323,7 +317,6 @@ export default function BillingForm() {
   };
 
   const clearBillAttachment = () => {
-    setBillAttachmentPreview(null);
     setBillAttachments([]);
     if (billAttachmentInputRef.current) {
       billAttachmentInputRef.current.value = "";
@@ -391,79 +384,46 @@ export default function BillingForm() {
         return;
     }
 
-    const billData: Omit<Bill, 'id' | 'createdAt' | 'auditLog' | 'attachmentDataUrl'> & { attachmentDataUrl?: string | null } = {
-      patientId: parseInt(selectedPatientId, 10),
-      patientName: `${patient.firstName} ${patient.lastName}`,
-      billDate: finalBillDateString,
-      billType: billType,
-      items: billItems.map(({id, description, quantity, unitPrice, originalUnitPrice, total}) => ({
-        id, description, quantity, unitPrice, originalUnitPrice, total
-      })),
-      totalAmount: calculateGrandTotal(),
-      paymentMethod,
-      paymentStatus,
-      paymentDate: finalPaymentDateString,
-      notes: notes.trim(),
-      attachmentDataUrl: billAttachments.length > 0 ? billAttachments[0] : null,
-      attachments: billAttachments.length > 0 ? billAttachments : undefined,
-    };
-
+    setIsSaving(true);
     try {
-      const billsJSON = localStorage.getItem('bills');
-      let allBills: Bill[] = billsJSON ? JSON.parse(billsJSON).map((b: any) => ({...b, auditLog: Array.isArray(b.auditLog) ? b.auditLog : [], attachmentDataUrl: b.attachmentDataUrl || null})) : [];
-      let auditActionType = "";
-      let auditDetails = "";
+      const billData: BillFields = {
+        patientId: parseInt(selectedPatientId, 10),
+        patientName: `${patient.firstName} ${patient.lastName}`,
+        billDate: finalBillDateString,
+        billType: billType,
+        items: billItems.map(({id, description, quantity, unitPrice, originalUnitPrice, total}) => ({
+          id, description, quantity, unitPrice, originalUnitPrice, total
+        })),
+        totalAmount: calculateGrandTotal(),
+        paymentMethod,
+        paymentStatus,
+        paymentDate: finalPaymentDateString,
+        notes: notes.trim(),
+        attachments: await uploadNewImages(billAttachments, `patients/${selectedPatientId}/bills`),
+      };
 
       if (isEditMode && currentBillId) {
-        let billToUpdate = allBills.find(b => b.id === currentBillId);
-        if (billToUpdate) {
-            let updatedBill = { ...billToUpdate, ...billData, auditLog: billToUpdate.auditLog || [] };
-            auditActionType = "Bill Updated";
-            auditDetails = `Bill ${currentBillId} details updated. Status: ${paymentStatus}.`;
-            if (paymentStatus === "Paid" && billToUpdate.paymentStatus !== "Paid") {
-                auditDetails += ` Marked as Paid on ${finalPaymentDateString}.`;
-            }
-            updatedBill = addAuditLogEntry(updatedBill, auditActionType, auditDetails, currentUser);
-            allBills = allBills.map(b => b.id === currentBillId ? updatedBill : b);
-            toast({ title: "Success", description: `Bill ${currentBillId} updated.` });
-        } else {
-             toast({ title: "Error", description: "Could not find bill to update.", variant: "destructive" });
-             return;
+        const previousStatus = (await billsRepo.get(currentBillId))?.paymentStatus;
+        let auditDetails = `Bill ${currentBillId} details updated. Status: ${paymentStatus}.`;
+        if (paymentStatus === "Paid" && previousStatus !== "Paid") {
+          auditDetails += ` Marked as Paid on ${finalPaymentDateString}.`;
         }
+        await billsRepo.update(currentBillId, billData, { actionType: "Bill Updated", details: auditDetails });
+        toast({ title: "Success", description: `Bill ${currentBillId} updated.` });
       } else {
-        const nextBillIdNumberJSON = localStorage.getItem('nextBillIdNumber');
-        let nextBillIdNumber = nextBillIdNumberJSON ? parseInt(nextBillIdNumberJSON, 10) : 1;
-        const newBillId = `BILL-${String(nextBillIdNumber).padStart(3, '0')}`;
-        let newBill: Bill = { ...billData, id: newBillId, createdAt: new Date().toISOString(), auditLog: [] };
-        auditActionType = "Bill Created";
-        auditDetails = `Bill ${newBillId} created with status ${paymentStatus}.`;
-         if (paymentStatus === "Paid") {
-            auditDetails += ` Marked as Paid on ${finalPaymentDateString}.`;
-        }
-        newBill = addAuditLogEntry(newBill, auditActionType, auditDetails, currentUser);
-        allBills.push(newBill);
-        localStorage.setItem('nextBillIdNumber', (nextBillIdNumber + 1).toString());
-        toast({ title: "Success", description: `New bill ${newBillId} created.` });
+        const newBill = await billsRepo.create(billData, `Bill created with status ${paymentStatus}.${paymentStatus === "Paid" ? ` Marked as Paid on ${finalPaymentDateString}.` : ''}`);
+        toast({ title: "Success", description: `New bill ${newBill.id} created.` });
       }
-
-      localStorage.setItem('bills', JSON.stringify(allBills));
       router.push('/billing');
-
-    } catch (e: any) {
-      console.error("Failed to save bill to localStorage", e);
-      if (e.name === 'QuotaExceededError') {
-        toast({
-          title: "Storage Full",
-          description: "Cannot save bill data. Local storage is full, likely due to image attachments.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-            title: "Storage Error",
-            description: "Could not save bill data. An unexpected error occurred.",
-            variant: "destructive",
-        });
-      }
+    } catch (e) {
+      console.error("Failed to save bill", e);
+      toast({
+        title: "Save Error",
+        description: e instanceof Error ? e.message : "Could not save bill data.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -714,7 +674,7 @@ export default function BillingForm() {
                 <div className="mt-2 grid grid-cols-3 gap-2">
                     {billAttachments.map((attachment, index) => (
                         <div key={index} className="relative border rounded-md p-1">
-                            <img src={attachment} alt={`Bill Attachment ${index + 1}`} className="rounded-md w-full h-20 object-cover" data-ai-hint="invoice document"/>
+                            <StoredImage path={attachment} alt={`Bill Attachment ${index + 1}`} className="rounded-md w-full h-20 object-cover" />
                             <Button
                                 variant="destructive"
                                 size="icon"
@@ -764,8 +724,8 @@ export default function BillingForm() {
           <Button variant="outline" onClick={() => router.push('/billing')}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Cancel
           </Button>
-          <Button onClick={handleSubmit}>
-            <Save className="mr-2 h-4 w-4" /> {isEditMode ? "Save Changes" : "Save Bill"}
+          <Button onClick={handleSubmit} disabled={isSaving}>
+            <Save className="mr-2 h-4 w-4" /> {isSaving ? "Saving..." : isEditMode ? "Save Changes" : "Save Bill"}
           </Button>
         </CardFooter>
       </Card>

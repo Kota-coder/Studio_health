@@ -13,6 +13,7 @@ import { AreaChart, DollarSign, TrendingUp, TrendingDown, AlertTriangle, Receipt
 import { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval, isWithinInterval, subMonths } from 'date-fns';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
+import { bills as billsRepo, payments as paymentsRepo } from '@/lib/data';
 
 const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.financialDashboard;
 
@@ -50,16 +51,13 @@ export default function FinancialDashboardPage() {
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(true);
-      try {
-        const storedBills = localStorage.getItem('bills');
-        if (storedBills) setBills(JSON.parse(storedBills));
-
-        const storedPayments = localStorage.getItem('paymentsData');
-        if (storedPayments) setPayments(JSON.parse(storedPayments));
-      } catch (error) {
-        console.error("Error loading financial data:", error);
-      }
-      setIsLoading(false);
+      Promise.all([billsRepo.list(), paymentsRepo.list()])
+        .then(([billList, paymentList]) => {
+          setBills(billList);
+          setPayments(paymentList);
+        })
+        .catch(error => console.error("Error loading financial data:", error))
+        .finally(() => setIsLoading(false));
     } else if (!currentUser && !authIsLoading) {
       setIsLoading(false);
     }

@@ -11,14 +11,14 @@ import { Payment } from '@/types/payment';
 import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Eye, Receipt, ArrowLeft, Download } from 'lucide-react';
 import { format, parseISO, isValid, parse } from 'date-fns';
+import { patients as patientsRepo, payments as paymentsRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { PAGE_ROLES } from '@/config/permissions';
-
+import type { Patient } from '@/types/patient';
 
 const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.payments;
-const PAYMENTS_STORAGE_KEY = 'paymentsData';
 
 export default function PaymentsOverviewPage() {
   const router = useRouter();
@@ -26,6 +26,7 @@ export default function PaymentsOverviewPage() {
   const { currentUser, isLoading: authIsLoading } = useAuth();
 
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -40,25 +41,18 @@ export default function PaymentsOverviewPage() {
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(true);
-      try {
-        const storedPayments = localStorage.getItem(PAYMENTS_STORAGE_KEY);
-        if (storedPayments) {
-          const parsedPayments: Payment[] = JSON.parse(storedPayments).map((p: any) => ({
-            ...p,
-            auditLog: Array.isArray(p.auditLog) ? p.auditLog : [],
-            purchasedMedications: Array.isArray(p.purchasedMedications) ? p.purchasedMedications : [],
-            purchasedMaterials: Array.isArray(p.purchasedMaterials) ? p.purchasedMaterials : [],
-          }));
-          setPayments(parsedPayments);
-        } else {
+      Promise.all([paymentsRepo.list(), patientsRepo.listBasic()])
+        .then(([paymentList, patientList]) => {
+          setPayments(paymentList);
+          setPatients(patientList);
+        })
+        .catch(error => {
+          console.error("Error loading payments:", error);
+          toast({ title: "Error", description: "Could not load payment data.", variant: "destructive" });
           setPayments([]);
-        }
-      } catch (error) {
-        console.error("Error loading payments from localStorage:", error);
-        toast({ title: "Error", description: "Could not load payment data.", variant: "destructive" });
-        setPayments([]);
-      }
-      setIsLoading(false);
+          setPatients([]);
+        })
+        .finally(() => setIsLoading(false));
     } else if (currentUser && !ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(false);
     } else {
@@ -144,6 +138,18 @@ export default function PaymentsOverviewPage() {
     }
   }, [payments, toast]);
 
+  const getPatientNamesForPayment = (payment: Payment) => {
+    if (payment.paymentType !== "Referral/CC" || !payment.associatedPatientIds || payment.associatedPatientIds.length === 0) {
+      return '';
+    }
+    
+    const patientNames = payment.associatedPatientIds.map(patientId => {
+      const patient = patients.find(p => p.id === patientId);
+      return patient ? `${patient.firstName} ${patient.lastName}` : `Patient ID: ${patientId}`;
+    });
+    
+    return patientNames.join(', ');
+  };
 
   if (authIsLoading || isLoading) {
     return (
@@ -164,7 +170,7 @@ export default function PaymentsOverviewPage() {
           <Receipt className="h-8 w-8 text-primary" />
           <h1 className="text-3xl font-bold text-foreground">Payments Overview</h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-center sm:justify-end gap-2">
             <Button variant="outline" onClick={() => router.push('/dashboard')}>
                 <ArrowLeft className="mr-2 h-4 w-4" /> Dashboard
             </Button>
@@ -203,11 +209,11 @@ export default function PaymentsOverviewPage() {
             <CardDescription>List of all recorded outgoing payments.</CardDescription>
             {/* Static Header Row */}
             <div className="mt-2 flex w-full text-sm font-semibold text-muted-foreground border-b pb-2">
-              <span className="w-[20%] truncate">Payment ID</span>
-              <span className="w-[30%] truncate pl-2">Payee</span>
-              <span className="w-[15%] truncate text-center">Date</span>
-              <span className="w-[20%] truncate text-right">Amount</span>
-              <span className="w-[15%] truncate text-right">Type</span>
+              <span className="w-[25%] sm:w-[20%] truncate">Payment ID</span>
+              <span className="w-[40%] sm:w-[30%] truncate pl-2">Payee</span>
+              <span className="hidden sm:inline w-[15%] truncate text-center">Date</span>
+              <span className="w-[35%] sm:w-[20%] truncate text-right">Amount</span>
+              <span className="hidden sm:inline w-[15%] truncate text-right">Type</span>
             </div>
           </CardHeader>
           <CardContent className="pt-0">
@@ -216,11 +222,11 @@ export default function PaymentsOverviewPage() {
                   <AccordionItem value={payment.id} key={payment.id}>
                     <AccordionTrigger className="hover:no-underline py-3">
                         <div className="flex items-center w-full text-sm">
-                            <span className="w-[20%] font-medium text-primary truncate">{payment.id}</span>
-                            <span className="w-[30%] truncate pl-2">{payment.payeeName || "N/A"}</span>
-                            <span className="w-[15%] text-center">{formatDateSafe(payment.paymentDate)}</span>
-                            <span className="w-[20%] font-semibold text-right">₹{payment.amount.toFixed(2)}</span>
-                            <span className="w-[15%] text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-right truncate">{payment.paymentType}</span>
+                            <span className="w-[25%] sm:w-[20%] font-medium text-primary truncate">{payment.id}</span>
+                            <span className="w-[40%] sm:w-[30%] truncate pl-2">{payment.payeeName || "N/A"}</span>
+                            <span className="hidden sm:inline w-[15%] text-center">{formatDateSafe(payment.paymentDate)}</span>
+                            <span className="w-[35%] sm:w-[20%] font-semibold text-right">₹{payment.amount.toFixed(2)}</span>
+                            <span className="hidden sm:inline w-[15%] text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground text-right truncate">{payment.paymentType}</span>
                         </div>
                     </AccordionTrigger>
                     <AccordionContent>
@@ -238,7 +244,7 @@ export default function PaymentsOverviewPage() {
                                 {payment.recordedByStaffName && <p><span className="font-medium">Recorded By:</span> {payment.recordedByStaffName}</p>}
                                 <p><span className="font-medium">Recorded At:</span> {format(parseISO(payment.createdAt), "dd/MM/yyyy HH:mm")}</p>
                                 {payment.associatedPatientIds && payment.associatedPatientIds.length > 0 && (
-                                    <p className="md:col-span-2"><span className="font-medium">Associated Patients:</span> {payment.associatedPatientIds.join(', ')}</p>
+                                    <p className="md:col-span-2"><span className="font-medium">Associated Patients:</span> {getPatientNamesForPayment(payment) || payment.associatedPatientIds.join(', ')}</p>
                                 )}
                             </div>
                             {payment.paymentType === "Pharmacy" && payment.purchasedMedications && payment.purchasedMedications.length > 0 && (

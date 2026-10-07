@@ -11,13 +11,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from "@/hooks/use-toast";
 import { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 import { ArrowLeft, Save, FlaskConical } from 'lucide-react';
+import { testCatalog as testCatalogRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
 
-
-const CATALOG_STORAGE_KEY = 'medicalTestCatalog';
-const CATALOG_ID_COUNTER_KEY = 'nextMedicalTestCatalogId';
 const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.medicalTests;
 
 export default function MedicalTestCatalogFormPage() {
@@ -52,11 +50,11 @@ export default function MedicalTestCatalogFormPage() {
         return;
     }
     setFormIsLoading(true);
-    if (isEditMode && itemIdToEdit) {
-      const storedCatalog = localStorage.getItem(CATALOG_STORAGE_KEY);
-      if (storedCatalog) {
-        const catalog: MedicalTestCatalogItem[] = JSON.parse(storedCatalog);
-        const itemToEdit = catalog.find(item => item.id === itemIdToEdit);
+    if (!(isEditMode && itemIdToEdit)) {
+      setFormIsLoading(false);
+      return;
+    }
+    testCatalogRepo.get(itemIdToEdit).then(itemToEdit => {
         if (itemToEdit) {
           setCurrentItemId(itemToEdit.id);
           setName(itemToEdit.name);
@@ -67,12 +65,13 @@ export default function MedicalTestCatalogFormPage() {
           toast({ title: "Error", description: "Medical test item not found.", variant: "destructive" });
           router.push('/medical-tests');
         }
-      }
-    }
-    setFormIsLoading(false);
+    }).catch(error => {
+      console.error("Error loading medical test item:", error);
+      toast({ title: "Error", description: "Could not load medical test item.", variant: "destructive" });
+    }).finally(() => setFormIsLoading(false));
   }, [isEditMode, itemIdToEdit, router, toast, currentUser, authIsLoading]);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!name.trim()) { toast({ title: "Validation Error", description: "Test Name is required.", variant: "destructive" }); return; }
     if (!category.trim()) { toast({ title: "Validation Error", description: "Category is required.", variant: "destructive" }); return; }
     
@@ -92,34 +91,19 @@ export default function MedicalTestCatalogFormPage() {
     };
 
     try {
-      const storedCatalog = localStorage.getItem(CATALOG_STORAGE_KEY);
-      let catalog: MedicalTestCatalogItem[] = storedCatalog ? JSON.parse(storedCatalog) : [];
-      
       if (isEditMode && currentItemId) {
-        catalog = catalog.map(item => item.id === currentItemId ? { ...testItemData, id: currentItemId } : item);
+        await testCatalogRepo.update(currentItemId, testItemData);
         toast({ title: "Success", description: "Medical test item updated." });
       } else {
-        const nextIdStr = localStorage.getItem(CATALOG_ID_COUNTER_KEY) || 'test_cat_1';
-        let nextIdNum = 1;
-        if (nextIdStr.startsWith('test_cat_')) {
-             try { nextIdNum = parseInt(nextIdStr.split('_cat_')[1], 10) +1; } catch { /* keep 1 */ }
-        }
-        const newItemId = `test_cat_${nextIdNum}`;
-        
-        const newItem: MedicalTestCatalogItem = { ...testItemData, id: newItemId };
-        catalog.push(newItem);
-        localStorage.setItem(CATALOG_ID_COUNTER_KEY, `test_cat_${nextIdNum}`);
+        await testCatalogRepo.create(testItemData);
         toast({ title: "Success", description: "New medical test added to catalog." });
       }
-      
-      localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(catalog));
       router.push('/medical-tests');
-
     } catch (e) {
-      console.error("Failed to save medical test item to localStorage", e);
+      console.error("Failed to save medical test item", e);
       toast({
-        title: "Storage Error",
-        description: "Could not save medical test data. LocalStorage might be full or disabled.",
+        title: "Save Error",
+        description: "Could not save medical test item. Please check your connection and try again.",
         variant: "destructive",
       });
     }

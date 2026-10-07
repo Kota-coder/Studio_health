@@ -1,4 +1,4 @@
-export type StaffRole = "Doctor" | "Nurse" | "Admin" | "Receptionist" | "Accounts";
+export type StaffRole = "Super Admin" | "Admin" | "Doctor" | "Nurse" | "Receptionist" | "Accounts";
 
 export interface StaffMember {
   id: number;
@@ -6,7 +6,6 @@ export interface StaffMember {
   phoneNumber: string;
   email: string;
   role: StaffRole;
-  hireDate: string; // Store as ISO string (e.g., "yyyy-MM-dd") or dd/MM/yyyy string
+  hireDate: string; // dd/MM/yyyy
   salary?: number;
-  password?: string; // Optional for backward compatibility
 }

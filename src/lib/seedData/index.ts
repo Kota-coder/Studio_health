@@ -3,29 +3,7 @@ import { SEED_STAFF } from './staff';
 import { SEED_MEDICATIONS } from './medications';
 import { SEED_REFERRING_DOCTORS } from './referringDoctors';
 import { SEED_BILLS } from './bills';
-import { STORAGE_KEYS } from '@/lib/storage';
-import type { StaffMember } from '@/types/staff';
-
-export interface SeedDataConfig {
-  clearExisting?: boolean;
-  includePatients?: boolean;
-  includeStaff?: boolean;
-  includeMedications?: boolean;
-  includeReferringDoctors?: boolean;
-  includeBills?: boolean;
-}
-
-const DEFAULT_CONFIG: SeedDataConfig = {
-  clearExisting: true,
-  includePatients: true,
-  includeStaff: true,
-  includeMedications: true,
-  includeReferringDoctors: true,
-  includeBills: true
-};
-
-// Everything the app stores, used by "clear all data".
-const ALL_APP_KEYS = Object.values(STORAGE_KEYS).filter(key => key !== STORAGE_KEYS.currentUser);
+import { bills, countRows, medications, patients, referringDoctors } from '@/lib/data';
 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})(T.*)?$/;
 const DMY_DATE = /^(\d{2})\/(\d{2})\/(\d{4})$/;
@@ -68,105 +46,73 @@ function seedDateOffsetMs(): number {
   return Math.max(0, Math.floor((Date.now() - latest) / DAY_MS)) * DAY_MS;
 }
 
-function maxNumericId(items: Array<{ id: unknown }>): number {
-  return items.reduce((max, item) => {
-    const n = parseInt(String(item.id).replace(/\D/g, ''), 10);
-    return Number.isFinite(n) && n > max ? n : max;
-  }, 0);
+export interface SampleDataSummary {
+  referringDoctors: number;
+  medications: number;
+  patients: number;
+  careNotes: number;
+  tests: number;
+  bills: number;
 }
 
 /**
- * Initialize the application with comprehensive seed data
- * This will populate localStorage with sample data for testing and demonstration
+ * Loads the demo referring doctors, medications, patients (with notes and tests)
+ * and bills into the database. Only for an empty database: it refuses to run once
+ * any patient exists, so it can never mix demo records into real ones.
+ *
+ * Sample staff are not created (staff logins are invited by email), so demo
+ * patients are assigned to the person loading the data. Sample image
+ * placeholders are skipped.
  */
-export function initializeSeedData(config: SeedDataConfig = DEFAULT_CONFIG): void {
-  const finalConfig = { ...DEFAULT_CONFIG, ...config };
-  const offset = seedDateOffsetMs();
-  // Read before clearing so accounts that are not part of the seed (e.g. the logged-in admin) survive.
-  const existingStaff: StaffMember[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.staffMembers) || '[]');
-
-  try {
-    if (finalConfig.clearExisting) {
-      if (finalConfig.includePatients) localStorage.removeItem(STORAGE_KEYS.patients);
-      if (finalConfig.includeStaff) localStorage.removeItem(STORAGE_KEYS.staffMembers);
-      if (finalConfig.includeMedications) localStorage.removeItem(STORAGE_KEYS.medications);
-      if (finalConfig.includeReferringDoctors) localStorage.removeItem(STORAGE_KEYS.referringDoctors);
-      if (finalConfig.includeBills) localStorage.removeItem(STORAGE_KEYS.bills);
-    }
-
-    // Each collection also sets its id counter past the seeded ids, so records
-    // created afterwards never overwrite a seeded one.
-    if (finalConfig.includePatients) {
-      localStorage.setItem(STORAGE_KEYS.patients, JSON.stringify(shiftSeedDates(SEED_PATIENTS, offset)));
-      localStorage.setItem(STORAGE_KEYS.nextPatientNumber, String(maxNumericId(SEED_PATIENTS) + 1));
-    }
-
-    if (finalConfig.includeStaff) {
-      const seededEmails = new Set(SEED_STAFF.map(s => s.email.toLowerCase()));
-      const seedIds = new Set(SEED_STAFF.map(s => s.id));
-      let nextId = maxNumericId([...SEED_STAFF, ...existingStaff]) + 1;
-      const kept = existingStaff
-        .filter(s => !s.email || !seededEmails.has(s.email.toLowerCase()))
-        .map(s => (seedIds.has(s.id) ? { ...s, id: nextId++ } : s));
-      const staff = [...shiftSeedDates(SEED_STAFF, offset), ...kept];
-      // If the logged-in user was renumbered, keep their session pointing at their own record.
-      const currentUser: StaffMember | null = JSON.parse(localStorage.getItem(STORAGE_KEYS.currentUser) || 'null');
-      const self = currentUser && staff.find(s => s.email && s.email.toLowerCase() === currentUser.email?.toLowerCase());
-      if (currentUser && self && self.id !== currentUser.id) {
-        localStorage.setItem(STORAGE_KEYS.currentUser, JSON.stringify(self));
-      }
-      localStorage.setItem(STORAGE_KEYS.staffMembers, JSON.stringify(staff));
-      localStorage.setItem(STORAGE_KEYS.nextStaffId, String(maxNumericId(staff) + 1));
-    }
-
-    if (finalConfig.includeMedications) {
-      localStorage.setItem(STORAGE_KEYS.medications, JSON.stringify(SEED_MEDICATIONS));
-      localStorage.setItem(STORAGE_KEYS.nextMedicationId, `med_${maxNumericId(SEED_MEDICATIONS) + 1}`);
-    }
-
-    if (finalConfig.includeReferringDoctors) {
-      localStorage.setItem(STORAGE_KEYS.referringDoctors, JSON.stringify(SEED_REFERRING_DOCTORS));
-      localStorage.setItem(STORAGE_KEYS.nextReferringDoctorId, String(maxNumericId(SEED_REFERRING_DOCTORS) + 1));
-    }
-
-    if (finalConfig.includeBills) {
-      localStorage.setItem(STORAGE_KEYS.bills, JSON.stringify(shiftSeedDates(SEED_BILLS, offset)));
-      localStorage.setItem(STORAGE_KEYS.nextBillIdNumber, String(maxNumericId(SEED_BILLS) + 1));
-    }
-  } catch (error) {
-    console.error('Error initializing seed data:', error);
-    throw error;
+export async function loadSampleDataIntoDatabase(currentStaff: { id: number; name: string }): Promise<SampleDataSummary> {
+  if (await countRows('patients') > 0) {
+    throw new Error('The database already has patients. Sample data can only be loaded into an empty database.');
   }
-}
+  const offset = seedDateOffsetMs();
+  const summary: SampleDataSummary = { referringDoctors: 0, medications: 0, patients: 0, careNotes: 0, tests: 0, bills: 0 };
 
-/**
- * Clear all application data from localStorage (the logged-in session is kept)
- */
-export function clearAllData(): void {
-  ALL_APP_KEYS.forEach(key => localStorage.removeItem(key));
-}
+  const createdDoctors = await referringDoctors.createMany(SEED_REFERRING_DOCTORS.map(({ id: _id, ...doctor }) => doctor));
+  const doctorIdMap = new Map(SEED_REFERRING_DOCTORS.map((doctor, i) => [doctor.id, createdDoctors[i]?.id]));
+  summary.referringDoctors = createdDoctors.length;
 
-/**
- * Get a summary of current data in localStorage
- */
-export function getDataSummary(): { [key: string]: number } {
-  const count = (key: string) => {
-    try {
-      const items = JSON.parse(localStorage.getItem(key) || '[]');
-      return Array.isArray(items) ? items.length : 0;
-    } catch {
-      return 0;
+  summary.medications = (await medications.createMany(SEED_MEDICATIONS.map(({ id: _id, ...medication }) => medication))).length;
+
+  const patientIdMap = new Map<number, number>();
+  for (const seed of shiftSeedDates(SEED_PATIENTS, offset)) {
+    const { id: seedId, careNotes = [], tests = [], auditLog: _auditLog, ...fields } = seed;
+    const created = await patients.create({
+      ...fields,
+      idCardImages: [],
+      patientPhotos: [],
+      initialObservationAttachments: [],
+      assignedStaffIds: [currentStaff.id],
+      referredDoctorId: fields.referredDoctorId ? doctorIdMap.get(fields.referredDoctorId) ?? null : null,
+      consentGivenAt: new Date().toISOString(),
+      consentVersion: 'sample-data',
+      consentRecordedByStaffId: currentStaff.id,
+    }, { actionType: 'Patient Registered', details: 'Sample patient loaded for testing.' });
+    patientIdMap.set(seedId, created.id);
+    summary.patients++;
+
+    for (const { id: _noteId, createdAt: _noteCreated, ...note } of careNotes) {
+      await patients.addCareNote(created.id, { ...note, staffId: currentStaff.id, staffName: currentStaff.name, attachments: [] });
+      summary.careNotes++;
     }
-  };
+    for (const { id: _testId, createdAt: _testCreated, ...test } of tests) {
+      await patients.addTest(created.id, { ...test, performedByStaffId: currentStaff.id, performedByStaffName: currentStaff.name, attachments: [] });
+      summary.tests++;
+    }
+  }
 
-  return {
-    patients: count(STORAGE_KEYS.patients),
-    staff: count(STORAGE_KEYS.staffMembers),
-    medications: count(STORAGE_KEYS.medications),
-    referringDoctors: count(STORAGE_KEYS.referringDoctors),
-    bills: count(STORAGE_KEYS.bills),
-    payments: count(STORAGE_KEYS.payments),
-  };
+  for (const seed of shiftSeedDates(SEED_BILLS, offset)) {
+    const { id: _id, createdAt: _createdAt, auditLog: _auditLog, ...fields } = seed;
+    const patientId = patientIdMap.get(fields.patientId);
+    if (!patientId) continue;
+    await bills.create({ ...fields, patientId, attachments: [] }, 'Sample bill loaded for testing.');
+    summary.bills++;
+  }
+
+  return summary;
 }
 
 // Export seed data for direct access if needed

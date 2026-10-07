@@ -10,12 +10,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ReferringDoctor } from '@/types/referringDoctor';
 import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Edit3, HeartHandshake, ArrowLeft, Upload } from 'lucide-react';
+import { referringDoctors as referringDoctorsRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
 
-const LOCAL_STORAGE_KEY = 'referringDoctorsData';
-const ID_COUNTER_KEY = 'nextReferringDoctorId';
 const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.referringDoctors;
 
 const isValidEmailOptional = (email?: string): boolean => {
@@ -29,7 +28,6 @@ const isValidPhoneNumberOptional = (number?: string): boolean => {
   const phoneRegex = /^[0-9\s\-()+]{7,15}$/;
   return phoneRegex.test(number);
 };
-
 
 export default function ReferringDoctorsPage() {
   const router = useRouter();
@@ -49,25 +47,16 @@ export default function ReferringDoctorsPage() {
     }
   }, [authIsLoading, currentUser, router, toast]);
 
-
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(true);
-      if (typeof window !== 'undefined') {
-        try {
-          const storedData = localStorage.getItem(LOCAL_STORAGE_KEY);
-          if (storedData) {
-            setReferringDoctors(JSON.parse(storedData));
-          }
-          if (!localStorage.getItem(ID_COUNTER_KEY)) {
-            localStorage.setItem(ID_COUNTER_KEY, '1');
-          }
-        } catch (error) {
-          console.error("Error loading referring doctors from localStorage:", error);
+      referringDoctorsRepo.list()
+        .then(setReferringDoctors)
+        .catch(error => {
+          console.error("Error loading referring doctor:", error);
           toast({ title: "Error", description: "Could not load referring doctor data.", variant: "destructive" });
-        }
-      }
-      setIsLoading(false);
+        })
+        .finally(() => setIsLoading(false));
     } else if (currentUser && !ALLOWED_ROLES.includes(currentUser.role)){
         setIsLoading(false);
     } else {
@@ -106,7 +95,7 @@ export default function ReferringDoctorsPage() {
     }
   };
 
-  const processCSV = (csvText: string) => {
+  const processCSV = async (csvText: string) => {
     const rows = csvText.split(/\r\n|\n/).filter(row => row.trim() !== '');
     if (rows.length < 2) {
       toast({ title: "CSV Error", description: "CSV file must contain a header row and at least one data row.", variant: "destructive" });
@@ -127,10 +116,7 @@ export default function ReferringDoctorsPage() {
     const phoneNumberIndex = header.indexOf('phonenumber');
     const emailIndex = header.indexOf('email');
 
-    let currentDoctors = [...referringDoctors];
-    let nextIdStr = localStorage.getItem(ID_COUNTER_KEY) || '1';
-    let nextIdNum = 1;
-    try { nextIdNum = parseInt(nextIdStr, 10); } catch { /* keep 1 */ }
+    const newItems: Omit<ReferringDoctor, 'id'>[] = [];
 
     let importedCount = 0;
     let failedCount = 0;
@@ -150,10 +136,9 @@ export default function ReferringDoctorsPage() {
       if (phoneNumber && !isValidPhoneNumberOptional(phoneNumber)) rowError += "Invalid Phone Number format. ";
       if (email && !isValidEmailOptional(email)) rowError += "Invalid Email format. ";
       
-      if (currentDoctors.some(doc => doc.name.toLowerCase() === name.toLowerCase() && doc.location.toLowerCase() === location.toLowerCase())) {
+      if ([...referringDoctors, ...newItems].some(doc => doc.name.toLowerCase() === name.toLowerCase() && doc.location.toLowerCase() === location.toLowerCase())) {
         rowError += `Doctor "${name}" at "${location}" already exists. `;
       }
-
 
       if (rowError) {
         console.warn(`Skipping row ${i+1} (Name: ${name || 'N/A'}): ${rowError}`);
@@ -162,26 +147,24 @@ export default function ReferringDoctorsPage() {
         continue;
       }
 
-      const newDoctor: ReferringDoctor = {
-        id: nextIdNum++,
+      const newDoctor: Omit<ReferringDoctor, 'id'> = {
         name,
         location, // This is now Hospital/Clinic Name
         phoneNumber,
         email,
       };
-      currentDoctors.push(newDoctor);
+      newItems.push(newDoctor);
       importedCount++;
     }
 
     if (importedCount > 0) {
       try {
-          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(currentDoctors));
-          localStorage.setItem(ID_COUNTER_KEY, nextIdNum.toString());
-          setReferringDoctors(currentDoctors);
+          await referringDoctorsRepo.createMany(newItems);
+          setReferringDoctors(await referringDoctorsRepo.list());
           toast({ title: "Import Successful", description: `${importedCount} referring doctors imported. ${failedCount > 0 ? `${failedCount} rows failed.` : ''}` });
       } catch (e) {
           console.error("Error saving imported referring doctors:", e);
-          toast({ title: "Storage Error", description: "Could not save imported referring doctors.", variant: "destructive" });
+          toast({ title: "Save Error", description: "Could not save imported referring doctors.", variant: "destructive" });
       }
     } else if (failedCount > 0) {
          toast({ title: "Import Failed", description: `No referring doctors imported. ${failedCount} rows had errors. Check console for details.`, variant: "destructive" });
@@ -192,7 +175,6 @@ export default function ReferringDoctorsPage() {
         console.error("CSV Import Failures (Referring Doctors):\n" + failures.join("\n"));
     }
   };
-
 
   if (authIsLoading || isLoading) {
     return (
@@ -213,7 +195,7 @@ export default function ReferringDoctorsPage() {
           <HeartHandshake className="h-8 w-8 text-primary" />
           <h1 className="text-3xl font-bold text-foreground">Referring Doctors</h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-center sm:justify-end gap-2">
             <Button variant="outline" onClick={() => router.push('/dashboard')}>
                 <ArrowLeft className="mr-2 h-4 w-4" /> Dashboard
             </Button>

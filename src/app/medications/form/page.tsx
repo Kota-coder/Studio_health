@@ -13,16 +13,12 @@ import { useToast } from "@/hooks/use-toast";
 import { Medication } from '@/types/medication';
 import { TreatmentTemplate, TREATMENT_TEMPLATES } from '@/config/treatmentTemplates';
 import { ArrowLeft, Save, Pill } from 'lucide-react';
+import { medications as medicationsRepo, treatmentTemplates as templatesRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
 
-
-const MEDICATIONS_STORAGE_KEY = 'medicationsData';
-const MEDICATION_ID_COUNTER_KEY = 'nextMedicationId';
-const USER_TEMPLATES_STORAGE_KEY = 'userDefinedTreatmentTemplates';
 const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.medications;
-
 
 export default function MedicationFormPage() {
   const router = useRouter();
@@ -60,24 +56,19 @@ export default function MedicationFormPage() {
     }
     setFormIsLoading(true);
 
-    let userTemplates: TreatmentTemplate[] = [];
-    try {
-        const storedUserTemplates = localStorage.getItem(USER_TEMPLATES_STORAGE_KEY);
-        if (storedUserTemplates) {
-            userTemplates = JSON.parse(storedUserTemplates);
-        }
-    } catch (e) {
+    templatesRepo.list()
+      .then(userTemplates => setAllTreatmentTemplates([...TREATMENT_TEMPLATES, ...userTemplates]))
+      .catch(e => {
         console.error("Error loading user-defined treatment templates:", e);
+        setAllTreatmentTemplates([...TREATMENT_TEMPLATES]);
         toast({ title: "Warning", description: "Could not load custom treatment templates.", variant: "default" });
+      });
+
+    if (!(isEditMode && medicationIdToEdit)) {
+      setFormIsLoading(false);
+      return;
     }
-    setAllTreatmentTemplates([...TREATMENT_TEMPLATES, ...userTemplates]);
-
-
-    if (isEditMode && medicationIdToEdit) {
-      const storedData = localStorage.getItem(MEDICATIONS_STORAGE_KEY);
-      if (storedData) {
-        const medications: Medication[] = JSON.parse(storedData);
-        const medToEdit = medications.find(med => med.id === medicationIdToEdit);
+    medicationsRepo.get(medicationIdToEdit).then(medToEdit => {
         if (medToEdit) {
           setCurrentMedicationId(medToEdit.id);
           setName(medToEdit.name);
@@ -90,12 +81,13 @@ export default function MedicationFormPage() {
           toast({ title: "Error", description: "Medication not found.", variant: "destructive" });
           router.push('/medications');
         }
-      }
-    }
-    setFormIsLoading(false);
+    }).catch(error => {
+      console.error("Error loading medication:", error);
+      toast({ title: "Error", description: "Could not load medication.", variant: "destructive" });
+    }).finally(() => setFormIsLoading(false));
   }, [isEditMode, medicationIdToEdit, router, toast, currentUser, authIsLoading]);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!name.trim()) { toast({ title: "Validation Error", description: "Medication Name is required.", variant: "destructive" }); return; }
     if (!treatment) { toast({ title: "Validation Error", description: "Treatment / Purpose is required (select a template).", variant: "destructive" }); return; }
     
@@ -125,34 +117,19 @@ export default function MedicationFormPage() {
     };
 
     try {
-      const storedData = localStorage.getItem(MEDICATIONS_STORAGE_KEY);
-      let medications: Medication[] = storedData ? JSON.parse(storedData) : [];
-      
       if (isEditMode && currentMedicationId) {
-        medications = medications.map(med => med.id === currentMedicationId ? { ...medicationData, id: currentMedicationId } : med);
+        await medicationsRepo.update(currentMedicationId, medicationData);
         toast({ title: "Success", description: "Medication updated." });
       } else {
-        const nextIdStr = localStorage.getItem(MEDICATION_ID_COUNTER_KEY) || 'med_1';
-        let nextIdNum = 1;
-        if (nextIdStr.startsWith('med_')) {
-            try { nextIdNum = parseInt(nextIdStr.split('_')[1], 10) + 1; } catch { /* keep 1 */ }
-        }
-        const newMedicationId = `med_${nextIdNum}`;
-        
-        const newMedication: Medication = { ...medicationData, id: newMedicationId };
-        medications.push(newMedication);
-        localStorage.setItem(MEDICATION_ID_COUNTER_KEY, `med_${nextIdNum}`);
+        await medicationsRepo.create(medicationData);
         toast({ title: "Success", description: "New medication added." });
       }
-      
-      localStorage.setItem(MEDICATIONS_STORAGE_KEY, JSON.stringify(medications));
       router.push('/medications');
-
     } catch (e) {
-      console.error("Failed to save medication to localStorage", e);
+      console.error("Failed to save medication", e);
       toast({
-        title: "Storage Error",
-        description: "Could not save medication data. LocalStorage might be full or disabled.",
+        title: "Save Error",
+        description: "Could not save medication. Please check your connection and try again.",
         variant: "destructive",
       });
     }

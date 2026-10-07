@@ -9,7 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Patient, PatientCondition, AuditLogEntry } from '@/types/patient';
 import { StaffMember } from '@/types/staff';
 import { Bill } from '@/types/billing';
-import { ArrowRight, UserPlus, AlertTriangle, ShieldCheck, Activity, HelpCircle, BriefcaseMedical, ClipboardList, Users as UsersIcon, CheckCircle2, Trash2 } from 'lucide-react';
+import { ArrowRight, UserPlus, AlertTriangle, ShieldCheck, Activity, HelpCircle, BriefcaseMedical, ClipboardList, Users as UsersIcon, CheckCircle2, Trash2, PlusCircle, ArrowLeft } from 'lucide-react';
+import { bills as billsRepo, patients as patientsRepo, staff as staffRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,11 +27,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { addAuditLogEntry } from '@/lib/audit';
 
 const CONDITION_ORDER: PatientCondition[] = ["Critical", "Medium", "Low", "Unassigned", "Discharged"];
 const ALL_CONDITIONS_FILTER: (PatientCondition | "All")[] = ["All", ...CONDITION_ORDER];
-
 
 const CONDITION_CONFIG: Record<PatientCondition, { icon: React.ElementType, colorClasses: string, title: string }> = {
   "Critical": { icon: AlertTriangle, colorClasses: "bg-red-50 border-red-400 hover:bg-red-100", title: "Critical Patients" },
@@ -39,8 +38,6 @@ const CONDITION_CONFIG: Record<PatientCondition, { icon: React.ElementType, colo
   "Discharged": { icon: CheckCircle2, colorClasses: "bg-sky-50 border-sky-400 hover:bg-sky-100", title: "Discharged Patients" },
   "Unassigned": { icon: HelpCircle, colorClasses: "bg-gray-50 border-gray-300 hover:bg-gray-100", title: "Condition Unassigned" },
 };
-
-// Helper function to add audit log entries
 
 export default function DashboardPage() {
   const { currentUser, isLoading: authIsLoading } = useAuth();
@@ -59,7 +56,6 @@ export default function DashboardPage() {
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [filterCondition, setFilterCondition] = useState<PatientCondition | "All">("All");
 
-
   useEffect(() => {
     if (!authIsLoading && !currentUser) {
       router.replace('/login');
@@ -69,33 +65,16 @@ export default function DashboardPage() {
   useEffect(() => {
     if (currentUser) {
       setIsLoading(true);
-      try {
-        const storedPatients = localStorage.getItem('patients');
-        if (storedPatients) {
-          let rawPatients = JSON.parse(storedPatients);
-          const sanitizedPatients: Patient[] = rawPatients.map((p: any) => ({
-            ...p,
-            id: parseInt(p.id, 10), // Ensure ID is a number
-            careNotes: Array.isArray(p.careNotes) ? p.careNotes.map((cn: any) => ({...cn, templateFieldsData: cn.templateFieldsData || {}, medicationsMentioned: cn.medicationsMentioned || [] })) : [],
-            assignedStaffIds: Array.isArray(p.assignedStaffIds) ? p.assignedStaffIds.map(Number) : [],
-            tests: Array.isArray(p.tests) ? p.tests : [],
-            condition: p.condition || "Unassigned",
-            reasonForVisit: p.reasonForVisit || "Not specified",
-            auditLog: Array.isArray(p.auditLog) ? p.auditLog : [],
-          }));
-          setAllPatients(sanitizedPatients);
-        }
-
-        const storedStaff = localStorage.getItem('staffMembers');
-        if (storedStaff) {
-          setAvailableStaff(JSON.parse(storedStaff));
-        }
-
-      } catch (error) {
-        console.error("Error loading data from localStorage:", error);
-        toast({ title: "Error", description: "Could not load patient or staff data.", variant: "destructive" });
-      }
-      setIsLoading(false);
+      Promise.all([patientsRepo.list(), staffRepo.list()])
+        .then(([patientList, staffList]) => {
+          setAllPatients(patientList.map(p => ({ ...p, reasonForVisit: p.reasonForVisit || "Not specified" })));
+          setAvailableStaff(staffList);
+        })
+        .catch(error => {
+          console.error("Error loading patients or staff:", error);
+          toast({ title: "Error", description: "Could not load patient or staff data.", variant: "destructive" });
+        })
+        .finally(() => setIsLoading(false));
     } else {
       setAllPatients([]);
       setAvailableStaff([]);
@@ -135,80 +114,53 @@ export default function DashboardPage() {
     return grouped;
   }, [allPatients, searchTerm, filterCondition]);
 
-
-  const proceedWithConditionChange = useCallback((patientId: number, newCondition: PatientCondition) => {
+  const proceedWithConditionChange = useCallback(async (patientId: number, newCondition: PatientCondition) => {
     if (!currentUser) return;
+    const patientToUpdate = allPatients.find(p => p.id === patientId);
+    if (!patientToUpdate) return;
 
-    let patientToUpdate: Patient | undefined;
-    let updatedPatientsForStorage: Patient[] = [];
-
-    setAllPatients(prevPatients => {
-      const foundPatient = prevPatients.find(p => p.id === patientId);
-      if (!foundPatient) return prevPatients;
-      patientToUpdate = foundPatient;
-
-      const oldCondition = patientToUpdate.condition || "Unassigned";
-      let updatedPatientWithLog = addAuditLogEntry(
-        patientToUpdate,
-        "Condition Changed",
-        `Condition changed from '${oldCondition}' to '${newCondition}'.`,
-        currentUser
-      );
-      updatedPatientWithLog = { ...updatedPatientWithLog, condition: newCondition };
-
-      updatedPatientsForStorage = prevPatients.map(p =>
-        p.id === patientId ? updatedPatientWithLog : p
-      );
-      return updatedPatientsForStorage;
-    });
-    
-    if (patientToUpdate && updatedPatientsForStorage.length > 0) {
-      try {
-        localStorage.setItem('patients', JSON.stringify(updatedPatientsForStorage));
-        toast({
-          title: "Condition Updated",
-          description: `Patient ${patientToUpdate.firstName} ${patientToUpdate.lastName}'s condition set to ${newCondition}.`,
-        });
-      } catch (e: any) {
-        if (e.name === 'QuotaExceededError') {
-          toast({
-            title: "Storage Full",
-            description: "Cannot save condition update. Local storage is full, likely due to image attachments. Please remove some images or contact support.",
-            variant: "destructive",
-          });
-          // Revert state update if localStorage fails
-          setAllPatients(prev => prev.map(p => p.id === patientId ? patientToUpdate! : p));
-        } else {
-          console.error("Failed to save updated patients to localStorage", e);
-          toast({
-            title: "Storage Error",
-            description: "Could not save condition update.",
-            variant: "destructive",
-          });
-          setAllPatients(prev => prev.map(p => p.id === patientId ? patientToUpdate! : p));
-        }
-      }
+    const oldCondition = patientToUpdate.condition || "Unassigned";
+    try {
+      await patientsRepo.update(patientId, { condition: newCondition }, {
+        actionType: "Condition Changed",
+        details: `Condition changed from '${oldCondition}' to '${newCondition}'.`,
+      });
+      setAllPatients(prev => prev.map(p => p.id === patientId ? { ...p, condition: newCondition } : p));
+      toast({
+        title: "Condition Updated",
+        description: `Patient ${patientToUpdate.firstName} ${patientToUpdate.lastName}'s condition set to ${newCondition}.`,
+      });
+    } catch (e) {
+      console.error("Failed to save condition update", e);
+      toast({
+        title: "Save Error",
+        description: "Could not save condition update.",
+        variant: "destructive",
+      });
     }
-  }, [currentUser, toast]);
+  }, [allPatients, currentUser, toast]);
 
-  const handleConditionChange = useCallback((patientId: number, newCondition: PatientCondition) => {
+  const handleConditionChange = useCallback(async (patientId: number, newCondition: PatientCondition) => {
     const patientToDischarge = allPatients.find(p => p.id === patientId);
     if (!patientToDischarge) return;
 
     if (newCondition === "Discharged") {
-      const storedBills = localStorage.getItem('bills');
       let patientHasOutstandingBills = false;
       let billDetails = "";
 
-      if (storedBills) {
-        const allBillsData: Bill[] = JSON.parse(storedBills);
-        const patientBills = allBillsData.filter(bill => bill.patientId === patientId);
-        const unpaidBills = patientBills.filter(bill => bill.paymentStatus === "Unpaid" || bill.paymentStatus === "Partially Paid");
-        if (unpaidBills.length > 0) {
-          patientHasOutstandingBills = true;
-          const unpaidTotal = unpaidBills.reduce((sum, bill) => sum + bill.totalAmount, 0);
-          billDetails = `This patient has ${unpaidBills.length} outstanding bill(s) totaling approximately ₹${unpaidTotal.toFixed(2)}.`;
-        }
+      let patientBills: Bill[] = [];
+      try {
+        patientBills = await billsRepo.list({ patientId });
+      } catch (error) {
+        console.error("Error checking outstanding bills:", error);
+        toast({ title: "Error", description: "Could not check outstanding bills.", variant: "destructive" });
+        return;
+      }
+      const unpaidBills = patientBills.filter(bill => bill.paymentStatus === "Unpaid" || bill.paymentStatus === "Partially Paid");
+      if (unpaidBills.length > 0) {
+        patientHasOutstandingBills = true;
+        const unpaidTotal = unpaidBills.reduce((sum, bill) => sum + bill.totalAmount, 0);
+        billDetails = `This patient has ${unpaidBills.length} outstanding bill(s) totaling approximately ₹${unpaidTotal.toFixed(2)}.`;
       }
 
       if (patientHasOutstandingBills) {
@@ -222,7 +174,7 @@ export default function DashboardPage() {
     } else {
       proceedWithConditionChange(patientId, newCondition);
     }
-  }, [allPatients, proceedWithConditionChange]);
+  }, [allPatients, proceedWithConditionChange, toast]);
 
   const confirmDischarge = useCallback(() => {
     if (patientForDischargeConfirmation && newConditionForConfirmation) {
@@ -233,7 +185,6 @@ export default function DashboardPage() {
     setNewConditionForConfirmation(null);
     setOutstandingBillsMessage(null);
   }, [patientForDischargeConfirmation, newConditionForConfirmation, proceedWithConditionChange]);
-
 
   const getLatestCareNoteSummary = (patient: Patient): string => {
     if (!patient.careNotes || patient.careNotes.length === 0) {
@@ -272,7 +223,6 @@ export default function DashboardPage() {
     return names.join(', ');
   };
 
-
   if (authIsLoading || isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
@@ -287,12 +237,11 @@ export default function DashboardPage() {
 
   const totalFilteredPatients = Object.values(filteredAndGroupedPatients).reduce((sum, group) => sum + group.length, 0);
 
-
   return (
     <div className="container mx-auto p-4 sm:p-6 lg:p-8">
       <header className="mb-8 flex flex-col sm:flex-row justify-between items-center gap-4">
         <h1 className="text-3xl font-bold text-foreground">Patient Dashboard</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-center sm:justify-end gap-2">
           <Link href="/" passHref>
             <Button>
               <UserPlus className="mr-2 h-4 w-4" />
@@ -335,7 +284,6 @@ export default function DashboardPage() {
           </div>
         </CardContent>
       </Card>
-
 
       {allPatients.length === 0 && !isLoading ? (
         <Card className="text-center shadow-lg">

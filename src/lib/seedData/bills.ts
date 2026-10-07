@@ -50,7 +50,6 @@ export const SEED_BILLS: Bill[] = [
         changeDetails: "Treatment bill created for patient Rajesh Kumar"
       }
     ],
-    attachmentDataUrl: getRandomAttachments('invoice', 1)[0],
     attachments: getRandomAttachments('invoice', 2)
   },
   {
@@ -93,7 +92,6 @@ export const SEED_BILLS: Bill[] = [
         changeDetails: "Pharmacy bill created for patient Rajesh Kumar"
       }
     ],
-    attachmentDataUrl: getRandomAttachments('invoice', 1)[0],
     attachments: getRandomAttachments('invoice', 3)
   },
   {
@@ -143,7 +141,6 @@ export const SEED_BILLS: Bill[] = [
         changeDetails: "Emergency treatment bill created for patient Sunita Reddy"
       }
     ],
-    attachmentDataUrl: getRandomAttachments('invoice', 1)[0],
     attachments: getRandomAttachments('invoice', 2)
   },
   {
@@ -194,7 +191,6 @@ export const SEED_BILLS: Bill[] = [
         changeDetails: "Pharmacy bill created for patient Mohammed Ali"
       }
     ],
-    attachmentDataUrl: getRandomAttachments('invoice', 1)[0],
     attachments: getRandomAttachments('invoice', 1)
   }
 ];

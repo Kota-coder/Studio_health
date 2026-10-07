@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Heart, ArrowLeft, Mail, CheckCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
+import { getSupabase } from '@/lib/supabase/client';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -44,55 +45,18 @@ export default function ForgotPasswordPage() {
     setIsLoading(true);
 
     try {
-      // Check if email exists in staff members
-      const storedStaff = localStorage.getItem('staffMembers');
-      if (storedStaff) {
-        const staffMembers = JSON.parse(storedStaff);
-        const staffExists = staffMembers.find(
-          (staff: any) => staff.email?.toLowerCase() === trimmedEmail.toLowerCase()
-        );
-
-        if (staffExists) {
-          // Generate verification code
-          const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-          
-          // Store verification code with expiry (10 minutes)
-          const verificationData = {
-            email: trimmedEmail,
-            code: verificationCode,
-            expiry: Date.now() + 10 * 60 * 1000, // 10 minutes
-            attempts: 0
-          };
-          localStorage.setItem('passwordResetVerification', JSON.stringify(verificationData));
-
-          // In a real application, this would send an email via backend API
-          // For now, we'll show the code in console and toast (for demo purposes)
-          console.log(`Password Reset Code for ${trimmedEmail}: ${verificationCode}`);
-          
-          toast({ 
-            title: "Verification Code Sent", 
-            description: `A 6-digit verification code has been sent to ${trimmedEmail}. Check the console for demo purposes.`,
-          });
-
-          setEmailSent(true);
-          
-          // Redirect to verification page after 2 seconds
-          setTimeout(() => {
-            router.push(`/reset-password?email=${encodeURIComponent(trimmedEmail)}`);
-          }, 2000);
-        } else {
-          toast({ 
-            title: "Email Not Found", 
-            description: "No account found with this email address.", 
-            variant: "destructive" 
-          });
-        }
-      }
+      // Supabase emails a reset link (if the address belongs to a staff login).
+      // The link lands on /auth/confirm, which signs the user in and opens /set-password.
+      const { error } = await getSupabase().auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo: `${window.location.origin}/auth/confirm?next=/set-password`,
+      });
+      if (error) throw error;
+      setEmailSent(true);
     } catch (error) {
       console.error("Error during password reset request:", error);
       toast({ 
         title: "Error", 
-        description: "An error occurred. Please try again.", 
+        description: error instanceof Error ? error.message : "An error occurred. Please try again.", 
         variant: "destructive" 
       });
     } finally {
@@ -103,7 +67,7 @@ export default function ForgotPasswordPage() {
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 p-4">
       <Card className="w-full max-w-md shadow-2xl border-0 overflow-hidden">
-        <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-8 pb-12 relative">
+        <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 pb-10 sm:p-8 sm:pb-12 relative">
           <div className="flex items-center justify-center gap-3 mb-2">
             <div className="bg-white/20 backdrop-blur-sm rounded-full p-3">
               <Heart className="h-8 w-8 text-white fill-white" />
@@ -115,7 +79,7 @@ export default function ForgotPasswordPage() {
           </div>
         </CardHeader>
 
-        <CardContent className="pt-8 pb-8 px-8 -mt-6 relative">
+        <CardContent className="pt-8 pb-8 px-4 sm:px-8 -mt-6 relative">
           <div className="bg-white rounded-lg shadow-sm border p-6">
             {!emailSent ? (
               <>
@@ -127,7 +91,7 @@ export default function ForgotPasswordPage() {
                 
                 <h2 className="text-2xl font-semibold text-gray-800 mb-2 text-center">Forgot Password?</h2>
                 <p className="text-gray-500 text-sm mb-6 text-center">
-                  Enter your email address and we'll send you a verification code to reset your password.
+                  Enter your staff email address and we'll email you a link to set a new password.
                 </p>
                 
                 <form onSubmit={handleSubmit} className="space-y-5">
@@ -151,7 +115,7 @@ export default function ForgotPasswordPage() {
                     className="w-full h-12 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold text-base shadow-lg shadow-blue-200 transition-all duration-200" 
                     disabled={isLoading}
                   >
-                    {isLoading ? 'Sending...' : 'Send Verification Code'}
+                    {isLoading ? 'Sending...' : 'Send Reset Link'}
                   </Button>
                 </form>
 
@@ -175,11 +139,9 @@ export default function ForgotPasswordPage() {
                 </div>
                 <h2 className="text-2xl font-semibold text-gray-800 mb-2">Check Your Email</h2>
                 <p className="text-gray-500 text-sm mb-4">
-                  We've sent a 6-digit verification code to <strong>{email}</strong>
+                  If <strong>{email}</strong> belongs to a staff account, a link to set a new password is on its way.
                 </p>
-                <p className="text-gray-400 text-xs">
-                  Redirecting to verification page...
-                </p>
+                <Button variant="outline" onClick={() => router.push('/login')}>Back to Login</Button>
               </div>
             )}
           </div>

@@ -9,6 +9,7 @@
 
 import {ai} from '@/ai/ai-instance';
 import {z} from 'genkit';
+import {getCurrentStaff} from '@/lib/supabase/server';
 
 const ExtractPatientDetailsInputSchema = z.object({
   imageBase64: z
@@ -31,6 +32,10 @@ const ExtractPatientDetailsOutputSchema = z.object({
 export type ExtractPatientDetailsOutput = z.infer<typeof ExtractPatientDetailsOutputSchema>;
 
 export async function extractPatientDetails(input: ExtractPatientDetailsInput): Promise<ExtractPatientDetailsOutput> {
+  // Server actions are public endpoints; only signed-in staff may use the Gemini key.
+  if (!(await getCurrentStaff())) {
+    throw new Error('Not authorised');
+  }
   return extractPatientDetailsFlow(input);
 }
 

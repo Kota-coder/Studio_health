@@ -12,9 +12,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Bill, PaymentStatus } from '@/types/billing';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Eye, CreditCard, ArrowLeft, Pill, Stethoscope, Download } from 'lucide-react'; // Added Download
+import { PlusCircle, Eye, CreditCard, ArrowLeft, Pill, Stethoscope, Download, Trash2 } from 'lucide-react';
 import { format, parseISO, isValid, parse } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
+import { bills as billsRepo } from '@/lib/data';
 import { cn } from "@/lib/utils";
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
@@ -32,7 +33,6 @@ export default function BillingOverviewPage() {
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<PaymentStatus | "All">("All");
 
-
   useEffect(() => {
     if (!authIsLoading && currentUser && !ALLOWED_ROLES.includes(currentUser.role)) {
       toast({ title: "Access Denied", description: "You do not have permission to view this page.", variant: "destructive" });
@@ -45,25 +45,14 @@ export default function BillingOverviewPage() {
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(true);
-      if (typeof window !== 'undefined') {
-        try {
-          const storedBills = localStorage.getItem('bills');
-          if (storedBills) {
-            const parsedBills = JSON.parse(storedBills).map((b:any) => ({
-                ...b,
-                auditLog: Array.isArray(b.auditLog) ? b.auditLog : []
-            }));
-            setBills(parsedBills);
-          } else {
-            setBills([]);
-          }
-        } catch (error) {
-          console.error("Error loading bills from localStorage:", error);
+      billsRepo.list()
+        .then(setBills)
+        .catch(error => {
+          console.error("Error loading bills:", error);
           toast({ title: "Error", description: "Could not load billing data.", variant: "destructive" });
           setBills([]);
-        }
-      }
-      setIsLoading(false);
+        })
+        .finally(() => setIsLoading(false));
     } else {
         setBills([]);
         setIsLoading(false);
@@ -181,7 +170,6 @@ export default function BillingOverviewPage() {
     }
   }, [filteredBills, toast]);
 
-
   if (authIsLoading || isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
@@ -201,7 +189,7 @@ export default function BillingOverviewPage() {
           <CreditCard className="h-8 w-8 text-primary" />
           <h1 className="text-3xl font-bold text-foreground">Billing Overview</h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-center sm:justify-end gap-2">
             <Button variant="outline" onClick={() => router.push('/dashboard')}>
                 <ArrowLeft className="mr-2 h-4 w-4" /> Dashboard
             </Button>
@@ -334,6 +322,25 @@ export default function BillingOverviewPage() {
                           <Eye className="h-4 w-4" />
                         </Button>
                       </Link>
+                      {bill.paymentStatus === 'Unpaid' && (
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-destructive hover:bg-destructive/10"
+                          onClick={async () => {
+                            try {
+                              await billsRepo.remove(bill.id);
+                              setBills(prev => prev.filter(b => b.id !== bill.id));
+                              toast({ title: "Success", description: `Bill ${bill.id} has been deleted.` });
+                            } catch (error: any) {
+                              toast({ title: "Error", description: error?.message || "Could not delete bill.", variant: "destructive" });
+                            }
+                          }}
+                          aria-label={`Delete ${bill.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

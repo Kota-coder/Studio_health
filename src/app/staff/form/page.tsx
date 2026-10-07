@@ -14,10 +14,10 @@ import { StaffMember, StaffRole } from '@/types/staff';
 import { ArrowLeft, Save, UserCog } from 'lucide-react'; 
 import { format, parse, isValid, parseISO } from 'date-fns';
 import { useAuth } from '@/context/AuthContext'; 
-import { STORAGE_KEYS, takeNextNumericId } from '@/lib/storage';
+import { staff as staffRepo } from '@/lib/data';
 import { PAGE_ROLES } from '@/config/permissions';
 
-const SYSTEM_STAFF_ROLES: StaffRole[] = ["Doctor", "Nurse", "Admin", "Receptionist"]; // Renamed for clarity
+const SYSTEM_STAFF_ROLES: StaffRole[] = ["Doctor", "Nurse", "Admin", "Receptionist", "Accounts", "Super Admin"];
 const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.staff;
 
 const isValidEmail = (email: string) => {
@@ -70,11 +70,11 @@ export default function StaffFormPage() {
         return;
     }
     setFormIsLoading(true);
-    if (isEditMode && staffIdToEdit) {
-      const staffMembersJSON = localStorage.getItem('staffMembers');
-      if (staffMembersJSON) {
-        const staffMembers: StaffMember[] = JSON.parse(staffMembersJSON);
-        const staffToEdit = staffMembers.find(s => s.id === parseInt(staffIdToEdit, 10));
+    if (!(isEditMode && staffIdToEdit)) {
+      setFormIsLoading(false);
+      return;
+    }
+    staffRepo.get(parseInt(staffIdToEdit, 10)).then(staffToEdit => {
         if (staffToEdit) {
           setCurrentStaffId(staffToEdit.id);
           setName(staffToEdit.name);
@@ -102,9 +102,10 @@ export default function StaffFormPage() {
           toast({ title: "Error", description: "Staff member not found.", variant: "destructive" });
           router.push('/staff');
         }
-      }
-    }
-    setFormIsLoading(false);
+    }).catch(error => {
+      console.error("Error loading staff member:", error);
+      toast({ title: "Error", description: "Could not load staff member.", variant: "destructive" });
+    }).finally(() => setFormIsLoading(false));
   }, [isEditMode, staffIdToEdit, router, toast, currentUser, authIsLoading]);
 
   const handleHireDateChange = (selectedDate: Date | undefined) => {
@@ -136,7 +137,9 @@ export default function StaffFormPage() {
   };
 
 
-  const handleSubmit = () => {
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSubmit = async () => {
     let hasError = false;
     if (!name.trim()) { toast({ title: "Validation Error", description: "Name is required.", variant: "destructive" }); hasError = true; }
     if (!isValidPhoneNumber(phoneNumber)) { setPhoneError("Phone number must be 10 digits."); hasError = true; } else { setPhoneError(null); }
@@ -189,38 +192,33 @@ export default function StaffFormPage() {
       salary: numericSalary,
     };
 
+    setIsSaving(true);
     try {
-      const staffMembersJSON = localStorage.getItem('staffMembers');
-      let staffMembers: StaffMember[] = staffMembersJSON ? JSON.parse(staffMembersJSON) : [];
-      
       if (isEditMode && currentStaffId !== null) {
         if (currentStaffId === currentUser?.id && staffMemberData.email !== currentUser.email) {
             toast({ title: "Action Denied", description: "You cannot change your own login email.", variant: "destructive" });
             return;
         }
-        staffMembers = staffMembers.map(s => s.id === currentStaffId ? { ...staffMemberData, id: currentStaffId } : s);
+        await staffRepo.update(currentStaffId, staffMemberData);
         toast({ title: "Success", description: "Staff member details updated." });
       } else {
-        // Check if email already exists for a new staff member
-        if (staffMembers.some(s => s.email.toLowerCase() === email.toLowerCase())) {
-            toast({ title: "Error", description: "A staff member with this email already exists.", variant: "destructive" });
-            return;
+        const { failures } = await staffRepo.createMany([staffMemberData]);
+        if (failures.length > 0) {
+          toast({ title: "Error", description: failures.join(' '), variant: "destructive" });
+          return;
         }
-        const newStaffMember: StaffMember = { ...staffMemberData, id: takeNextNumericId(STORAGE_KEYS.nextStaffId, staffMembers) };
-        staffMembers.push(newStaffMember);
-        toast({ title: "Success", description: "New staff member added." });
+        toast({ title: "Success", description: `New staff member added. An invite to set a password was emailed to ${staffMemberData.email}.` });
       }
-      
-      localStorage.setItem('staffMembers', JSON.stringify(staffMembers));
       router.push('/staff');
-
-    } catch (e) {
-      console.error("Failed to save staff member to localStorage", e);
+    } catch (e: any) {
+      console.error("Failed to save staff member", e);
       toast({
-        title: "Storage Error",
-        description: "Could not save staff data.",
+        title: "Save Error",
+        description: e?.message || "Could not save staff data.",
         variant: "destructive",
       });
+    } finally {
+      setIsSaving(false);
     }
   };
   
@@ -290,7 +288,7 @@ export default function StaffFormPage() {
                   <SelectValue placeholder="Select Role" />
                 </SelectTrigger>
                 <SelectContent>
-                  {SYSTEM_STAFF_ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                  {SYSTEM_STAFF_ROLES.filter(r => r !== "Super Admin" || currentUser?.role === "Super Admin").map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -332,7 +330,7 @@ export default function StaffFormPage() {
           <Button variant="outline" onClick={() => router.push('/staff')}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Cancel
           </Button>
-          <Button onClick={handleSubmit}>
+          <Button onClick={handleSubmit} disabled={isSaving}>
             <Save className="mr-2 h-4 w-4" /> {isEditMode ? "Save Changes" : "Add Staff Member"}
           </Button>
         </CardFooter>

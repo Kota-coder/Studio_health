@@ -5,4 +5,5 @@ export interface ReferringDoctor {
   phoneNumber?: string;
   email?: string;
   specialization?: string;
+  createdAt?: string; // Set by the database
 }

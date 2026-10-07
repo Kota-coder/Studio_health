@@ -26,8 +26,7 @@ export interface CareNote {
     dosage?: string;
     notes?: string;
   }>;
-  attachmentDataUrl?: string | null; // Deprecated: use attachments instead
-  attachments?: string[]; // Array of image data URLs for multiple attachments
+  attachments?: string[]; // Storage paths in the patient-files bucket (data: URLs only before upload)
 }
 
 export interface TestFieldData {
@@ -45,8 +44,7 @@ export interface TestEntry {
   performedByStaffId?: number;
   performedByStaffName?: string;
   createdAt: string;
-  attachmentDataUrl?: string | null; // Deprecated: use attachments instead
-  attachments?: string[]; // Array of image data URLs for multiple attachments
+  attachments?: string[]; // Storage paths in the patient-files bucket (data: URLs only before upload)
 }
 
 export interface Patient {
@@ -61,11 +59,10 @@ export interface Patient {
   idNumber: string;
   emergencyContactName: string;
   emergencyContactNumber: string;
-  imageSrc?: string | null;
-  idCardImages?: string[]; // Array of ID card image data URLs for multiple attachments
   idCardType?: string;
-  patientPhotoDataUrl?: string | null;
-  patientPhotos?: string[]; // Array of patient photo data URLs for multiple attachments
+  // Storage paths in the patient-files bucket. Aadhaar card images are never stored.
+  idCardImages?: string[];
+  patientPhotos?: string[];
   condition?: PatientCondition;
   careNotes?: CareNote[];
   assignedStaffIds?: number[];
@@ -74,10 +71,15 @@ export interface Patient {
   referredDoctorId?: number | null;
   reasonForVisit?: string;
   initialObservationsText?: string;
-  initialObservationAttachmentDataUrl?: string | null;
   initialObservationAttachments?: string[];
   admissionCondition?: PatientAdmissionCondition;
 
   tests?: TestEntry[];
   auditLog?: AuditLogEntry[];
+
+  // DPDP Act consent record, captured at registration.
+  consentGivenAt?: string;
+  consentVersion?: string;
+  consentRecordedByStaffId?: number;
+  createdAt?: string;
 }

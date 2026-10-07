@@ -15,9 +15,7 @@ export const SEED_PATIENTS: Patient[] = [
     emergencyContactName: "Priya Kumar",
     emergencyContactNumber: "+91-9876501235",
     idCardType: "Aadhaar Card",
-    imageSrc: getRandomAttachments('idCard', 1)[0],
     idCardImages: getRandomAttachments('idCard', 2),
-    patientPhotoDataUrl: getRandomAttachments('patientPhoto', 1)[0],
     patientPhotos: getRandomAttachments('patientPhoto', 2),
     condition: "Medium",
     admissionDate: "2025-10-20T10:00:00.000Z",
@@ -25,7 +23,6 @@ export const SEED_PATIENTS: Patient[] = [
     reasonForVisit: "Routine Checkup",
     admissionCondition: "Stable",
     initialObservationsText: "Patient presents with mild chest discomfort during exertion. No acute distress. Vitals within normal limits.",
-    initialObservationAttachmentDataUrl: getRandomAttachments('medical', 1)[0],
     initialObservationAttachments: getRandomAttachments('medical', 2),
     assignedStaffIds: [1, 3],
     careNotes: [
@@ -48,7 +45,6 @@ export const SEED_PATIENTS: Patient[] = [
           { medicationId: "3", medicationName: "Metoprolol", dosage: "50mg twice daily", notes: "Continue current regimen" },
           { medicationId: "4", medicationName: "Lisinopril", dosage: "10mg once daily", notes: "Monitor blood pressure" }
         ],
-        attachmentDataUrl: getRandomAttachments('medical', 1)[0],
         attachments: getRandomAttachments('medical', 2)
       },
       {
@@ -65,7 +61,6 @@ export const SEED_PATIENTS: Patient[] = [
           "Side Effects Noted": "None reported",
           "Next Steps": "Continue medications, schedule stress test"
         },
-        attachmentDataUrl: getRandomAttachments('medical', 1)[0],
         attachments: getRandomAttachments('medical', 3)
       }
     ],
@@ -89,7 +84,6 @@ export const SEED_PATIENTS: Patient[] = [
         performedByStaffId: 1,
         performedByStaffName: "Dr. Sarah Johnson",
         createdAt: "2025-10-21T09:00:00.000Z",
-        attachmentDataUrl: getRandomAttachments('lab', 1)[0],
         attachments: getRandomAttachments('lab', 2)
       },
       {
@@ -107,7 +101,6 @@ export const SEED_PATIENTS: Patient[] = [
         performedByStaffId: 2,
         performedByStaffName: "Dr. Raj Patel",
         createdAt: "2025-10-21T10:30:00.000Z",
-        attachmentDataUrl: getRandomAttachments('lab', 1)[0],
         attachments: getRandomAttachments('lab', 3)
       }
     ],
@@ -143,9 +136,7 @@ export const SEED_PATIENTS: Patient[] = [
     emergencyContactName: "Vikram Reddy",
     emergencyContactNumber: "+91-9876502346",
     idCardType: "PAN Card",
-    imageSrc: getRandomAttachments('idCard', 1)[0],
     idCardImages: getRandomAttachments('idCard', 2),
-    patientPhotoDataUrl: getRandomAttachments('patientPhoto', 1)[0],
     patientPhotos: getRandomAttachments('patientPhoto', 1),
     condition: "Critical",
     admissionDate: "2025-10-22T08:00:00.000Z",
@@ -153,7 +144,6 @@ export const SEED_PATIENTS: Patient[] = [
     reasonForVisit: "Emergency",
     admissionCondition: "Serious",
     initialObservationsText: "Patient admitted via emergency with acute chest pain. Immediate cardiac workup initiated.",
-    initialObservationAttachmentDataUrl: getRandomAttachments('medical', 1)[0],
     initialObservationAttachments: getRandomAttachments('medical', 3),
     assignedStaffIds: [1, 2, 4],
     careNotes: [
@@ -176,7 +166,6 @@ export const SEED_PATIENTS: Patient[] = [
           { medicationId: "1", medicationName: "Aspirin", dosage: "325mg stat, then 81mg daily", notes: "Given immediately on admission" },
           { medicationId: "5", medicationName: "Warfarin", dosage: "5mg daily", notes: "Started for anticoagulation" }
         ],
-        attachmentDataUrl: getRandomAttachments('medical', 1)[0],
         attachments: getRandomAttachments('medical', 2)
       }
     ],
@@ -200,7 +189,6 @@ export const SEED_PATIENTS: Patient[] = [
         performedByStaffId: 1,
         performedByStaffName: "Dr. Sarah Johnson",
         createdAt: "2025-10-22T08:15:00.000Z",
-        attachmentDataUrl: getRandomAttachments('lab', 1)[0],
         attachments: getRandomAttachments('lab', 2)
       }
     ],
@@ -228,9 +216,7 @@ export const SEED_PATIENTS: Patient[] = [
     emergencyContactName: "Fatima Ali",
     emergencyContactNumber: "+91-9876503457",
     idCardType: "Driving License",
-    imageSrc: getRandomAttachments('idCard', 1)[0],
     idCardImages: getRandomAttachments('idCard', 1),
-    patientPhotoDataUrl: getRandomAttachments('patientPhoto', 1)[0],
     patientPhotos: getRandomAttachments('patientPhoto', 2),
     condition: "Medium",
     admissionDate: "2025-10-15T09:00:00.000Z",
@@ -238,7 +224,6 @@ export const SEED_PATIENTS: Patient[] = [
     reasonForVisit: "Follow-up",
     admissionCondition: "Stable",
     initialObservationsText: "Regular follow-up for chronic heart condition. Patient managing well at home.",
-    initialObservationAttachmentDataUrl: getRandomAttachments('medical', 1)[0],
     initialObservationAttachments: getRandomAttachments('medical', 1),
     assignedStaffIds: [2, 3],
     careNotes: [
@@ -261,7 +246,6 @@ export const SEED_PATIENTS: Patient[] = [
           { medicationId: "6", medicationName: "Furosemide", dosage: "40mg once daily", notes: "Increased dose" },
           { medicationId: "8", medicationName: "Digoxin", dosage: "0.25mg daily", notes: "Continue" }
         ],
-        attachmentDataUrl: getRandomAttachments('medical', 1)[0],
         attachments: getRandomAttachments('medical', 1)
       }
     ],

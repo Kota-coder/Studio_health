@@ -1,45 +1,49 @@
-/**
- * Single source of truth for the localStorage keys shared between modules.
- * Every page that reads or writes a collection must use these keys so that
- * patients, staff, bills, payments and catalogs stay connected.
- */
-export const STORAGE_KEYS = {
-  patients: 'patients',
-  staffMembers: 'staffMembers',
-  currentUser: 'currentUser',
-  bills: 'bills',
-  payments: 'paymentsData',
-  medications: 'medicationsData',
-  materials: 'materialsData',
-  vendors: 'materialVendorsData',
-  referringDoctors: 'referringDoctorsData',
-  medicalTestCatalog: 'medicalTestCatalog',
-  treatmentTemplates: 'userDefinedTreatmentTemplates',
-  nextPatientNumber: 'nextPatientNumber',
-  nextStaffId: 'nextStaffId',
-  nextBillIdNumber: 'nextBillIdNumber',
-  nextPaymentIdNumber: 'nextPaymentIdNumber',
-  nextReferringDoctorId: 'nextReferringDoctorId',
-  nextMedicationId: 'nextMedicationId',
-  nextMaterialId: 'nextMaterialId',
-  nextVendorId: 'nextVendorId',
-  nextMedicalTestCatalogId: 'nextMedicalTestCatalogId',
-  nextTreatmentTemplateId: 'nextTreatmentTemplateId',
-  passwordResetVerification: 'passwordResetVerification',
-} as const;
+// Patient images live in the private "patient-files" bucket. Tables store the
+// object path; images are shown through short-lived signed URLs.
 
-/**
- * Returns the next free numeric id for a collection and advances its counter.
- * Never returns an id that is already used, even if the counter fell behind
- * (for example after seed data was loaded).
- */
-export function takeNextNumericId(counterKey: string, existing: Array<{ id: unknown }>): number {
-  const counter = parseInt(localStorage.getItem(counterKey) || '1', 10) || 1;
-  const maxExisting = existing.reduce((max, item) => {
-    const n = typeof item.id === 'number' ? item.id : parseInt(String(item.id), 10);
-    return Number.isFinite(n) && n > max ? n : max;
-  }, 0);
-  const id = Math.max(counter, maxExisting + 1);
-  localStorage.setItem(counterKey, String(id + 1));
-  return id;
+import { getSupabase } from '@/lib/supabase/client';
+import { dataUrlToBlob } from '@/lib/images';
+
+export const PATIENT_FILES_BUCKET = 'patient-files';
+const SIGNED_URL_TTL_SECONDS = 60 * 60;
+
+// Uploads a (compressed) image data URL and returns its storage path.
+// folder is e.g. "patients/12/care-notes".
+export async function uploadImage(dataUrl: string, folder: string): Promise<string> {
+  const blob = dataUrlToBlob(dataUrl);
+  const extension = blob.type === 'image/webp' ? 'webp' : 'jpg';
+  const path = `${folder}/${crypto.randomUUID()}.${extension}`;
+  const { error } = await getSupabase().storage
+    .from(PATIENT_FILES_BUCKET)
+    .upload(path, blob, { contentType: blob.type, upsert: false });
+  if (error) throw new Error(`Image upload failed: ${error.message}`);
+  return path;
+}
+
+// Uploads when given a new data URL; passes stored paths through unchanged.
+export async function uploadIfNew(value: string | null | undefined, folder: string): Promise<string | null> {
+  if (!value) return null;
+  return value.startsWith('data:') ? uploadImage(value, folder) : value;
+}
+
+export async function getSignedImageUrl(path: string): Promise<string | null> {
+  const { data, error } = await getSupabase().storage
+    .from(PATIENT_FILES_BUCKET)
+    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+  if (error) {
+    console.error('Could not sign image URL', error);
+    return null;
+  }
+  return data.signedUrl;
+}
+
+export async function deleteImage(path: string): Promise<void> {
+  const { error } = await getSupabase().storage.from(PATIENT_FILES_BUCKET).remove([path]);
+  if (error) console.error('Could not delete image', error);
+}
+
+// Uploads the new (data URL) images in a list and returns the list as storage paths.
+export async function uploadNewImages(values: string[] | null | undefined, folder: string): Promise<string[]> {
+  if (!values?.length) return [];
+  return Promise.all(values.map(value => uploadIfNew(value, folder) as Promise<string>));
 }

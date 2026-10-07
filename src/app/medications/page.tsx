@@ -10,12 +10,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Medication } from '@/types/medication';
 import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Edit3, Pill, ArrowLeft, Upload } from 'lucide-react';
+import { medications as medicationsRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
 
-const MEDICATIONS_STORAGE_KEY = 'medicationsData';
-const MEDICATION_ID_COUNTER_KEY = 'nextMedicationId';
 const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.medications;
 
 export default function MedicationsPage() {
@@ -39,19 +38,13 @@ export default function MedicationsPage() {
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(true);
-      try {
-        const storedMedications = localStorage.getItem(MEDICATIONS_STORAGE_KEY);
-        if (storedMedications) {
-          setMedications(JSON.parse(storedMedications));
-        }
-        if (!localStorage.getItem(MEDICATION_ID_COUNTER_KEY)) {
-            localStorage.setItem(MEDICATION_ID_COUNTER_KEY, 'med_1');
-        }
-      } catch (error) {
-        console.error("Error loading medications from localStorage:", error);
-        toast({ title: "Error", description: "Could not load medication data.", variant: "destructive" });
-      }
-      setIsLoading(false);
+      medicationsRepo.list()
+        .then(setMedications)
+        .catch(error => {
+          console.error("Error loading medications:", error);
+          toast({ title: "Error", description: "Could not load medications data.", variant: "destructive" });
+        })
+        .finally(() => setIsLoading(false));
     } else if (currentUser && !ALLOWED_ROLES.includes(currentUser.role)){
         setIsLoading(false);
     }
@@ -91,7 +84,7 @@ export default function MedicationsPage() {
     }
   };
 
-  const processCSV = (csvText: string) => {
+  const processCSV = async (csvText: string) => {
     const rows = csvText.split(/\r\n|\n/).filter(row => row.trim() !== ''); 
     if (rows.length < 2) { 
       toast({ title: "CSV Error", description: "CSV file must contain a header row and at least one data row.", variant: "destructive" });
@@ -114,12 +107,7 @@ export default function MedicationsPage() {
     const unitOfMeasureIndex = header.indexOf('unitofmeasure');
     const additionalNotesIndex = header.indexOf('additionalnotes'); 
 
-    let currentMedications = [...medications];
-    let nextIdStr = localStorage.getItem(MEDICATION_ID_COUNTER_KEY) || 'med_1';
-    let nextIdNum = 1;
-    if (nextIdStr.startsWith('med_')) {
-        try { nextIdNum = parseInt(nextIdStr.split('_')[1], 10); } catch { /* keep 1 */ }
-    }
+    const newItems: Omit<Medication, 'id'>[] = [];
 
     let importedCount = 0;
     let failedCount = 0;
@@ -159,8 +147,7 @@ export default function MedicationsPage() {
         }
       }
 
-      const newMedication: Medication = {
-        id: `med_${nextIdNum++}`,
+      const newMedication: Omit<Medication, 'id'> = {
         name,
         treatment: treatment || "N/A",
         listPrice,
@@ -168,19 +155,18 @@ export default function MedicationsPage() {
         unitOfMeasure,
         additionalNotes,
       };
-      currentMedications.push(newMedication);
+      newItems.push(newMedication);
       importedCount++;
     }
 
     if (importedCount > 0) {
       try {
-          localStorage.setItem(MEDICATIONS_STORAGE_KEY, JSON.stringify(currentMedications));
-          localStorage.setItem(MEDICATION_ID_COUNTER_KEY, `med_${nextIdNum}`);
-          setMedications(currentMedications);
+          await medicationsRepo.createMany(newItems);
+          setMedications(await medicationsRepo.list());
           toast({ title: "Import Successful", description: `${importedCount} medications imported. ${failedCount > 0 ? `${failedCount} rows failed.` : ''}` });
       } catch (e) {
           console.error("Error saving imported medications:", e);
-          toast({ title: "Storage Error", description: "Could not save imported medications.", variant: "destructive" });
+          toast({ title: "Save Error", description: "Could not save imported medications.", variant: "destructive" });
       }
     } else if (failedCount > 0) {
         toast({ title: "Import Failed", description: `No medications imported. ${failedCount} rows had errors. Check console for details.`, variant: "destructive" });
@@ -195,7 +181,6 @@ export default function MedicationsPage() {
     }
     return med.unitOfMeasure;
   };
-
 
   if (authIsLoading || isLoading) {
     return (
@@ -216,7 +201,7 @@ export default function MedicationsPage() {
           <Pill className="h-8 w-8 text-primary" />
           <h1 className="text-3xl font-bold text-foreground">Medication Management</h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-center sm:justify-end gap-2">
             <Button variant="outline" onClick={() => router.push('/dashboard')}>
                 <ArrowLeft className="mr-2 h-4 w-4" /> Dashboard
             </Button>

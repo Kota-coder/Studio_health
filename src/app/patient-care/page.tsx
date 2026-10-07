@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TreatmentTemplate } from '@/config/treatmentTemplates'; // Using existing type
 import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Edit3, Trash2, Stethoscope, ArrowLeft, FileText } from 'lucide-react';
+import { treatmentTemplates as templatesRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 import {
@@ -25,9 +26,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PAGE_ROLES } from '@/config/permissions';
 
-const USER_TEMPLATES_STORAGE_KEY = 'userDefinedTreatmentTemplates';
 const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.patientCare;
-
 
 export default function PatientCarePage() {
   const router = useRouter();
@@ -50,16 +49,13 @@ export default function PatientCarePage() {
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(true);
-      try {
-        const storedTemplates = localStorage.getItem(USER_TEMPLATES_STORAGE_KEY);
-        if (storedTemplates) {
-          setUserTemplates(JSON.parse(storedTemplates));
-        }
-      } catch (error) {
-        console.error("Error loading user templates from localStorage:", error);
-        toast({ title: "Error", description: "Could not load custom treatment templates.", variant: "destructive" });
-      }
-      setIsLoading(false);
+      templatesRepo.list()
+        .then(setUserTemplates)
+        .catch(error => {
+          console.error("Error loading user templates:", error);
+          toast({ title: "Error", description: "Could not load custom treatment templates.", variant: "destructive" });
+        })
+        .finally(() => setIsLoading(false));
     } else if (currentUser && !ALLOWED_ROLES.includes(currentUser.role)) {
         setIsLoading(false);
     } else {
@@ -68,12 +64,11 @@ export default function PatientCarePage() {
     }
   }, [toast, currentUser]);
 
-  const handleDeleteTemplate = () => {
+  const handleDeleteTemplate = async () => {
     if (!templateToDelete) return;
     try {
-      const updatedTemplates = userTemplates.filter(t => t.id !== templateToDelete.id);
-      localStorage.setItem(USER_TEMPLATES_STORAGE_KEY, JSON.stringify(updatedTemplates));
-      setUserTemplates(updatedTemplates);
+      await templatesRepo.remove(templateToDelete.id);
+      setUserTemplates(userTemplates.filter(t => t.id !== templateToDelete.id));
       toast({ title: "Success", description: `Template "${templateToDelete.name}" deleted.` });
       setTemplateToDelete(null);
     } catch (error) {

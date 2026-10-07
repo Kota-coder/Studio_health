@@ -18,7 +18,7 @@ import { Medication } from '@/types/medication';
 import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 import { useToast } from '@/hooks/use-toast';
 import { format, parse, parseISO, isValid as isValidDate } from 'date-fns';
-import { ArrowLeft, PlusCircle, Users, ChevronsUpDown, Edit, Paperclip, FlaskConical, CalendarDays, UserCircle as UserCircleIcon, CreditCard, Eye, Activity, Edit3Icon, AlertTriangle, Files, ClipboardList, BriefcaseMedical, CheckCircle2, HelpCircle, Info, Phone, Mail, Home, User, UserSquare2, FileText, CheckCircle, AlertCircle, Pill, Trash2, ShoppingCart, ShieldCheck, History, Camera as CameraIcon, UploadCloud, X } from 'lucide-react';
+import { ArrowLeft, Download, PlusCircle, Users, ChevronsUpDown, Edit, Paperclip, FlaskConical, CalendarDays, UserCircle as UserCircleIcon, CreditCard, Eye, Activity, Edit3Icon, AlertTriangle, Files, ClipboardList, BriefcaseMedical, CheckCircle2, HelpCircle, Info, Phone, Mail, Home, User, UserSquare2, FileText, CheckCircle, AlertCircle, Pill, Trash2, ShoppingCart, ShieldCheck, History, Camera as CameraIcon, UploadCloud, X } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,12 +52,17 @@ import { useAuth } from '@/context/AuthContext';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription as AlertDesc, AlertTitle as AlertTitleComponent } from '@/components/ui/alert';
-import { addAuditLogEntry } from '@/lib/audit';
-import { imageFilesToDataUrls } from '@/lib/image';
+import { compressImageFiles } from '@/lib/images';
+import { uploadNewImages } from '@/lib/storage';
+import { StoredImage } from '@/components/stored-image';
+import { PATIENT_DATA_REQUESTS_ENABLED } from '@/config/features';
+import { downloadPatientData, erasePatientData } from '@/lib/patient-data';
+import {
+  bills as billsRepo, medications as medicationsRepo, patients as patientsRepo, referringDoctors as referringDoctorsRepo,
+  staff as staffRepo, testCatalog as testCatalogRepo, treatmentTemplates as treatmentTemplatesRepo,
+} from '@/lib/data';
 
 
-const USER_TEMPLATES_STORAGE_KEY = 'userDefinedTreatmentTemplates';
-const MEDICATIONS_STORAGE_KEY = 'medicationsData';
 
 const CONDITION_CONFIG: Record<PatientCondition, { icon: React.ElementType, badgeColor: string, textColor: string, title: string }> = {
   "Critical": { icon: AlertTriangle, badgeColor: "bg-red-100", textColor: "text-red-700", title: "Critical Condition" },
@@ -88,6 +93,9 @@ export default function PatientDetailPage() {
 
   const [newNote, setNewNote] = useState<string>("");
   const [newNoteAttachments, setNewNoteAttachments] = useState<string[]>([]);
+  const [isSavingNote, setIsSavingNote] = useState(false);
+  const [isHandlingDataRequest, setIsHandlingDataRequest] = useState(false);
+  const [isSavingTest, setIsSavingTest] = useState(false);
   const newNoteAttachmentInputRef = useRef<HTMLInputElement>(null);
 
 
@@ -142,89 +150,41 @@ export default function PatientDetailPage() {
 
     setIsLoading(true);
     try {
-      const storedPatients = localStorage.getItem('patients');
-      const storedStaff = localStorage.getItem('staffMembers');
-      const storedExtReferringDoctors = localStorage.getItem('referringDoctorsData');
-      const storedBills = localStorage.getItem('bills');
-      const storedTestCatalog = localStorage.getItem('medicalTestCatalog');
-      const storedUserTemplates = localStorage.getItem(USER_TEMPLATES_STORAGE_KEY);
-      
-      if (storedTestCatalog) {
-        setTestCatalog(JSON.parse(storedTestCatalog));
+      const [currentPatientData, staffArray, referringDoctorsArray, billList, catalog, userDefinedTemplates, meds] = await Promise.all([
+        patientsRepo.get(numericPatientId),
+        staffRepo.list(),
+        referringDoctorsRepo.list(),
+        billsRepo.list({ patientId: numericPatientId }),
+        testCatalogRepo.list(),
+        treatmentTemplatesRepo.list(),
+        medicationsRepo.list(),
+      ]);
+
+      if (!currentPatientData) {
+        toast({ title: "Error", description: "Patient not found.", variant: "destructive" });
+        router.push('/dashboard');
+        setIsLoading(false);
+        return;
       }
-      const storedMedications = localStorage.getItem(MEDICATIONS_STORAGE_KEY);
-      let currentPatientData: Patient | null = null;
-
-      if (storedPatients) {
-        let rawPatients = JSON.parse(storedPatients);
-        const patientsArray: Patient[] = rawPatients.map((p: any) => ({
-            ...p,
-            id: parseInt(p.id, 10), // Ensure ID is a number
-            careNotes: Array.isArray(p.careNotes) ? p.careNotes.map((cn: any) => ({...cn, templateFieldsData: cn.templateFieldsData || {}, medicationsMentioned: cn.medicationsMentioned || [], attachmentDataUrl: cn.attachmentDataUrl || null })) : [],
-            assignedStaffIds: Array.isArray(p.assignedStaffIds) ? p.assignedStaffIds.map(Number) : [],
-            tests: Array.isArray(p.tests) ? p.tests.map((t:any) => ({...t, attachmentDataUrl: t.attachmentDataUrl || null})) : [],
-            condition: p.condition || "Unassigned",
-            auditLog: Array.isArray(p.auditLog) ? p.auditLog : [],
-        }));
-
-        const foundPatient = patientsArray.find(p => p.id === numericPatientId);
-        if (foundPatient) {
-          currentPatientData = foundPatient;
-          setPatient(currentPatientData);
-        } else {
-          toast({ title: "Error", description: "Patient not found.", variant: "destructive" });
-          router.push('/dashboard');
-          setIsLoading(false);
-          return;
-        }
-      } else {
-         toast({ title: "Error", description: "No patient data found.", variant: "destructive" });
-         router.push('/dashboard');
-         setIsLoading(false);
-         return;
-      }
-
-      if (storedStaff) {
-        const staffArray: StaffMember[] = JSON.parse(storedStaff);
-        setAvailableStaff(staffArray);
-      }
-
-      if (storedExtReferringDoctors && currentPatientData?.referredDoctorId) {
-        const referringDoctorsArray: ReferringDoctor[] = JSON.parse(storedExtReferringDoctors);
-        setAvailableReferringDoctors(referringDoctorsArray);
+      setPatient(currentPatientData);
+      setAvailableStaff(staffArray);
+      setAvailableReferringDoctors(referringDoctorsArray);
+      if (currentPatientData.referredDoctorId) {
         const doctor = referringDoctorsArray.find(doc => doc.id === currentPatientData.referredDoctorId);
         setReferredDoctorName(doctor ? `${doctor.name} (${doctor.location})` : "N/A");
-      } else if (currentPatientData?.referredDoctorId) {
-         setReferredDoctorName("N/A (Referring Doctors List unavailable)");
       } else {
         setReferredDoctorName(null);
       }
+      setPatientBills(billList);
+      setTestCatalog(catalog);
 
-
-      if (storedBills && currentPatientData) {
-        const allBills: Bill[] = JSON.parse(storedBills).map((b:any) => ({...b, auditLog: Array.isArray(b.auditLog) ? b.auditLog : [], attachmentDataUrl: b.attachmentDataUrl || null}));
-        setPatientBills(allBills.filter(bill => bill.patientId === currentPatientData?.id)
-                               .sort((a,b) => parseISO(b.createdAt).getTime() - parseISO(a.createdAt).getTime()));
-      }
-
-
-      let userDefinedTemplates: TreatmentTemplate[] = [];
-      if (storedUserTemplates) {
-        userDefinedTemplates = JSON.parse(storedUserTemplates);
-      }
       const combinedTemplates = [...TREATMENT_TEMPLATES, ...userDefinedTemplates];
       setAllTreatmentTemplates(combinedTemplates);
-
       const defaultTemplate = combinedTemplates.find(t => t.id === 'none');
       setCurrentTreatmentTemplate(defaultTemplate || null);
-
-      if (storedMedications) {
-        setAvailableMedications(JSON.parse(storedMedications));
-      }
-
-
+      setAvailableMedications(meds);
     } catch (error) {
-      console.error("Error loading data from localStorage:", error);
+      console.error("Error loading patient data:", error);
       toast({ title: "Error", description: "Could not load patient or related data.", variant: "destructive" });
     }
     setIsLoading(false);
@@ -236,37 +196,41 @@ export default function PatientDetailPage() {
     }
   }, [fetchPatientAndRelatedData, authIsLoading, currentUser]);
 
-  const updatePatientInLocalStorage = useCallback((updatedPatient: Patient) => {
+  const handleDownloadPatientData = useCallback(async () => {
+    if (!patient) return;
+    setIsHandlingDataRequest(true);
     try {
-      const storedPatients = localStorage.getItem('patients');
-      if (storedPatients) {
-        let rawPatients = JSON.parse(storedPatients);
-        let patientsArray: Patient[] = rawPatients.map((p: any) => ({
-            ...p,
-            id: parseInt(p.id, 10),
-            careNotes: Array.isArray(p.careNotes) ? p.careNotes.map((cn: any) => ({...cn, templateFieldsData: cn.templateFieldsData || {}, medicationsMentioned: cn.medicationsMentioned || [], attachmentDataUrl: cn.attachmentDataUrl || null})) : [],
-            assignedStaffIds: Array.isArray(p.assignedStaffIds) ? p.assignedStaffIds.map(Number) : [],
-            tests: Array.isArray(p.tests) ? p.tests.map((t:any) => ({...t, attachmentDataUrl: t.attachmentDataUrl || null})) : [],
-            auditLog: Array.isArray(p.auditLog) ? p.auditLog : [],
-        }));
-
-        patientsArray = patientsArray.map(p => p.id === updatedPatient.id ? updatedPatient : p);
-        localStorage.setItem('patients', JSON.stringify(patientsArray));
-        setPatient(updatedPatient);
-      }
-    } catch (e: any) {
-        if (e.name === 'QuotaExceededError') {
-            toast({
-              title: "Storage Full",
-              description: "Cannot save patient updates. Local storage is full, likely due to image attachments. Please remove some images or contact support.",
-              variant: "destructive",
-            });
-          } else {
-            console.error("Error updating patient in localStorage:", e);
-            toast({ title: "Storage Error", description: "Could not save patient updates.", variant: "destructive" });
-          }
+      await downloadPatientData(patient.id);
+      toast({ title: "Download Ready", description: "Patient data downloaded." });
+    } catch (error: any) {
+      toast({ title: "Error", description: error?.message || "Could not export patient data.", variant: "destructive" });
+    } finally {
+      setIsHandlingDataRequest(false);
     }
-  }, [toast]);
+  }, [patient, toast]);
+
+  const handleErasePatientData = useCallback(async () => {
+    if (!patient) return;
+    setIsHandlingDataRequest(true);
+    try {
+      await erasePatientData(patient.id);
+      toast({ title: "Patient Data Erased", description: "The patient's data has been erased." });
+      router.push('/dashboard');
+    } catch (error: any) {
+      toast({ title: "Error", description: error?.message || "Could not erase patient data.", variant: "destructive" });
+      setIsHandlingDataRequest(false);
+    }
+  }, [patient, toast, router]);
+
+  // Re-reads the patient (with notes, tests and audit trail) after a change is saved.
+  const reloadPatient = useCallback(async (patientId: number) => {
+    const fresh = await patientsRepo.get(patientId);
+    if (fresh) setPatient(fresh);
+  }, []);
+
+  const reloadBills = useCallback(async (patientId: number) => {
+    setPatientBills(await billsRepo.list({ patientId }));
+  }, []);
 
   const handleTreatmentTemplateChange = useCallback((templateId: string) => {
     setSelectedTreatmentTemplateId(templateId);
@@ -311,7 +275,7 @@ export default function PatientDetailPage() {
   const handleNoteFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     if (files.length > 0) {
-        const newAttachments = await imageFilesToDataUrls(files);
+        const newAttachments = await compressImageFiles(files);
         setNewNoteAttachments(prev => [...prev, ...newAttachments]);
         if (newAttachments.length > 0) {
             toast({ title: "Attachments Added", description: `${newAttachments.length} file(s) uploaded successfully.` });
@@ -356,33 +320,26 @@ export default function PatientDetailPage() {
       }
     }
 
-    const noteToAdd: CareNote = {
-      id: Date.now().toString(),
-      text: newNote.trim(),
-      createdAt: new Date().toISOString(),
-      staffId: currentUser.id,
-      staffName: currentUser.name,
-      templateId: selectedTreatmentTemplateId !== 'none' ? selectedTreatmentTemplateId : undefined,
-      templateName: selectedTreatmentTemplateId !== 'none' ? currentTreatmentTemplate?.name : undefined,
-      templateFieldsData: selectedTreatmentTemplateId !== 'none' ? { ...dynamicTemplateFieldValues } : undefined,
-      medicationsMentioned: [...currentNoteMedications],
-      attachmentDataUrl: newNoteAttachments.length > 0 ? newNoteAttachments[0] : null,
-      attachments: newNoteAttachments.length > 0 ? newNoteAttachments : undefined,
-    };
-
-    let updatedPatient: Patient = {
-      ...patient,
-      careNotes: [...(patient.careNotes || []), noteToAdd],
-    };
-
-    updatedPatient = addAuditLogEntry(
-      updatedPatient,
-      "Care Note Added",
-      `New care note added (Template: ${noteToAdd.templateName || 'General Note'}).`,
-      currentUser
-    );
-
-    updatePatientInLocalStorage(updatedPatient);
+    setIsSavingNote(true);
+    try {
+      await patientsRepo.addCareNote(patient.id, {
+        text: newNote.trim(),
+        staffId: currentUser.id,
+        staffName: currentUser.name,
+        templateId: selectedTreatmentTemplateId !== 'none' ? selectedTreatmentTemplateId : undefined,
+        templateName: selectedTreatmentTemplateId !== 'none' ? currentTreatmentTemplate?.name : undefined,
+        templateFieldsData: selectedTreatmentTemplateId !== 'none' ? { ...dynamicTemplateFieldValues } : undefined,
+        medicationsMentioned: [...currentNoteMedications],
+        attachments: await uploadNewImages(newNoteAttachments, `patients/${patient.id}/care-notes`),
+      });
+      await reloadPatient(patient.id);
+    } catch (e) {
+      console.error("Failed to save care note:", e);
+      toast({ title: "Save Error", description: e instanceof Error ? e.message : "Could not save the note.", variant: "destructive" });
+      return;
+    } finally {
+      setIsSavingNote(false);
+    }
     toast({ title: "Success", description: "Note added." });
     setNewNote("");
     setSelectedTreatmentTemplateId('none');
@@ -391,7 +348,7 @@ export default function PatientDetailPage() {
     setDynamicTemplateFieldValues({});
     setCurrentNoteMedications([]);
     clearNoteAttachment();
-  }, [newNote, selectedTreatmentTemplateId, patient, currentUser, currentTreatmentTemplate, dynamicTemplateFieldValues, currentNoteMedications, newNoteAttachments, toast, updatePatientInLocalStorage, allTreatmentTemplates, clearNoteAttachment]);
+  }, [newNote, selectedTreatmentTemplateId, patient, currentUser, currentTreatmentTemplate, dynamicTemplateFieldValues, currentNoteMedications, newNoteAttachments, toast, reloadPatient, allTreatmentTemplates, clearNoteAttachment]);
 
   const handleCreatePharmacyBillFromNote = useCallback(async (note: CareNote) => {
     if (!patient || !note.medicationsMentioned || note.medicationsMentioned.length === 0 || !currentUser) {
@@ -419,15 +376,7 @@ export default function PatientDetailPage() {
     const totalAmount = billItems.reduce((sum, item) => sum + item.total, 0);
 
     try {
-      const storedBills = localStorage.getItem('bills');
-      let allBills: Bill[] = storedBills ? JSON.parse(storedBills).map((b:any) => ({...b, auditLog: Array.isArray(b.auditLog) ? b.auditLog : [], attachmentDataUrl: b.attachmentDataUrl || null})) : [];
-
-      const nextBillIdNumberJSON = localStorage.getItem('nextBillIdNumber');
-      let nextBillIdNumber = nextBillIdNumberJSON ? parseInt(nextBillIdNumberJSON, 10) : 1;
-      const newBillId = `BILL-${String(nextBillIdNumber).padStart(3, '0')}`;
-
-      let newBill: Bill = {
-        id: newBillId,
+      const newBill = await billsRepo.create({
         patientId: patient.id,
         patientName: `${patient.firstName} ${patient.lastName}`,
         billDate: format(new Date(), 'dd/MM/yyyy'),
@@ -437,27 +386,15 @@ export default function PatientDetailPage() {
         paymentMethod: "",
         paymentStatus: "Unpaid",
         notes: `Pharmacy items from care note dated ${format(parseISO(note.createdAt), "dd/MM/yyyy")}. Dosages: ${note.medicationsMentioned.map(m => `${m.medicationName} - ${m.dosage || 'N/A'}`).join('; ')}`,
-        createdAt: new Date().toISOString(),
-        auditLog: [] // Initialize audit log
-      };
-
-      newBill = addAuditLogEntry(newBill as Bill, "Bill Created", `Pharmacy bill ${newBillId} created from care note.`, currentUser);
-
-
-      allBills.push(newBill);
-      localStorage.setItem('bills', JSON.stringify(allBills));
-      localStorage.setItem('nextBillIdNumber', (nextBillIdNumber + 1).toString());
-
-      const updatedPatientBills = allBills.filter(bill => bill.patientId === patient.id);
-      setPatientBills(updatedPatientBills.sort((a,b) => parseISO(b.createdAt).getTime() - parseISO(a.createdAt).getTime()));
-
-      toast({ title: "Success", description: `Pharmacy bill ${newBillId} created.` });
+      }, "Pharmacy bill created from care note.");
+      await reloadBills(patient.id);
+      toast({ title: "Success", description: `Pharmacy bill ${newBill.id} created.` });
       setNoteToBill(null);
     } catch (e) {
       console.error("Failed to create pharmacy bill:", e);
-      toast({ title: "Storage Error", description: "Could not create pharmacy bill.", variant: "destructive" });
+      toast({ title: "Save Error", description: "Could not create pharmacy bill.", variant: "destructive" });
     }
-  }, [patient, availableMedications, currentUser, toast]);
+  }, [patient, availableMedications, currentUser, toast, reloadBills]);
 
 
   const handleStaffAssignmentChange = useCallback((staffId: number) => {
@@ -477,12 +414,17 @@ export default function PatientDetailPage() {
       actionDetail = `Assigned: ${staffMember ? staffMember.name : `Staff ID ${staffId}`}.`;
     }
 
-    let updatedPatient: Patient = { ...patient, assignedStaffIds: newAssignedStaffIds };
-    updatedPatient = addAuditLogEntry(updatedPatient, "Staff Assignment Changed", actionDetail, currentUser);
-
-    updatePatientInLocalStorage(updatedPatient);
-    toast({ title: "Success", description: "Staff assignment updated." });
-  }, [patient, currentUser, availableStaff, updatePatientInLocalStorage, toast]);
+    // Update the screen straight away; roll back if the save fails.
+    setPatient({ ...patient, assignedStaffIds: newAssignedStaffIds });
+    patientsRepo.update(patient.id, { assignedStaffIds: newAssignedStaffIds }, { actionType: "Staff Assignment Changed", details: actionDetail })
+      .then(() => reloadPatient(patient.id))
+      .then(() => toast({ title: "Success", description: "Staff assignment updated." }))
+      .catch(e => {
+        console.error("Failed to update staff assignment:", e);
+        setPatient(patient);
+        toast({ title: "Save Error", description: "Could not update staff assignment.", variant: "destructive" });
+      });
+  }, [patient, currentUser, availableStaff, reloadPatient, toast]);
 
   const getAssignedStaffNames = useCallback(() => {
     if (!patient || !patient.assignedStaffIds || patient.assignedStaffIds.length === 0) {
@@ -536,7 +478,7 @@ export default function PatientDetailPage() {
   const handleTestFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     if (files.length > 0) {
-        const newAttachments = await imageFilesToDataUrls(files);
+        const newAttachments = await compressImageFiles(files);
         setNewTestAttachments(prev => [...prev, ...newAttachments]);
         if (newAttachments.length > 0) {
             toast({ title: "Attachments Added", description: `${newAttachments.length} file(s) uploaded successfully.` });
@@ -596,28 +538,27 @@ export default function PatientDetailPage() {
         performedByStaffDetails = availableStaff.find(s => s.id.toString() === selectedStaffForTest);
     }
 
-    const testToAdd: TestEntry = {
-      id: Date.now().toString(),
-      testTypeId: selectedTestTypeId,
-      testTypeName: currentTestDefinition?.name || "Unknown Test",
-      datePerformed: finalTestDateString,
-      testData: { ...dynamicTestFieldValues },
-      overallResults: newTestOverallResults.trim() || undefined,
-      notes: newTestNotes.trim() || undefined,
-      performedByStaffId: performedByStaffDetails ? performedByStaffDetails.id : (currentUser ? currentUser.id : undefined),
-      performedByStaffName: performedByStaffDetails ? performedByStaffDetails.name : (currentUser ? currentUser.name : undefined),
-      createdAt: new Date().toISOString(),
-      attachmentDataUrl: newTestAttachments.length > 0 ? newTestAttachments[0] : null,
-      attachments: newTestAttachments.length > 0 ? newTestAttachments : undefined,
-    };
-
-    let updatedPatient: Patient = {
-      ...patient,
-      tests: [...(patient.tests || []), testToAdd],
-    };
-    updatedPatient = addAuditLogEntry(updatedPatient, "Test Added", `New test added: ${testToAdd.testTypeName}.`, currentUser);
-
-    updatePatientInLocalStorage(updatedPatient);
+    setIsSavingTest(true);
+    try {
+      await patientsRepo.addTest(patient.id, {
+        testTypeId: selectedTestTypeId,
+        testTypeName: currentTestDefinition?.name || "Unknown Test",
+        datePerformed: finalTestDateString,
+        testData: { ...dynamicTestFieldValues },
+        overallResults: newTestOverallResults.trim() || undefined,
+        notes: newTestNotes.trim() || undefined,
+        performedByStaffId: performedByStaffDetails ? performedByStaffDetails.id : currentUser.id,
+        performedByStaffName: performedByStaffDetails ? performedByStaffDetails.name : currentUser.name,
+        attachments: await uploadNewImages(newTestAttachments, `patients/${patient.id}/tests`),
+      });
+      await reloadPatient(patient.id);
+    } catch (e) {
+      console.error("Failed to save test:", e);
+      toast({ title: "Save Error", description: e instanceof Error ? e.message : "Could not save the test.", variant: "destructive" });
+      return;
+    } finally {
+      setIsSavingTest(false);
+    }
     toast({ title: "Success", description: "Test entry added." });
 
     setSelectedTestTypeId("");
@@ -630,7 +571,38 @@ export default function PatientDetailPage() {
     setSelectedStaffForTest("");
     setShowAddTestForm(false);
     clearTestAttachment();
-  }, [selectedTestTypeId, patient, currentUser, newTestDate, newTestDateInput, currentTestDefinition, dynamicTestFieldValues, newTestOverallResults, newTestNotes, selectedStaffForTest, newTestAttachments, toast, updatePatientInLocalStorage, availableStaff, clearTestAttachment]);
+  }, [selectedTestTypeId, patient, currentUser, newTestDate, newTestDateInput, currentTestDefinition, dynamicTestFieldValues, newTestOverallResults, newTestNotes, selectedStaffForTest, newTestAttachments, toast, reloadPatient, availableStaff, clearTestAttachment]);
+
+  const handleCreateTestBill = useCallback(async (test: TestEntry) => {
+    if (!patient) return;
+    const testCatalogItem = testCatalog.find(t => t.id === test.testTypeId);
+    const billItem: BillItem = {
+      id: `${test.id}-${Date.now()}`,
+      description: test.testTypeName,
+      quantity: 1,
+      originalUnitPrice: testCatalogItem?.defaultPrice || 0,
+      unitPrice: testCatalogItem?.defaultPrice || 0,
+      total: testCatalogItem?.defaultPrice || 0,
+    };
+    try {
+      const newBill = await billsRepo.create({
+        patientId: patient.id,
+        patientName: `${patient.firstName} ${patient.lastName}`,
+        billDate: format(new Date(), 'dd/MM/yyyy'),
+        billType: "Treatment",
+        items: [billItem],
+        totalAmount: billItem.total,
+        paymentMethod: "",
+        paymentStatus: "Unpaid",
+        notes: `Bill for test: ${test.testTypeName} performed on ${test.datePerformed}`,
+      }, "Treatment bill created for test.");
+      await reloadBills(patient.id);
+      toast({ title: "Success", description: `Bill ${newBill.id} created for test.` });
+    } catch (e) {
+      console.error("Failed to create test bill:", e);
+      toast({ title: "Save Error", description: "Could not create test bill.", variant: "destructive" });
+    }
+  }, [patient, testCatalog, reloadBills, toast]);
 
   const formatDateSafe = useCallback((dateString: string | undefined) => {
     if (!dateString) return 'N/A';
@@ -771,6 +743,34 @@ export default function PatientDetailPage() {
           <Button variant="outline" onClick={() => router.push('/dashboard')}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
           </Button>
+          {PATIENT_DATA_REQUESTS_ENABLED && currentUser?.role === "Super Admin" && (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={handleDownloadPatientData} disabled={isHandlingDataRequest}>
+                <Download className="mr-2 h-4 w-4" /> Download Patient Data
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" disabled={isHandlingDataRequest}>
+                    <Trash2 className="mr-2 h-4 w-4" /> Erase Patient Data
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Erase all data for {patient.firstName} {patient.lastName}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This permanently deletes the patient&apos;s details, care notes, tests, images and history. Bills are kept for the clinic&apos;s accounts but no longer show who they were for. This cannot be undone. Download the patient&apos;s data first if they asked for a copy.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleErasePatientData} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                      Erase Permanently
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          )}
         </div>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
             <div>
@@ -788,11 +788,11 @@ export default function PatientDetailPage() {
                     )}
                 </div>
             </div>
-            {patient.patientPhotoDataUrl && (
-                <img
-                    src={patient.patientPhotoDataUrl}
+            {patient.patientPhotos && patient.patientPhotos.length > 0 && (
+                <StoredImage
+                    path={patient.patientPhotos[0]}
+                    linked
                     alt={`Photo of ${patient.firstName}`}
-                    data-ai-hint="patient photo"
                     className="rounded-md border w-24 h-24 object-cover mt-2 sm:mt-0 shadow-md"
                 />
             )}
@@ -802,9 +802,9 @@ export default function PatientDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6"> {/* Main content area */}
             <Card className="shadow-lg">
-                <CardHeader className="flex flex-row justify-between items-center">
+                <CardHeader className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 space-y-0">
                     <CardTitle className="flex items-center"><User className="mr-2 h-5 w-5 text-primary"/>Patient Details</CardTitle>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                         <Link href={`/?editPatientId=${patient.id.toString().padStart(3,'0')}`} passHref>
                             <Button variant="outline" size="sm">
                                 <Edit3Icon className="mr-2 h-3 w-3" /> Edit Basic Info
@@ -842,23 +842,24 @@ export default function PatientDetailPage() {
                                     <DetailItem label="Initial Observations" value={patient.initialObservationsText} icon={FileText} className="sm:col-span-2"/>
                                 )}
 
-                                {patient.imageSrc && (
-                                    <div className="mt-2">
+                                {patient.idCardImages && patient.idCardImages.length > 0 && (
+                                    <div className="mt-2 sm:col-span-2">
                                         <Label className="text-sm font-medium text-muted-foreground">Scanned ID Card:</Label>
-                                        <img src={patient.imageSrc} data-ai-hint="id card" alt="ID Card Scan" className="mt-1 rounded-md border max-w-xs max-h-48 object-contain" />
+                                        <div className="flex flex-wrap gap-2 mt-1">
+                                                {patient.idCardImages.map((path, index) => (
+                                                    <StoredImage key={path} path={path} linked alt={`ID card ${index + 1}`} className="h-24 w-24 sm:h-32 sm:w-32 rounded border object-cover" />
+                                                ))}
+                                            </div>
                                     </div>
                                 )}
-                                {patient.initialObservationAttachmentDataUrl && (
-                                    <div className="mt-2">
-                                    <Label className="text-sm font-medium text-muted-foreground">Admission Attachment:</Label>
-                                    {patient.initialObservationAttachmentDataUrl.startsWith('data:image') ? (
-                                        <img src={patient.initialObservationAttachmentDataUrl} data-ai-hint="medical document" alt="Admission Attachment" className="mt-1 rounded-md border max-w-xs max-h-48 object-contain" />
-                                    ) : (
-                                        <div className="flex items-center gap-2 p-2 bg-muted rounded-md mt-1">
-                                            <Paperclip className="h-5 w-5 text-muted-foreground"/>
-                                            <span className="text-sm text-muted-foreground">Non-image file attached. <a href={patient.initialObservationAttachmentDataUrl} download={`admission_attachment_${patient.id}`} className="underline text-primary">Download</a></span>
-                                        </div>
-                                    )}
+                                {patient.initialObservationAttachments && patient.initialObservationAttachments.length > 0 && (
+                                    <div className="mt-2 sm:col-span-2">
+                                        <Label className="text-sm font-medium text-muted-foreground">Admission Attachments:</Label>
+                                        <div className="flex flex-wrap gap-2 mt-1">
+                                                {patient.initialObservationAttachments.map((path, index) => (
+                                                    <StoredImage key={path} path={path} linked alt={`Admission attachment ${index + 1}`} className="h-24 w-24 sm:h-32 sm:w-32 rounded border object-cover" />
+                                                ))}
+                                            </div>
                                     </div>
                                 )}
                             </AccordionContent>
@@ -1031,7 +1032,7 @@ export default function PatientDetailPage() {
                             <div className="mt-2 grid grid-cols-3 gap-2">
                                 {newNoteAttachments.map((attachment, index) => (
                                     <div key={index} className="relative border rounded-md p-1">
-                                        <img src={attachment} alt={`Attachment ${index + 1}`} className="rounded-md w-full h-20 object-cover" data-ai-hint="document image"/>
+                                        <StoredImage path={attachment} alt={`Attachment ${index + 1}`} className="rounded-md w-full h-20 object-cover" />
                                         <Button
                                             variant="destructive"
                                             size="icon"
@@ -1047,7 +1048,7 @@ export default function PatientDetailPage() {
                     </div>
 
 
-                    <Button onClick={handleAddNote} disabled={!currentUser} className="w-full mt-3">
+                    <Button onClick={handleAddNote} disabled={!currentUser || isSavingNote} className="w-full mt-3">
                         <PlusCircle className="mr-2 h-4 w-4" /> Add Note
                     </Button>
                   </div>
@@ -1138,12 +1139,14 @@ export default function PatientDetailPage() {
                                             </ul>
                                         </div>
                                     )}
-                                    {note.attachmentDataUrl && (
+                                    {note.attachments && note.attachments.length > 0 && (
                                         <div className="mt-2">
-                                            <Label className="text-xs font-medium">Attachment:</Label>
-                                            <a href={note.attachmentDataUrl} target="_blank" rel="noopener noreferrer" className="block mt-1">
-                                                <img src={note.attachmentDataUrl} alt="Care note attachment" className="max-w-[200px] max-h-32 rounded border object-contain" data-ai-hint="medical chart image"/>
-                                            </a>
+                                            <Label className="text-xs font-medium">Attachments:</Label>
+                                            <div className="flex flex-wrap gap-2 mt-1">
+                                                {note.attachments.map((path, index) => (
+                                                    <StoredImage key={path} path={path} linked alt={`Care note attachment ${index + 1}`} className="max-h-32 max-w-[200px] rounded border object-cover" />
+                                                ))}
+                                            </div>
                                         </div>
                                     )}
                                 </Card>
@@ -1159,7 +1162,7 @@ export default function PatientDetailPage() {
             </Card>
 
             <Card className="shadow-lg">
-              <CardHeader className="flex flex-row justify-between items-center">
+              <CardHeader className="flex flex-row flex-wrap justify-between items-center gap-2 space-y-0">
                 <CardTitle className="flex items-center"><FlaskConical className="mr-2 h-5 w-5 text-primary"/>Tests Performed</CardTitle>
                 {!showAddTestForm && (
                     <Button variant="outline" size="sm" onClick={() => {
@@ -1283,7 +1286,7 @@ export default function PatientDetailPage() {
                             <div className="mt-2 grid grid-cols-3 gap-2">
                                 {newTestAttachments.map((attachment, index) => (
                                     <div key={index} className="relative border rounded-md p-1">
-                                        <img src={attachment} alt={`Test Attachment ${index + 1}`} className="rounded-md w-full h-20 object-cover" data-ai-hint="lab result image"/>
+                                        <StoredImage path={attachment} alt={`Test Attachment ${index + 1}`} className="rounded-md w-full h-20 object-cover" />
                                         <Button
                                             variant="destructive"
                                             size="icon"
@@ -1299,7 +1302,7 @@ export default function PatientDetailPage() {
                     </div>
                     <div className="flex justify-end gap-2">
                       <Button variant="ghost" onClick={() => setShowAddTestForm(false)}>Cancel</Button>
-                      <Button onClick={handleAddTest}>Save Test</Button>
+                      <Button onClick={handleAddTest} disabled={isSavingTest}>{isSavingTest ? "Saving..." : "Save Test"}</Button>
                     </div>
                   </div>
                 )}
@@ -1353,68 +1356,21 @@ export default function PatientDetailPage() {
                                           </AlertDialogHeader>
                                           <AlertDialogFooter>
                                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                            <AlertDialogAction onClick={() => {
-                                              const testCatalogItem = testCatalog.find(t => t.id === test.testTypeId);
-                                              const billItem: BillItem = {
-                                                id: `${test.id}-${Date.now()}`,
-                                                description: test.testTypeName,
-                                                quantity: 1,
-                                                originalUnitPrice: testCatalogItem?.defaultPrice || 0,
-                                                unitPrice: testCatalogItem?.defaultPrice || 0,
-                                                total: testCatalogItem?.defaultPrice || 0,
-                                              };
-
-                                              try {
-                                                const storedBills = localStorage.getItem('bills');
-                                                let allBills: Bill[] = storedBills ? JSON.parse(storedBills) : [];
-                                                const nextBillIdNumberJSON = localStorage.getItem('nextBillIdNumber');
-                                                let nextBillIdNumber = nextBillIdNumberJSON ? parseInt(nextBillIdNumberJSON, 10) : 1;
-                                                const newBillId = `BILL-${String(nextBillIdNumber).padStart(3, '0')}`;
-
-                                                let newBill: Bill = {
-                                                  id: newBillId,
-                                                  patientId: patient.id,
-                                                  patientName: `${patient.firstName} ${patient.lastName}`,
-                                                  billDate: format(new Date(), 'dd/MM/yyyy'),
-                                                  billType: "Treatment",
-                                                  items: [billItem],
-                                                  totalAmount: billItem.total,
-                                                  paymentMethod: "",
-                                                  paymentStatus: "Unpaid",
-                                                  notes: `Bill for test: ${test.testTypeName} performed on ${test.datePerformed}`,
-                                                  createdAt: new Date().toISOString(),
-                                                  auditLog: [],
-                                                };
-
-                                                if (currentUser) {
-                                                  newBill = addAuditLogEntry(newBill as Bill, "Bill Created", `Treatment bill ${newBillId} created for test.`, currentUser);
-                                                }
-
-                                                allBills.push(newBill);
-                                                localStorage.setItem('bills', JSON.stringify(allBills));
-                                                localStorage.setItem('nextBillIdNumber', (nextBillIdNumber + 1).toString());
-
-                                                const updatedPatientBills = allBills.filter(bill => bill.patientId === patient.id);
-                                                setPatientBills(updatedPatientBills.sort((a,b) => parseISO(b.createdAt).getTime() - parseISO(a.createdAt).getTime()));
-
-                                                toast({ title: "Success", description: `Bill ${newBillId} created for test.` });
-                                              } catch (e) {
-                                                console.error("Failed to create test bill:", e);
-                                                toast({ title: "Storage Error", description: "Could not create test bill.", variant: "destructive" });
-                                              }
-                                            }}>
+                                            <AlertDialogAction onClick={() => handleCreateTestBill(test)}>
                                               Create Bill
                                             </AlertDialogAction>
                                           </AlertDialogFooter>
                                         </AlertDialogContent>
                                       </AlertDialog>
                                     </div>
-                                    {test.attachmentDataUrl && (
+                                    {test.attachments && test.attachments.length > 0 && (
                                         <div className="mt-2">
-                                            <Label className="text-xs font-medium">Attachment:</Label>
-                                            <a href={test.attachmentDataUrl} target="_blank" rel="noopener noreferrer" className="block mt-1">
-                                                <img src={test.attachmentDataUrl} alt="Test attachment" className="max-w-[200px] max-h-32 rounded border object-contain" data-ai-hint="report scan"/>
-                                            </a>
+                                            <Label className="text-xs font-medium">Attachments:</Label>
+                                            <div className="flex flex-wrap gap-2 mt-1">
+                                                {test.attachments.map((path, index) => (
+                                                    <StoredImage key={path} path={path} linked alt={`Test attachment ${index + 1}`} className="max-h-32 max-w-[200px] rounded border object-cover" />
+                                                ))}
+                                            </div>
                                         </div>
                                     )}
                                     <p className="text-xs text-muted-foreground/70 mt-1.5">Recorded: {format(parseISO(test.createdAt), "dd/MM/yyyy, HH:mm")}</p>
@@ -1504,7 +1460,7 @@ export default function PatientDetailPage() {
             </Card>
 
             <Card className="shadow-lg">
-                <CardHeader className="flex flex-row justify-between items-center">
+                <CardHeader className="flex flex-row flex-wrap justify-between items-center gap-2 space-y-0">
                     <CardTitle className="flex items-center"><CreditCard className="mr-2 h-5 w-5 text-primary"/>Patient Bills</CardTitle>
                     <Link href={`/billing/form?patientId=${patient.id.toString().padStart(3,'0')}`} passHref>
                         <Button variant="outline" size="sm">
@@ -1561,15 +1517,17 @@ export default function PatientDetailPage() {
                                             ))}
                                         </TableBody>
                                     </Table>
-                                     {patientBills.find(b => b.attachmentDataUrl) && (
+                                     {patientBills.some(b => b.attachments && b.attachments.length > 0) && (
                                         <div className="mt-4">
                                             <p className="text-sm font-medium mb-2">Bill Attachments:</p>
-                                            {patientBills.map(bill => bill.attachmentDataUrl ? (
+                                            {patientBills.map(bill => bill.attachments && bill.attachments.length > 0 ? (
                                                 <div key={`bill-attach-${bill.id}`} className="mb-2 text-sm">
-                                                    <a href={bill.attachmentDataUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-primary hover:underline">
-                                                        <Paperclip className="h-4 w-4"/> Bill {bill.id} Attachment
-                                                        <img src={bill.attachmentDataUrl} alt={`Attachment for bill ${bill.id}`} className="ml-2 max-h-10 rounded border object-contain" data-ai-hint="invoice receipt"/>
-                                                    </a>
+                                                    <p className="flex items-center gap-2 text-muted-foreground"><Paperclip className="h-4 w-4"/> Bill {bill.id}</p>
+                                                    <div className="flex flex-wrap gap-2 mt-1">
+                                                {bill.attachments.map((path, index) => (
+                                                    <StoredImage key={path} path={path} linked alt={`Attachment for bill ${index + 1}`} className="h-16 w-16 rounded border object-cover" />
+                                                ))}
+                                            </div>
                                                 </div>
                                             ) : null)}
                                         </div>
