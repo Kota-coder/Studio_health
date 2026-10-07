@@ -45,7 +45,7 @@ export default function AdminPage() {
     run(async () => {
       const s = await loadSampleDataIntoDatabase(currentUser, setProgress);
       return `Loaded ${s.patients} patients (${s.careNotes} care notes, ${s.tests} tests), ${s.bills} bills, ${s.payments} payments, `
-        + `${s.staff} staff, ${s.referringDoctors} referring doctors, ${s.medications} medications, ${s.materials} materials, `
+        + `${s.staff} staff in ${s.departments} departments (${s.doctorFeePayments} doctor fee payments), ${s.referringDoctors} referring doctors, ${s.medications} medications, ${s.materials} materials, `
         + `${s.vendors} vendors and ${s.testCatalog} catalog tests.`;
     });
   };
@@ -64,8 +64,9 @@ export default function AdminPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><Database className="h-6 w-6" /> Sample Data</CardTitle>
           <CardDescription>
-            For trying the app out. Loads about six months of a small clinic&apos;s activity: 30 patients with care notes
-            and tests, bills, salary and supply payments, sample doctors and nurses, referring doctors, medications,
+            For trying the app out. Loads about six months of a small hospital&apos;s activity: three departments (Cardiology, General Medicine,
+            Orthopaedics) with their doctors and nurses, 30 patients with care notes, tests and doctor fees, bills,
+            salary, supply and doctor-fee payments, referring doctors, medications,
             materials, vendors and a test catalog. It only loads into a database with no patients, and everything it
             adds can be removed again before you start using the app for real.
           </CardDescription>

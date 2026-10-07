@@ -33,8 +33,12 @@ devices, protected by login and backed up.
 
 1. **Create a project** at supabase.com in region **South Asia (Mumbai)**. The Pro plan
    (about $25/month) is recommended for daily backups and no pausing.
-2. **Create the schema**: open *SQL Editor*, paste the contents of
-   `supabase/migrations/20261007000000_init.sql` and run it.
+2. **Create the schema**: open *SQL Editor* and run each file in `supabase/migrations`, in
+   order (paste the contents, click *Run*):
+   1. `20261007000000_init.sql` (tables, security rules, photo storage)
+   2. `20261007120000_upgrade_previous_schema.sql` (only changes anything on a database set up
+      with the earlier version; fixes "Could not find the 'id_card_images' column")
+   3. `20261008000000_departments.sql` (departments, care teams, doctor fees)
 3. **Auth settings** (*Authentication*):
    - *Sign In / Providers*: keep Email enabled and **turn off "Allow new users to sign up"**.
    - *URL Configuration*: set *Site URL* to your app's address (e.g. `https://clinic.example.com`)
@@ -63,6 +67,19 @@ devices, protected by login and backed up.
 5. **Environment variables**: copy `.env.example` to `.env` (or set them in your host / Replit
    Secrets) and fill in the values from *Project Settings → API*.
    `SUPABASE_SERVICE_ROLE_KEY` and `GOOGLE_GENAI_API_KEY` are server-only secrets.
+
+## Departments, care teams and doctor fees
+
+- **Organization Setup → Departments** (Super Admin, Admin): create departments such as
+  Cardiology or Orthopaedics, choose their doctors and nurses, and set a default doctor fee
+  per case.
+- **Patient page → Department & Care Team**: pick the department, then the attending doctor
+  and nurse from it. The department's default fee is suggested; only Super Admin, Admin or
+  Accounts can set or change it (the database enforces this).
+- **Payments → Record New Payment → Doctor Fee** (Super Admin, Admin, Accounts): choose a
+  doctor, tick the unpaid cases, and the amount is filled in. The cases are then marked paid.
+- The Patient Dashboard filters by department or "My Patients", and the Financial Dashboard
+  lists each doctor's paid and pending fees.
 
 ## Sample data for testing
 

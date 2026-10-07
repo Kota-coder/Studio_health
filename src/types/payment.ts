@@ -1,7 +1,7 @@
 
 import type { AuditLogEntry } from './patient';
 
-export type PaymentType = "Referral/CC" | "Material" | "Pharmacy" | "Salary" | "Other" | "";
+export type PaymentType = "Referral/CC" | "Material" | "Pharmacy" | "Salary" | "Doctor Fee" | "Other" | "";
 export type PaymentMethodSpent = "Cash" | "Cheque" | "Bank Transfer" | "UPI" | "Card" | "Other" | "";
 
 export interface PurchasedMedicationItem {
@@ -29,7 +29,7 @@ export interface Payment {
   payeeId?: string | number; // ID of ReferringDoctor or StaffMember or Vendor
   payeeName?: string; // Name of ReferringDoctor, StaffMember, Vendor or custom payee
   payeeType?: "ReferringDoctor" | "StaffMember" | "Vendor" | "Other";
-  associatedPatientIds?: number[]; // IDs of patients for whom this referral payment is made
+  associatedPatientIds?: number[]; // Patients this payment covers (referral cases, or the cases a Doctor Fee pays for)
 
   description: string;
   amount: number; // Total amount of the payment

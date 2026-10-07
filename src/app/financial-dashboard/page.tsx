@@ -13,7 +13,11 @@ import { AreaChart, DollarSign, TrendingUp, TrendingDown, AlertTriangle, Receipt
 import { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval, isWithinInterval, subMonths } from 'date-fns';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
-import { bills as billsRepo, payments as paymentsRepo } from '@/lib/data';
+import { bills as billsRepo, departments as departmentsRepo, patients as patientsRepo, payments as paymentsRepo, staff as staffRepo } from '@/lib/data';
+import type { Patient } from '@/types/patient';
+import type { StaffMember } from '@/types/staff';
+import type { Department } from '@/types/department';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.financialDashboard;
 
@@ -38,6 +42,9 @@ export default function FinancialDashboardPage() {
 
   const [bills, setBills] = useState<Bill[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  const [departmentList, setDepartmentList] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -51,10 +58,13 @@ export default function FinancialDashboardPage() {
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(true);
-      Promise.all([billsRepo.list(), paymentsRepo.list()])
-        .then(([billList, paymentList]) => {
+      Promise.all([billsRepo.list(), paymentsRepo.list(), patientsRepo.listBasic(), staffRepo.list(), departmentsRepo.list()])
+        .then(([billList, paymentList, patientList, staffMembers, departmentsLoaded]) => {
           setBills(billList);
           setPayments(paymentList);
+          setPatients(patientList);
+          setStaffList(staffMembers);
+          setDepartmentList(departmentsLoaded);
         })
         .catch(error => console.error("Error loading financial data:", error))
         .finally(() => setIsLoading(false));
@@ -177,6 +187,24 @@ export default function FinancialDashboardPage() {
     return config;
   }, [financialSummary]);
 
+
+  // Doctor fee per case: what each doctor has earned, been paid, and is still owed.
+  const doctorFeeRows = useMemo(() => {
+    const rows = new Map<number, { doctor: string; departments: Set<string>; cases: number; paid: number; pending: number }>();
+    for (const patient of patients) {
+      if (!patient.attendingDoctorId || patient.doctorFee == null) continue;
+      const row = rows.get(patient.attendingDoctorId) ?? {
+        doctor: staffList.find(s => s.id === patient.attendingDoctorId)?.name ?? `Staff #${patient.attendingDoctorId}`,
+        departments: new Set<string>(), cases: 0, paid: 0, pending: 0,
+      };
+      const department = departmentList.find(d => d.id === patient.departmentId)?.name;
+      if (department) row.departments.add(department);
+      row.cases++;
+      if (patient.doctorFeeStatus === 'Paid') row.paid += patient.doctorFee; else row.pending += patient.doctorFee;
+      rows.set(patient.attendingDoctorId, row);
+    }
+    return [...rows.values()].sort((a, b) => b.pending - a.pending || a.doctor.localeCompare(b.doctor));
+  }, [patients, staffList, departmentList]);
 
   if (authIsLoading || isLoading) {
     return <div className="flex justify-center items-center min-h-screen"><p>Loading financial dashboard...</p></div>;
@@ -387,6 +415,41 @@ export default function FinancialDashboardPage() {
                     </PieChart>
                 </ResponsiveContainer>
                 </ChartContainer>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg mt-6">
+            <CardHeader>
+              <CardTitle>Doctor Fees</CardTitle>
+              <CardDescription>Fees earned per case by each attending doctor. Pay pending fees from Payments → Record New Payment → Doctor Fee.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {doctorFeeRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No doctor fees set yet. Set them on a patient&apos;s page under Department &amp; Care Team.</p>
+              ) : (
+                <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-4 sm:[&_th]:px-4">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Doctor</TableHead>
+                      <TableHead className="hidden md:table-cell">Departments</TableHead>
+                      <TableHead className="text-right">Cases</TableHead>
+                      <TableHead className="text-right">Paid</TableHead>
+                      <TableHead className="text-right">Pending</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {doctorFeeRows.map(row => (
+                      <TableRow key={row.doctor}>
+                        <TableCell className="font-medium">{row.doctor}</TableCell>
+                        <TableCell className="hidden md:table-cell">{[...row.departments].join(', ') || '—'}</TableCell>
+                        <TableCell className="text-right">{row.cases}</TableCell>
+                        <TableCell className="text-right">₹{row.paid.toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-semibold">{row.pending > 0 ? `₹${row.pending.toFixed(2)}` : '—'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </>

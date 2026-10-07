@@ -55,6 +55,7 @@ import { Alert, AlertDescription as AlertDesc, AlertTitle as AlertTitleComponent
 import { compressImageFiles } from '@/lib/images';
 import { uploadNewImages } from '@/lib/storage';
 import { StoredImage } from '@/components/stored-image';
+import { CareTeamCard } from '@/components/care-team-card';
 import { PATIENT_DATA_REQUESTS_ENABLED } from '@/config/features';
 import { downloadPatientData, erasePatientData } from '@/lib/patient-data';
 import {
@@ -1425,6 +1426,9 @@ export default function PatientDetailPage() {
         </div>
 
         <div className="space-y-6"> {/* Sidebar area */}
+            {currentUser && (
+              <CareTeamCard patient={patient} staff={availableStaff} currentUser={currentUser} onSaved={() => reloadPatient(patient.id)} />
+            )}
             <Card className="shadow-lg">
                 <CardHeader>
                     <CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5 text-primary"/>Assigned Staff</CardTitle>

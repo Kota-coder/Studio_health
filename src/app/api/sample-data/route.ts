@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { getAdminSupabase, getCurrentStaff } from '@/lib/supabase/server';
 
 // Sample staff for the Sample Data page. They are roster entries only (no login),
-// so demo patients can be assigned to them and salaries paid to them. Creating
+// so demo patients can be assigned to them, they can be placed in departments,
+// and salaries and doctor fees can be paid to them. Creating
 // and deleting staff rows needs the service-role key, hence this route.
 
 const SAMPLE_STAFF_EMAIL_DOMAIN = 'sample.cardiocare.test';
@@ -12,6 +13,8 @@ const SAMPLE_STAFF = [
   { name: 'Dr. Kavya Iyer', role: 'Doctor', phone_number: '9800000002' },
   { name: 'Nurse Lakshmi Nair', role: 'Nurse', phone_number: '9800000003', salary: 15000 },
   { name: 'Nurse Rohit Das', role: 'Nurse', phone_number: '9800000004', salary: 15000 },
+  { name: 'Dr. Sameer Khan', role: 'Doctor', phone_number: '9800000007' },
+  { name: 'Nurse Asha Thomas', role: 'Nurse', phone_number: '9800000008', salary: 15000 },
   { name: 'Meena Joshi', role: 'Receptionist', phone_number: '9800000005', salary: 10000 },
   { name: 'Suresh Rao', role: 'Accounts', phone_number: '9800000006', salary: 12000 },
 ];

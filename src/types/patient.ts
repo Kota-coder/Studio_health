@@ -1,4 +1,5 @@
 
+export type DoctorFeeStatus = "Pending" | "Paid";
 export type PatientCondition = "Critical" | "Medium" | "Low" | "Discharged" | "Unassigned";
 export type PatientAdmissionCondition = "Stable" | "Guarded" | "Serious" | "Critical" | "Undetermined" | "";
 
@@ -76,6 +77,15 @@ export interface Patient {
 
   tests?: TestEntry[];
   auditLog?: AuditLogEntry[];
+
+  // Department and care team. The attending doctor earns doctorFee for this case,
+  // paid through a "Doctor Fee" payment (which sets doctorFeeStatus to Paid).
+  departmentId?: number | null;
+  attendingDoctorId?: number | null;
+  attendingNurseId?: number | null;
+  doctorFee?: number | null;
+  doctorFeeStatus?: DoctorFeeStatus;
+  doctorFeePaymentId?: string | null;
 
   // DPDP Act consent record, captured at registration.
   consentGivenAt?: string;

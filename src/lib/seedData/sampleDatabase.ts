@@ -4,7 +4,7 @@
 // removed again with removeSampleDataFromDatabase().
 
 import {
-  bills, countRows, materials, medications, patients, payments, referringDoctors, testCatalog, vendors,
+  bills, countRows, departments, materials, medications, patients, payments, referringDoctors, testCatalog, vendors,
 } from '@/lib/data';
 import { maskAadhaarNumber, isAadhaarCard } from '@/lib/aadhaar';
 import type { Bill, BillItem, PaymentMethod, PaymentStatus } from '@/types/billing';
@@ -24,6 +24,8 @@ const DAY = 24 * 60 * 60 * 1000;
 
 export interface SampleDataSummary {
   staff: number;
+  departments: number;
+  doctorFeePayments: number;
   referringDoctors: number;
   medications: number;
   materials: number;
@@ -78,6 +80,11 @@ const CONDITIONS: PatientCondition[] = ['Critical', 'Medium', 'Medium', 'Low', '
 const ADMISSION_CONDITIONS: PatientAdmissionCondition[] = ['Stable', 'Stable', 'Guarded', 'Serious', 'Critical'];
 const PAYMENT_METHODS: PaymentMethod[] = ['Cash', 'UPI', 'UPI', 'Online/Card', 'Insurance', 'Arogyasree'];
 
+const SAMPLE_DEPARTMENTS: Array<[string, number]> = [
+  ['Cardiology', 1500],
+  ['General Medicine', 800],
+  ['Orthopaedics', 2000],
+];
 const SAMPLE_MATERIALS = [
   { name: 'ECG Electrodes (pack of 50)', category: 'Consumables', unitOfMeasure: 'pack', listPrice: 450 },
   { name: 'Disposable Syringes 5ml (box of 100)', category: 'Consumables', unitOfMeasure: 'box', listPrice: 650 },
@@ -125,15 +132,41 @@ export async function loadSampleDataIntoDatabase(
   }
   const random = createRandom(20261007);
   const summary: SampleDataSummary = {
-    staff: 0, referringDoctors: 0, medications: 0, materials: 0, vendors: 0, testCatalog: 0,
+    staff: 0, departments: 0, doctorFeePayments: 0, referringDoctors: 0, medications: 0, materials: 0, vendors: 0, testCatalog: 0,
     patients: 0, careNotes: 0, tests: 0, bills: 0, payments: 0,
   };
 
   onProgress?.('Adding sample staff...');
   const staff = await sampleStaffApi('POST');
   summary.staff = staff.length;
-  const clinicalStaff = staff.filter(s => s.role === 'Doctor' || s.role === 'Nurse');
   const doctors = staff.filter(s => s.role === 'Doctor');
+  const nurses = staff.filter(s => s.role === 'Nurse');
+
+  // Departments, each with one sample doctor and nurse (in order).
+  onProgress?.('Adding departments...');
+  const sampleDepartments: Array<{ id: number; name: string; fee: number; doctor?: SampleStaff; nurse?: SampleStaff }> = [];
+  for (const [index, [name, fee]] of SAMPLE_DEPARTMENTS.entries()) {
+    const created = await departments.create({ name, description: SAMPLE_MARK, defaultDoctorFee: fee, active: true });
+    const doctor = doctors[index];
+    const nurse = nurses[index];
+    await departments.setMembers(created.id, [doctor?.id, nurse?.id].filter((id): id is number => id !== undefined));
+    sampleDepartments.push({ id: created.id, name, fee, doctor, nurse });
+  }
+  summary.departments = sampleDepartments.length;
+  // Each patient goes to a department; its doctor and nurse are the care team.
+  const careTeam = (visitDaysAgo: number) => {
+    const department = random.pick(sampleDepartments);
+    const team = [currentStaff.id, department.doctor?.id, department.nurse?.id].filter((id): id is number => id !== undefined);
+    return {
+      departmentId: department.id,
+      attendingDoctorId: department.doctor?.id ?? null,
+      attendingNurseId: department.nurse?.id ?? null,
+      // Recent admissions may not have a fee agreed yet.
+      doctorFee: department.doctor && visitDaysAgo > 3 ? department.fee : null,
+      assignedStaffIds: team,
+      doctorName: department.doctor?.name,
+    };
+  };
 
   onProgress?.('Adding catalogs...');
   const createdDoctors = await referringDoctors.createMany(
@@ -162,18 +195,18 @@ export async function loadSampleDataIntoDatabase(
     visitDaysAgo: number;
   };
   const plans: PatientPlan[] = [];
-  const assign = () => [currentStaff.id, ...(clinicalStaff.length ? [random.pick(clinicalStaff).id] : [])];
 
   SEED_PATIENTS.forEach((seed, index) => {
     const { id: _id, careNotes = [], tests = [], auditLog: _auditLog, ...fields } = seed;
     const visitDaysAgo = 3 + index * 9;
+    const { doctorName: _doctorName, ...team } = careTeam(visitDaysAgo);
     plans.push({
       visitDaysAgo,
       fields: {
         ...fields,
         idNumber: isAadhaarCard(fields.idCardType) ? maskAadhaarNumber(fields.idNumber) : fields.idNumber,
         idCardImages: [], patientPhotos: [], initialObservationAttachments: [],
-        assignedStaffIds: assign(),
+        ...team,
         referredDoctorId: createdDoctors[index % createdDoctors.length]?.id ?? null,
         admissionDate: daysAgo(visitDaysAgo).toISOString(),
         consentGivenAt: daysAgo(visitDaysAgo).toISOString(),
@@ -209,7 +242,8 @@ export async function loadSampleDataIntoDatabase(
     const idNumber = isAadhaarCard(idCardType) ? maskAadhaarNumber(String(random.int(100000000000, 999999999999)))
       : `${String.fromCharCode(65 + random.int(0, 25))}${String.fromCharCode(65 + random.int(0, 25))}${random.int(1000000, 9999999)}`;
     const dob = new Date(random.int(1945, 1995), random.int(0, 11), random.int(1, 28));
-    const doctorOnNote = doctors.length ? random.pick(doctors) : { id: currentStaff.id, name: currentStaff.name };
+    const { doctorName, ...team } = careTeam(visitDaysAgo);
+    const doctorOnNote = team.attendingDoctorId && doctorName ? { id: team.attendingDoctorId, name: doctorName } : { id: currentStaff.id, name: currentStaff.name };
     plans.push({
       visitDaysAgo,
       fields: {
@@ -224,7 +258,7 @@ export async function loadSampleDataIntoDatabase(
         emergencyContactNumber: `9${random.int(100000000, 999999999)}`,
         idCardImages: [], patientPhotos: [], initialObservationAttachments: [],
         condition: random.pick(CONDITIONS),
-        assignedStaffIds: assign(),
+        ...team,
         admissionDate: daysAgo(visitDaysAgo).toISOString(),
         referredDoctorId: random.next() < 0.6 && createdDoctors.length ? random.pick(createdDoctors).id : null,
         reasonForVisit: random.pick(REASONS),
@@ -263,10 +297,12 @@ export async function loadSampleDataIntoDatabase(
   }
 
   const billPlans: Array<WithCreatedAt<Omit<Bill, 'id' | 'createdAt' | 'auditLog'>>> = [];
+  const createdCases: Array<{ id: number; doctorId?: number | null; fee?: number | null; visitDaysAgo: number }> = [];
   for (const [index, plan] of plans.entries()) {
     onProgress?.(`Adding patient ${index + 1} of ${plans.length}...`);
     const created = await patients.create(plan.fields, { actionType: 'Patient Registered', details: 'Sample patient loaded for testing.' });
     summary.patients++;
+    createdCases.push({ id: created.id, doctorId: plan.fields.attendingDoctorId, fee: plan.fields.doctorFee, visitDaysAgo: plan.visitDaysAgo });
     for (const note of plan.notes) {
       await patients.addCareNote(created.id, note as WithCreatedAt<typeof note>);
       summary.careNotes++;
@@ -382,6 +418,29 @@ export async function loadSampleDataIntoDatabase(
     summary.payments++;
   }
 
+  // Doctor fees for cases older than a month have been paid, one payment per doctor;
+  // newer cases stay pending so Payments → Doctor Fee has something to settle.
+  onProgress?.('Adding doctor fee payments...');
+  for (const doctor of doctors) {
+    const paidCases = createdCases.filter(c => c.doctorId === doctor.id && c.fee != null && c.visitDaysAgo > 30);
+    if (paidCases.length === 0) continue;
+    const when = daysAgo(20, 16);
+    const payment = await payments.create({
+      paymentDate: dmy(when), paymentType: 'Doctor Fee', payeeId: doctor.id, payeeName: doctor.name, payeeType: 'StaffMember',
+      associatedPatientIds: paidCases.map(c => c.id),
+      description: `Doctor fee for ${paidCases.length} cases`,
+      amount: paidCases.reduce((sum, c) => sum + (c.fee ?? 0), 0),
+      paymentMethod: 'Bank Transfer',
+      transactionId: `${SAMPLE_PAYMENT_PREFIX}${String(paymentNumber++).padStart(3, '0')}`,
+      recordedByStaffId: currentStaff.id, recordedByStaffName: currentStaff.name,
+      notes: SAMPLE_MARK,
+      createdAt: when.toISOString(),
+    } as WithCreatedAt<Omit<Payment, 'id' | 'createdAt' | 'auditLog'>>, 'Sample doctor fee payment loaded for testing.');
+    await patients.setDoctorFeePayment(paidCases.map(c => c.id), payment.id);
+    summary.payments++;
+    summary.doctorFeePayments++;
+  }
+
   return summary;
 }
 
@@ -421,6 +480,7 @@ export async function removeSampleDataFromDatabase(onProgress?: (message: string
   await removeMarked(materials, m => m.notes === SAMPLE_MARK);
   await removeMarked(vendors, v => v.notes === SAMPLE_MARK);
   await removeMarked(testCatalog, t => t.description === SAMPLE_MARK);
+  await removeMarked(departments, d => d.description === SAMPLE_MARK);
 
   onProgress?.('Removing sample staff...');
   await sampleStaffApi('DELETE');

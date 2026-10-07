@@ -15,6 +15,7 @@ export const PAGE_ROLES = {
   materials: ["Super Admin", "Admin", "Doctor", "Nurse"],
   vendors: ["Super Admin", "Admin", "Doctor", "Nurse"],
   staff: ["Super Admin", "Admin", "Doctor"],
+  departments: ["Super Admin", "Admin"],
   medicalTests: ["Super Admin", "Admin", "Doctor", "Nurse"],
   referringDoctors: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"],
   admin: ["Super Admin"],

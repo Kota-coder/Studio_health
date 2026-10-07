@@ -139,7 +139,7 @@ export default function PaymentsOverviewPage() {
   }, [payments, toast]);
 
   const getPatientNamesForPayment = (payment: Payment) => {
-    if (payment.paymentType !== "Referral/CC" || !payment.associatedPatientIds || payment.associatedPatientIds.length === 0) {
+    if ((payment.paymentType !== "Referral/CC" && payment.paymentType !== "Doctor Fee") || !payment.associatedPatientIds || payment.associatedPatientIds.length === 0) {
       return '';
     }
     

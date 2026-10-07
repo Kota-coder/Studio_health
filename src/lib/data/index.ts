@@ -13,6 +13,7 @@ import type { Material } from '@/types/material';
 import type { Vendor } from '@/types/vendor';
 import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 import type { TreatmentTemplate } from '@/config/treatmentTemplates';
+import type { Department, DepartmentMembers } from '@/types/department';
 
 type Row = Record<string, unknown>;
 
@@ -99,6 +100,48 @@ export const materials = table<Material>('materials', 'name');
 export const vendors = table<Vendor>('vendors', 'name');
 export const testCatalog = table<MedicalTestCatalogItem>('medical_test_catalog', 'name');
 export const treatmentTemplates = table<TreatmentTemplate>('treatment_templates', 'name');
+
+// ---------------------------------------------------------------------------
+// Departments and their doctors/nurses
+// ---------------------------------------------------------------------------
+
+const departmentTable = table<Department>('departments', 'name', ['created_at']);
+
+function departmentFromRow(department: Department): Department {
+  return { ...department, defaultDoctorFee: department.defaultDoctorFee == null ? null : Number(department.defaultDoctorFee) };
+}
+
+export const departments = {
+  async list(): Promise<Department[]> {
+    return (await departmentTable.list()).map(departmentFromRow);
+  },
+  async get(id: number): Promise<Department | null> {
+    const department = await departmentTable.get(id);
+    return department ? departmentFromRow(department) : null;
+  },
+  create: departmentTable.create,
+  update: departmentTable.update,
+  remove: departmentTable.remove,
+
+  // Department id -> staff ids.
+  async listMembers(): Promise<DepartmentMembers> {
+    const rows = check(await db().from('department_staff').select('department_id, staff_id')) as Row[];
+    const members: DepartmentMembers = {};
+    for (const row of rows) {
+      const departmentId = Number(row.department_id);
+      (members[departmentId] ??= []).push(Number(row.staff_id));
+    }
+    return members;
+  },
+
+  // Replaces the department's doctors and nurses with staffIds.
+  async setMembers(departmentId: number, staffIds: number[]): Promise<void> {
+    check(await db().from('department_staff').delete().eq('department_id', departmentId));
+    if (staffIds.length > 0) {
+      check(await db().from('department_staff').insert(staffIds.map(staffId => ({ department_id: departmentId, staff_id: staffId }))));
+    }
+  },
+};
 
 // Staff are read directly; creating, editing and deactivating logins goes through
 // /api/staff, which holds the service-role key needed to manage Supabase Auth users.
@@ -191,6 +234,8 @@ function patientFromRow(row: Row): Patient {
   const patient = fromRow<Patient>(rest);
   patient.assignedStaffIds = (patient.assignedStaffIds ?? []).map(Number);
   patient.condition = patient.condition || 'Unassigned';
+  patient.doctorFee = patient.doctorFee == null ? null : Number(patient.doctorFee);
+  patient.doctorFeeStatus = patient.doctorFeeStatus || 'Pending';
   patient.careNotes = ((care_notes as Row[] | undefined) ?? [])
     .map(r => fromRow<CareNote>(r))
     .map(n => ({ ...n, medicationsMentioned: n.medicationsMentioned ?? [], templateFieldsData: n.templateFieldsData ?? {} }))
@@ -244,6 +289,25 @@ export const patients = {
 
   async remove(id: number): Promise<void> {
     checkDeleted(await db().from('patients').delete().eq('id', id).select('id'));
+  },
+
+  // Cases the doctor attended whose fee is set but not yet paid.
+  async listUnpaidDoctorCases(doctorId: number): Promise<Patient[]> {
+    const rows = check(await db().from('patients').select('*')
+      .eq('attending_doctor_id', doctorId).eq('doctor_fee_status', 'Pending').not('doctor_fee', 'is', null).order('id'));
+    return (rows as Row[]).map(patientFromRow);
+  },
+
+  // Marks the cases' doctor fees as paid by paymentId (or back to Pending when paymentId is null).
+  async setDoctorFeePayment(patientIds: number[], paymentId: string | null): Promise<void> {
+    if (patientIds.length === 0) return;
+    check(await db().from('patients')
+      .update({ doctor_fee_status: paymentId ? 'Paid' : 'Pending', doctor_fee_payment_id: paymentId })
+      .in('id', patientIds));
+    for (const id of patientIds) {
+      await addAuditEntry('patient', id, paymentId ? 'Doctor Fee Paid' : 'Doctor Fee Reopened',
+        paymentId ? `Doctor's fee for this case paid in ${paymentId}.` : 'Doctor fee marked unpaid again.');
+    }
   },
 
   async addCareNote(patientId: number, note: Omit<CareNote, 'id' | 'createdAt'>): Promise<CareNote> {

@@ -9,8 +9,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Patient, PatientCondition, AuditLogEntry } from '@/types/patient';
 import { StaffMember } from '@/types/staff';
 import { Bill } from '@/types/billing';
-import { ArrowRight, UserPlus, AlertTriangle, ShieldCheck, Activity, HelpCircle, BriefcaseMedical, ClipboardList, Users as UsersIcon, CheckCircle2, Trash2, PlusCircle, ArrowLeft } from 'lucide-react';
-import { bills as billsRepo, patients as patientsRepo, staff as staffRepo } from '@/lib/data';
+import { ArrowRight, UserPlus, AlertTriangle, ShieldCheck, Activity, HelpCircle, BriefcaseMedical, ClipboardList, Users as UsersIcon, CheckCircle2, Trash2, PlusCircle, ArrowLeft, Building2 } from 'lucide-react';
+import { bills as billsRepo, departments as departmentsRepo, patients as patientsRepo, staff as staffRepo } from '@/lib/data';
+import type { Department } from '@/types/department';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -55,6 +56,8 @@ export default function DashboardPage() {
 
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [filterCondition, setFilterCondition] = useState<PatientCondition | "All">("All");
+  const [filterDepartment, setFilterDepartment] = useState<string>("All");
+  const [departmentList, setDepartmentList] = useState<Department[]>([]);
 
   useEffect(() => {
     if (!authIsLoading && !currentUser) {
@@ -65,8 +68,9 @@ export default function DashboardPage() {
   useEffect(() => {
     if (currentUser) {
       setIsLoading(true);
-      Promise.all([patientsRepo.list(), staffRepo.list()])
-        .then(([patientList, staffList]) => {
+      Promise.all([patientsRepo.list(), staffRepo.list(), departmentsRepo.list()])
+        .then(([patientList, staffList, departmentsLoaded]) => {
+          setDepartmentList(departmentsLoaded);
           setAllPatients(patientList.map(p => ({ ...p, reasonForVisit: p.reasonForVisit || "Not specified" })));
           setAvailableStaff(staffList);
         })
@@ -94,6 +98,14 @@ export default function DashboardPage() {
     if (filterCondition !== "All") {
       patientsToProcess = patientsToProcess.filter(patient => (patient.condition || "Unassigned") === filterCondition);
     }
+    if (filterDepartment === "none") {
+      patientsToProcess = patientsToProcess.filter(patient => !patient.departmentId);
+    } else if (filterDepartment === "mine" && currentUser) {
+      patientsToProcess = patientsToProcess.filter(patient =>
+        patient.attendingDoctorId === currentUser.id || patient.attendingNurseId === currentUser.id || patient.assignedStaffIds?.includes(currentUser.id));
+    } else if (filterDepartment !== "All") {
+      patientsToProcess = patientsToProcess.filter(patient => String(patient.departmentId) === filterDepartment);
+    }
 
     const grouped: Record<PatientCondition, Patient[]> = {
       "Critical": [],
@@ -112,7 +124,7 @@ export default function DashboardPage() {
       }
     });
     return grouped;
-  }, [allPatients, searchTerm, filterCondition]);
+  }, [allPatients, searchTerm, filterCondition, filterDepartment, currentUser]);
 
   const proceedWithConditionChange = useCallback(async (patientId: number, newCondition: PatientCondition) => {
     if (!currentUser) return;
@@ -255,7 +267,7 @@ export default function DashboardPage() {
         <CardHeader>
           <CardTitle className="text-lg">Filters & Search</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col sm:flex-row gap-4 items-end">
+        <CardContent className="flex flex-col md:flex-row gap-4 items-end">
           <div className="w-full sm:flex-grow">
             <Label htmlFor="searchPatientName">Search by Patient Name</Label>
             <Input
@@ -266,6 +278,20 @@ export default function DashboardPage() {
               onChange={(e) => setSearchTerm(e.target.value)}
               className="mt-1"
             />
+          </div>
+          <div className="w-full sm:w-auto min-w-[200px]">
+            <Label htmlFor="filterDepartment">Department</Label>
+            <Select value={filterDepartment} onValueChange={setFilterDepartment}>
+              <SelectTrigger id="filterDepartment" className="mt-1">
+                <SelectValue placeholder="All Departments" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All Departments</SelectItem>
+                <SelectItem value="mine">My Patients</SelectItem>
+                {departmentList.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
+                <SelectItem value="none">No Department</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="w-full sm:w-auto min-w-[200px]">
             <Label htmlFor="filterPatientCondition">Filter by Condition</Label>
@@ -349,6 +375,15 @@ export default function DashboardPage() {
                                 Latest: {getLatestCareNoteSummary(patient)}
                             </span>
                             </div>
+                            {patient.departmentId && (
+                            <div className="flex items-start text-sm text-muted-foreground mb-2">
+                            <Building2 className="mr-2 h-4 w-4 mt-0.5 shrink-0" />
+                            <span className="truncate">
+                                {departmentList.find(d => d.id === patient.departmentId)?.name ?? 'Department'}
+                                {patient.attendingDoctorId ? ` · ${availableStaff.find(s => s.id === patient.attendingDoctorId)?.name ?? ''}` : ''}
+                            </span>
+                            </div>
+                            )}
                             <div className="flex items-start text-sm text-muted-foreground mb-2">
                             <UsersIcon className="mr-2 h-4 w-4 mt-0.5 shrink-0" />
                             <span className="truncate" title={getAssignedStaffNames(patient, availableStaff)}>
