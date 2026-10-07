@@ -1,8 +1,10 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { SevaLogo } from '@/components/seva-logo';
-import { brandingUrls, displayName, initialsFor, isSevaDefault, monogramSvg, type HospitalProfile } from '@/lib/branding';
+import { brandingUrls, displayName, hexToHslTriplet, initialsFor, isSevaDefault, monogramSvg, type HospitalProfile } from '@/lib/branding';
+import { hospitalProfile as profileRepo } from '@/lib/data';
+import { MINUTE, cached } from '@/lib/data/cache';
 import { cn } from '@/lib/utils';
 
 interface BrandingContextValue {
@@ -15,6 +17,28 @@ const BrandingContext = createContext<BrandingContextValue | null>(null);
 // Holds the hospital's branding, read on the server by the root layout.
 export function BrandingProvider({ initialProfile, children }: { initialProfile: HospitalProfile; children: React.ReactNode }) {
   const [profile, setProfile] = useState(initialProfile);
+
+  // The page may come from the CDN's copy built a few minutes ago; check the saved profile once
+  // per tab (about 500 bytes) and switch to it if the Super Admin has changed it since.
+  useEffect(() => {
+    cached('branding:profile', 10 * MINUTE, () => profileRepo.get())
+      .then(latest => {
+        const changed = (['name', 'shortName', 'tagline', 'brandColor', 'logoFolder', 'configuredAt'] as const)
+          .some(key => (latest[key] ?? null) !== (initialProfile[key] ?? null))
+          || (latest.disabledModules ?? []).join() !== (initialProfile.disabledModules ?? []).join();
+        if (changed) setProfile(prev => ({ ...prev, ...latest }));
+      })
+      .catch(() => undefined); // keep what the page was built with
+  }, [initialProfile]);
+
+  // Apply the brand colour (buttons, links, focus rings) when it differs from the page's.
+  useEffect(() => {
+    if (profile.brandColor === initialProfile.brandColor || !SAFE_COLOR.test(profile.brandColor)) return;
+    const root = document.documentElement.style;
+    root.setProperty('--primary', hexToHslTriplet(profile.brandColor));
+    root.setProperty('--ring', hexToHslTriplet(profile.brandColor));
+  }, [profile.brandColor, initialProfile.brandColor]);
+
   const value = useMemo(() => ({ profile, setProfile }), [profile]);
   return <BrandingContext.Provider value={value}>{children}</BrandingContext.Provider>;
 }

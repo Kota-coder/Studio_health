@@ -1,7 +1,7 @@
 "use client";
 
 import type { StaffMember } from '@/types/staff';
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { getSupabase } from '@/lib/supabase/client';
@@ -42,6 +42,7 @@ async function loadStaffForUser(authUserId: string): Promise<StaffMember | null>
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<StaffMember | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const loadedFor = useRef<string | null>(null); // auth user whose staff record is loaded
   const router = useRouter();
   const { toast } = useToast();
 
@@ -50,17 +51,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let cancelled = false;
 
     const syncSession = async (authUserId: string | undefined) => {
+      // Supabase repeats SIGNED_IN (e.g. when the tab regains focus); keep the loaded record so
+      // pages don't reload their data.
+      if (authUserId && authUserId === loadedFor.current) return;
+      loadedFor.current = authUserId ?? null;
       const staffMember = authUserId ? await loadStaffForUser(authUserId) : null;
+      if (!staffMember) loadedFor.current = null;
       if (!cancelled) {
         setCurrentUser(staffMember);
         setIsLoading(false);
       }
     };
 
-    supabase.auth.getUser().then(({ data: { user } }) => syncSession(user?.id));
+    // The session stored in the browser is enough here: the server checks the login on every
+    // page (middleware) and the database's security rules check it on every query.
+    supabase.auth.getSession().then(({ data: { session } }) => syncSession(session?.user.id));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
+        loadedFor.current = null;
         setCurrentUser(null);
       } else if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
         // Defer: Supabase recommends not awaiting other calls inside this callback.
@@ -92,6 +101,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return false;
     }
 
+    loadedFor.current = data.user.id;
     setCurrentUser(staffMember);
     setIsLoading(false);
     toast({ title: "Login Successful", description: `Welcome, ${staffMember.name}!` });

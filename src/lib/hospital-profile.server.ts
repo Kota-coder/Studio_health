@@ -6,8 +6,7 @@ export const HOSPITAL_PROFILE_TAG = 'hospital-profile';
 
 // The hospital's branding for server-rendered parts (page title, icons, manifest, colours).
 // Cached on the server for 5 minutes, and cleared straight away when the Super Admin saves the
-// profile (see /api/hospital-profile), so page loads don't each query the database. Pages are
-// rendered per request (see the root layout), so the next load after a save shows it.
+// profile (see /api/hospital-profile), so page loads don't each query the database.
 export const getHospitalProfile = unstable_cache(loadHospitalProfile, [HOSPITAL_PROFILE_TAG], {
   revalidate: 300,
   tags: [HOSPITAL_PROFILE_TAG],
@@ -23,7 +22,7 @@ async function loadHospitalProfile(): Promise<HospitalProfile> {
       cache: 'no-store', // cached by unstable_cache above
     });
     if (!response.ok) return DEFAULT_PROFILE; // e.g. the migration hasn't been run yet
-    const [row] = (await response.json()) as Array<Record<string, string | null>>;
+    const [row] = (await response.json()) as Array<Record<string, string | null> & { disabled_modules?: string[] | null }>;
     if (!row) return DEFAULT_PROFILE;
     return {
       name: row.name || DEFAULT_PROFILE.name,
@@ -37,6 +36,7 @@ async function loadHospitalProfile(): Promise<HospitalProfile> {
       brandColor: row.brand_color || DEFAULT_PROFILE.brandColor,
       logoFolder: row.logo_folder,
       configuredAt: row.configured_at,
+      disabledModules: row.disabled_modules ?? [],
     };
   } catch {
     return DEFAULT_PROFILE;

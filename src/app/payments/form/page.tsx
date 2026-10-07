@@ -115,7 +115,7 @@ export default function PaymentFormPage() {
     try {
       const [doctors, staffList, meds, mats, vendorList, patientList] = await Promise.all([
         referringDoctorsRepo.list(), staffRepo.list(), medicationsRepo.list(),
-        materialsRepo.list(), vendorsRepo.list(), patientsRepo.listBasic(),
+        materialsRepo.list(), vendorsRepo.list(), patientsRepo.listFeeCases(),
       ]);
       if (cancelled) return;
       setReferringDoctorsList(doctors);

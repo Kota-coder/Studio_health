@@ -10,8 +10,8 @@
 //   node scripts/migrate-hospitals.mjs --dry-run  only show what would run
 //   node scripts/migrate-hospitals.mjs --only "Sri Ram Hospital"
 //
-// A brand-new database (no tables yet) first gets 20261007000000_init.sql. Every other script is
-// safe to run again, so all of them run each time, in order.
+// Every script in supabase/migrations is safe to run again, so all of them run each time, in
+// order. Today there is one (the complete schema); later updates add more files.
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -20,7 +20,6 @@ import pg from 'pg';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const migrationsDir = join(root, 'supabase', 'migrations');
-const INIT = '20261007000000_init.sql';
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
@@ -43,7 +42,6 @@ if (!Array.isArray(hospitals) || hospitals.length === 0) {
 }
 
 const files = readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
-const repeatable = files.filter(f => f !== INIT);
 
 let failures = 0;
 for (const hospital of hospitals) {
@@ -57,9 +55,8 @@ for (const hospital of hospitals) {
   try {
     await client.connect();
     const { rows } = await client.query("select to_regclass('public.patients') is not null as ready");
-    const plan = rows[0].ready ? repeatable : files;
-    console.log(`${label} ${rows[0].ready ? 'existing database' : 'new database'}: ${plan.length} script(s)`);
-    for (const file of plan) {
+    console.log(`${label} ${rows[0].ready ? 'existing database' : 'new database'}: ${files.length} script(s)`);
+    for (const file of files) {
       if (dryRun) { console.log(`${label}   would run ${file}`); continue; }
       await client.query(readFileSync(join(migrationsDir, file), 'utf8'));
       console.log(`${label}   ✓ ${file}`);

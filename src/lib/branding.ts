@@ -11,6 +11,7 @@ export interface HospitalProfile {
   registrationNumber?: string | null;
   brandColor: string; // #rrggbb
   logoFolder?: string | null;
+  disabledModules?: string[]; // menu sections switched off (src/config/modules.ts)
   configuredAt?: string | null;
 }
 

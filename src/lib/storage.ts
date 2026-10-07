@@ -3,6 +3,7 @@
 
 import { getSupabase } from '@/lib/supabase/client';
 import { dataUrlToBlob } from '@/lib/images';
+import { MINUTE, cached } from '@/lib/data/cache';
 
 export const PATIENT_FILES_BUCKET = 'patient-files';
 const SIGNED_URL_TTL_SECONDS = 60 * 60;
@@ -15,7 +16,8 @@ export async function uploadImage(dataUrl: string, folder: string): Promise<stri
   const path = `${folder}/${crypto.randomUUID()}.${extension}`;
   const { error } = await getSupabase().storage
     .from(PATIENT_FILES_BUCKET)
-    .upload(path, blob, { contentType: blob.type, upsert: false });
+    // Paths are unique and never overwritten, so browsers may keep the file for a year.
+    .upload(path, blob, { contentType: blob.type, upsert: false, cacheControl: '31536000' });
   if (error) throw new Error(`Image upload failed: ${error.message}`);
   return path;
 }
@@ -26,15 +28,20 @@ export async function uploadIfNew(value: string | null | undefined, folder: stri
   return value.startsWith('data:') ? uploadImage(value, folder) : value;
 }
 
-export async function getSignedImageUrl(path: string): Promise<string | null> {
-  const { data, error } = await getSupabase().storage
-    .from(PATIENT_FILES_BUCKET)
-    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
-  if (error) {
+// Signed links are reused for 50 minutes (they last an hour): the same link means the
+// browser shows its saved copy instead of downloading the image again, and the link
+// isn't re-requested every time an image appears.
+export function getSignedImageUrl(path: string): Promise<string | null> {
+  return cached(`signed:${path}`, 50 * MINUTE, async () => {
+    const { data, error } = await getSupabase().storage
+      .from(PATIENT_FILES_BUCKET)
+      .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+    if (error) throw error;
+    return data.signedUrl;
+  }).catch(error => {
     console.error('Could not sign image URL', error);
     return null;
-  }
-  return data.signedUrl;
+  });
 }
 
 export async function deleteImage(path: string): Promise<void> {

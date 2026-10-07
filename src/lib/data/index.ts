@@ -301,7 +301,7 @@ export const attendance = {
 
 // ---------------------------------------------------------------------------
 // Financial Dashboard: totals worked out by the database (financial_summary in
-// supabase/migrations/20261012000000_dashboard_summary.sql)
+// supabase/migrations/20261016000000_seva_schema.sql)
 // ---------------------------------------------------------------------------
 
 export interface FinancialSummary {
@@ -332,7 +332,7 @@ export function financialSummary(range: DateRange = {}): Promise<FinancialSummar
 }
 
 // ---------------------------------------------------------------------------
-// Hospital profile (name, logo, colour) — one row; see 20261015000000_hospital_profile.sql
+// Hospital profile (name, logo, colour) — one row; see supabase/migrations/20261016000000_seva_schema.sql
 // ---------------------------------------------------------------------------
 
 export const hospitalProfile = {
@@ -431,6 +431,11 @@ function patientRow(fields: Partial<PatientFields>): Row {
   return row;
 }
 
+// Columns the Payments form needs for referral and doctor-fee cases.
+const FEE_FIELDS = 'id, first_name, last_name, reason_for_visit, admission_date, department_id, '
+  + 'referred_doctor_id, referral_fee, referral_fee_status, referral_fee_basis, referral_fee_payment_id, '
+  + 'attending_doctor_id, doctor_fee, doctor_fee_status, doctor_fee_payment_id';
+
 export const patients = invalidatesOnWrite({
   // For the Patient Dashboard: patient records with only their latest care note, instead of
   // every note and test. Cached briefly so going back and forth doesn't re-download it.
@@ -444,6 +449,14 @@ export const patients = invalidatesOnWrite({
         .limit(1, { referencedTable: 'care_notes' }));
       return (rows as Row[]).map(patientFromRow);
     });
+  },
+
+  // Patients with a referring doctor or a doctor fee, with only the fields the Payments form
+  // needs to list and settle referral and doctor fees.
+  async listFeeCases(): Promise<Patient[]> {
+    const rows = check(await db().from('patients').select(FEE_FIELDS)
+      .or('referred_doctor_id.not.is.null,doctor_fee.not.is.null').order('id'));
+    return (rows as Row[]).map(patientFromRow);
   },
 
   // Just enough to show and pick patients by name, department and condition (payments list,
@@ -488,7 +501,7 @@ export const patients = invalidatesOnWrite({
 
   // Cases the doctor attended whose fee is set but not yet paid.
   async listUnpaidDoctorCases(doctorId: number): Promise<Patient[]> {
-    const rows = check(await db().from('patients').select('*')
+    const rows = check(await db().from('patients').select(FEE_FIELDS)
       .eq('attending_doctor_id', doctorId).eq('doctor_fee_status', 'Pending').not('doctor_fee', 'is', null).order('id'));
     return (rows as Row[]).map(patientFromRow);
   },

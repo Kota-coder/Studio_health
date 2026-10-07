@@ -16,6 +16,8 @@ import { Menu as MenuIcon, LayoutDashboard, FileText, CreditCard, Receipt, Pill,
 import React from 'react';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
+import { isModuleEnabled } from '@/config/modules';
+import { useBranding } from '@/components/branding-provider';
 
 // This component wraps AuthProvider and renders the menu based on auth state
 export function AuthProviderClient({ children }: { children: React.ReactNode }) {
@@ -32,33 +34,35 @@ interface MenuItemConfig {
   icon: React.ElementType;
   allowedRoles: StaffRole[];
   isPrimary?: boolean;
+  module?: string; // switchable section (src/config/modules.ts)
 }
 
 const allMenuItems: MenuItemConfig[] = [
   // Primary Patient-Facing & Operational Links
   { href: '/dashboard', label: 'Patient Dashboard', icon: LayoutDashboard, allowedRoles: PAGE_ROLES.dashboard, isPrimary: true },
-  { href: '/billing', label: 'Billing', icon: CreditCard, allowedRoles: PAGE_ROLES.billing, isPrimary: true },
-  { href: '/payments', label: 'Payments', icon: Receipt, allowedRoles: PAGE_ROLES.payments, isPrimary: true },
-  { href: '/financial-dashboard', label: 'Financial Dashboard', icon: AreaChart, allowedRoles: PAGE_ROLES.financialDashboard, isPrimary: true },
-  { href: '/duty', label: 'Duty Roster & Attendance', icon: CalendarClock, allowedRoles: PAGE_ROLES.duty, isPrimary: true },
+  { href: '/billing', label: 'Billing', icon: CreditCard, allowedRoles: PAGE_ROLES.billing, isPrimary: true , module: 'billing' },
+  { href: '/payments', label: 'Payments', icon: Receipt, allowedRoles: PAGE_ROLES.payments, isPrimary: true , module: 'payments' },
+  { href: '/financial-dashboard', label: 'Financial Dashboard', icon: AreaChart, allowedRoles: PAGE_ROLES.financialDashboard, isPrimary: true , module: 'financialDashboard' },
+  { href: '/duty', label: 'Duty Roster & Attendance', icon: CalendarClock, allowedRoles: PAGE_ROLES.duty, isPrimary: true , module: 'duty' },
 
   // Organization Setup Links
   { href: '/hospital-profile', label: 'Hospital Profile', icon: Hospital, allowedRoles: PAGE_ROLES.hospitalProfile, isPrimary: false },
-  { href: '/patient-care', label: 'Patient Care Templates', icon: FileText, allowedRoles: PAGE_ROLES.patientCare, isPrimary: false },
-  { href: '/medications', label: 'Medications', icon: Pill, allowedRoles: PAGE_ROLES.medications, isPrimary: false },
-  { href: '/materials', label: 'Materials', icon: Archive, allowedRoles: PAGE_ROLES.materials, isPrimary: false },
-  { href: '/vendors', label: 'Material Vendors', icon: Truck, allowedRoles: PAGE_ROLES.vendors, isPrimary: false },
-  { href: '/departments', label: 'Departments', icon: Building2, allowedRoles: PAGE_ROLES.departments, isPrimary: false },
-  { href: '/payment-methods', label: 'Payment Methods', icon: Wallet, allowedRoles: PAGE_ROLES.paymentMethods, isPrimary: false },
+  { href: '/patient-care', label: 'Patient Care Templates', icon: FileText, allowedRoles: PAGE_ROLES.patientCare, isPrimary: false , module: 'patientCare' },
+  { href: '/medications', label: 'Medications', icon: Pill, allowedRoles: PAGE_ROLES.medications, isPrimary: false , module: 'medications' },
+  { href: '/materials', label: 'Materials', icon: Archive, allowedRoles: PAGE_ROLES.materials, isPrimary: false , module: 'materials' },
+  { href: '/vendors', label: 'Material Vendors', icon: Truck, allowedRoles: PAGE_ROLES.vendors, isPrimary: false , module: 'vendors' },
+  { href: '/departments', label: 'Departments', icon: Building2, allowedRoles: PAGE_ROLES.departments, isPrimary: false , module: 'departments' },
+  { href: '/payment-methods', label: 'Payment Methods', icon: Wallet, allowedRoles: PAGE_ROLES.paymentMethods, isPrimary: false , module: 'paymentMethods' },
   { href: '/staff', label: 'Staff Management', icon: Users, allowedRoles: PAGE_ROLES.staff, isPrimary: false },
-  { href: '/medical-tests', label: 'Medical Tests Catalog', icon: FlaskConical, allowedRoles: PAGE_ROLES.medicalTests, isPrimary: false },
-  { href: '/referring-doctors', label: 'Referring Doctors', icon: HeartHandshake, allowedRoles: PAGE_ROLES.referringDoctors, isPrimary: false },
-  { href: '/admin', label: 'Sample Data', icon: Database, allowedRoles: PAGE_ROLES.admin, isPrimary: false },
+  { href: '/medical-tests', label: 'Medical Tests Catalog', icon: FlaskConical, allowedRoles: PAGE_ROLES.medicalTests, isPrimary: false , module: 'medicalTests' },
+  { href: '/referring-doctors', label: 'Referring Doctors', icon: HeartHandshake, allowedRoles: PAGE_ROLES.referringDoctors, isPrimary: false , module: 'referringDoctors' },
+  { href: '/admin', label: 'Sample Data', icon: Database, allowedRoles: PAGE_ROLES.admin, isPrimary: false , module: 'sampleData' },
 ];
 
 // Extracted Header logic into a client component that uses the useAuth hook
 export function AppHeaderMenu() {
   const { currentUser, logout, isLoading } = useAuth();
+  const { profile: hospital } = useBranding();
 
   if (isLoading) {
     return (
@@ -70,7 +74,8 @@ export function AppHeaderMenu() {
 
   const getVisibleMenuItems = (isPrimarySection: boolean) => {
     if (!currentUser) return [];
-    return allMenuItems.filter(item => item.isPrimary === isPrimarySection && item.allowedRoles.includes(currentUser.role));
+    return allMenuItems.filter(item => item.isPrimary === isPrimarySection && item.allowedRoles.includes(currentUser.role)
+      && isModuleEnabled(hospital.disabledModules, item.module));
   };
 
   const primaryItems = getVisibleMenuItems(true);

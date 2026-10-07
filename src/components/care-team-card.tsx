@@ -10,8 +10,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { bills as billsRepo, departments as departmentsRepo, patients as patientsRepo, referringDoctors as referringDoctorsRepo } from '@/lib/data';
+import { departments as departmentsRepo, patients as patientsRepo } from '@/lib/data';
 import { billedProcedures, referralLines, referralTotal, type BilledProcedure } from '@/lib/referralFee';
+import type { Bill } from '@/types/billing';
 import type { ReferringDoctor } from '@/types/referringDoctor';
 import type { Department, DepartmentMembers } from '@/types/department';
 import type { Patient, ReferralFeeBasis } from '@/types/patient';
@@ -25,11 +26,13 @@ interface CareTeamCardProps {
   patient: Patient;
   staff: StaffMember[];
   currentUser: StaffMember;
+  bills: Bill[]; // the patient's bills (for referral % per procedure)
+  referringDoctors: ReferringDoctor[];
   onSaved: () => Promise<void> | void;
 }
 
 // Department, attending doctor and nurse, and the doctor's fee for this case.
-export function CareTeamCard({ patient, staff, currentUser, onSaved }: CareTeamCardProps) {
+export function CareTeamCard({ patient, staff, currentUser, bills, referringDoctors, onSaved }: CareTeamCardProps) {
   const { toast } = useToast();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [members, setMembers] = useState<DepartmentMembers>({});
@@ -38,9 +41,7 @@ export function CareTeamCard({ patient, staff, currentUser, onSaved }: CareTeamC
   const [nurseId, setNurseId] = useState<string>(patient.attendingNurseId ? String(patient.attendingNurseId) : NONE);
   const [fee, setFee] = useState<string>(patient.doctorFee != null ? String(patient.doctorFee) : '');
   const [referralFee, setReferralFee] = useState<string>(patient.referralFee != null ? String(patient.referralFee) : '');
-  const [referringDoctor, setReferringDoctor] = useState<ReferringDoctor | null>(null);
   const [referralMode, setReferralMode] = useState<'fixed' | 'percent'>(patient.referralFeeBasis?.mode === 'percent' ? 'percent' : 'fixed');
-  const [procedures, setProcedures] = useState<BilledProcedure[]>([]);
   const [percents, setPercents] = useState<Record<string, string>>(() => savedPercents(patient.referralFeeBasis));
   const [isSaving, setIsSaving] = useState(false);
 
@@ -55,23 +56,13 @@ export function CareTeamCard({ patient, staff, currentUser, onSaved }: CareTeamC
       .catch(error => console.error('Could not load departments', error));
   }, []);
 
-  useEffect(() => {
-    if (!patient.referredDoctorId) { setReferringDoctor(null); return; }
-    referringDoctorsRepo.get(patient.referredDoctorId)
-      .then(doctor => {
-        setReferringDoctor(doctor);
-        // No fee chosen yet: start in the doctor's usual mode.
-        if (doctor?.defaultReferralPercent != null && patient.referralFee == null && !patient.referralFeeBasis) setReferralMode('percent');
-      })
-      .catch(error => console.error('Could not load referring doctor', error));
-  }, [patient.referredDoctorId, patient.referralFee, patient.referralFeeBasis]);
+  const referringDoctor = referringDoctors.find(d => d.id === patient.referredDoctorId) ?? null;
+  const procedures = useMemo<BilledProcedure[]>(() => (patient.referredDoctorId ? billedProcedures(bills) : []), [bills, patient.referredDoctorId]);
 
+  // No fee chosen yet: start in the referring doctor's usual mode.
   useEffect(() => {
-    if (!patient.referredDoctorId) return;
-    billsRepo.list({ patientId: patient.id })
-      .then(list => setProcedures(billedProcedures(list)))
-      .catch(error => console.error('Could not load bills', error));
-  }, [patient.id, patient.referredDoctorId]);
+    if (referringDoctor?.defaultReferralPercent != null && patient.referralFee == null && !patient.referralFeeBasis) setReferralMode('percent');
+  }, [referringDoctor?.defaultReferralPercent, patient.referralFee, patient.referralFeeBasis]);
 
   // Keep the form in step when the patient is reloaded after a save.
   useEffect(() => {

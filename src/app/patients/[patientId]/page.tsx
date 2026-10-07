@@ -1429,7 +1429,7 @@ export default function PatientDetailPage() {
 
         <div className="space-y-6"> {/* Sidebar area */}
             {currentUser && (
-              <CareTeamCard patient={patient} staff={availableStaff} currentUser={currentUser} onSaved={() => reloadPatient(patient.id)} />
+              <CareTeamCard patient={patient} staff={availableStaff} currentUser={currentUser} bills={patientBills} referringDoctors={availableReferringDoctors} onSaved={() => reloadPatient(patient.id)} />
             )}
             <Card className="shadow-lg">
                 <CardHeader>
