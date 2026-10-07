@@ -247,12 +247,6 @@ export default function ReferringDoctorsPage() {
             <CardDescription className="mb-4">
               There are no referring doctor profiles registered yet. Click "Add New Referring Doctor" or "Import from CSV" to begin.
             </CardDescription>
-            <img
-              src="https://placehold.co/600x300.png"
-              alt="No referring doctors placeholder"
-              data-ai-hint="empty list doctors"
-              className="mx-auto rounded-md mt-4 shadow-md"
-            />
           </CardContent>
         </Card>
       ) : (

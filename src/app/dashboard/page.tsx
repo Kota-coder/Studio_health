@@ -337,12 +337,6 @@ export default function DashboardPage() {
             <CardDescription className="mb-4">
               There are no patients registered yet. Click "Add New Patient" above to start.
             </CardDescription>
-            <img
-              src="https://placehold.co/600x300.png"
-              alt="No patients placeholder"
-              data-ai-hint="empty list medical"
-              className="mx-auto rounded-md mt-4 shadow-md"
-            />
           </CardContent>
         </Card>
       ) : totalFilteredPatients === 0 ? (
@@ -354,12 +348,6 @@ export default function DashboardPage() {
             <CardDescription className="mb-4">
               No patients found matching your current search and filter settings. Try adjusting your filters.
             </CardDescription>
-            <img
-              src="https://placehold.co/600x300.png"
-              alt="No matching patients placeholder"
-              data-ai-hint="empty search results"
-              className="mx-auto rounded-md mt-4 shadow-md"
-            />
           </CardContent>
         </Card>
       ) : (

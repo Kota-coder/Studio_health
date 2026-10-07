@@ -34,7 +34,7 @@ devices, protected by login and backed up.
 1. **Create a project** at supabase.com in region **South Asia (Mumbai)**. The Pro plan
    (about $25/month) is recommended for daily backups and no pausing.
 2. **Create the schema**: open *SQL Editor* and run each file in `supabase/migrations`, in
-   order (paste the contents, click *Run*). Files 2–7 are safe to run again, so when you
+   order (paste the contents, click *Run*). Files 2–8 are safe to run again, so when you
    update the app you can simply run them all again in order; never run file 1 a second time.
    1. `20261007000000_init.sql` (tables, security rules, photo storage)
    2. `20261007120000_upgrade_previous_schema.sql` (only changes anything on a database set up
@@ -44,6 +44,7 @@ devices, protected by login and backed up.
    5. `20261010000000_referral_percent.sql` (referral fees as a % of billed procedures)
    6. `20261011000000_staff_duty.sql` (duty roster and attendance)
    7. `20261012000000_dashboard_summary.sql` (Financial Dashboard totals worked out in the database)
+   8. `20261013000000_date_columns.sql` (date filters on the Payments and Billing lists)
 3. **Auth settings** (*Authentication*):
    - *Sign In / Providers*: keep Email enabled and **turn off "Allow new users to sign up"**.
    - *URL Configuration*: set *Site URL* to your app's address (e.g. `https://clinic.example.com`)
@@ -125,6 +126,11 @@ downloads small so it stays fast and cheap as records pile up:
 
 - **Totals in the database**: the Financial Dashboard calls `financial_summary()` and gets one
   small summary (about 2 KB) instead of every bill, payment and patient.
+- **Date filters on growing lists**: Payments and Billing load only the chosen period (default:
+  last 30 days; also this month, last month, last 3 months, this year, all time or custom
+  dates). The database does the filtering on indexed date columns, and Billing's status filter
+  too, so choose *All time* + *Unpaid* to find every outstanding bill. CSV downloads export the
+  chosen period.
 - **Only what a screen shows**: the Patient Dashboard loads each patient's name, condition,
   care team and *latest* note only; payment and bill screens load patient names only.
 - **Short-lived cache in the open tab** (`src/lib/data/cache.ts`): staff, departments, referring

@@ -17,6 +17,7 @@ import type { StaffRole } from '@/types/staff';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { PAGE_ROLES } from '@/config/permissions';
 import type { Patient } from '@/types/patient';
+import { DEFAULT_DATE_FILTER, DateRangeFilter, dateFilterRange, describeDateFilter, type DateFilterValue } from '@/components/date-range-filter';
 
 const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.payments;
 
@@ -28,6 +29,10 @@ export default function PaymentsOverviewPage() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Only payments in the chosen period are downloaded (the list grows every month).
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(DEFAULT_DATE_FILTER);
+  const [isFiltering, setIsFiltering] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   useEffect(() => {
     if (!authIsLoading && currentUser && !ALLOWED_ROLES.includes(currentUser.role)) {
@@ -40,8 +45,8 @@ export default function PaymentsOverviewPage() {
 
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
-      setIsLoading(true);
-      Promise.all([paymentsRepo.list(), patientsRepo.listNames()])
+      if (hasLoadedOnce) setIsFiltering(true); else setIsLoading(true);
+      Promise.all([paymentsRepo.list(dateFilterRange(dateFilter)), patientsRepo.listNames()])
         .then(([paymentList, patientList]) => {
           setPayments(paymentList);
           setPatients(patientList);
@@ -52,14 +57,15 @@ export default function PaymentsOverviewPage() {
           setPayments([]);
           setPatients([]);
         })
-        .finally(() => setIsLoading(false));
+        .finally(() => { setIsLoading(false); setIsFiltering(false); setHasLoadedOnce(true); });
     } else if (currentUser && !ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(false);
     } else {
       setPayments([]);
       setIsLoading(false);
     }
-  }, [toast, currentUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hasLoadedOnce only picks the loading style
+  }, [toast, currentUser, dateFilter]);
 
   const formatDateSafe = (dateString: string | undefined) => {
     if (!dateString) return 'N/A';
@@ -89,7 +95,7 @@ export default function PaymentsOverviewPage() {
 
   const handleDownloadCSV = useCallback(() => {
     if (payments.length === 0) {
-      toast({ title: "No Data", description: "There is no payment data to download.", variant: "default" });
+      toast({ title: "No Data", description: "There are no payments in this period to download.", variant: "default" });
       return;
     }
 
@@ -126,7 +132,9 @@ export default function PaymentsOverviewPage() {
       const url = URL.createObjectURL(blob);
       const today = format(new Date(), 'yyyy-MM-dd');
       link.setAttribute('href', url);
-      link.setAttribute('download', `payments_overview_${today}.csv`);
+      const range = dateFilterRange(dateFilter);
+      const period = range.from || range.to ? `${range.from ?? 'start'}_to_${range.to ?? today}` : `all_${today}`;
+      link.setAttribute('download', `payments_${period}.csv`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
@@ -136,7 +144,7 @@ export default function PaymentsOverviewPage() {
     } else {
         toast({title: "Error", description: "CSV download not supported by your browser.", variant: "destructive"});
     }
-  }, [payments, toast]);
+  }, [payments, toast, dateFilter]);
 
   const getPatientNamesForPayment = (payment: Payment) => {
     if ((payment.paymentType !== "Referral/CC" && payment.paymentType !== "Doctor Fee") || !payment.associatedPatientIds || payment.associatedPatientIds.length === 0) {
@@ -185,28 +193,40 @@ export default function PaymentsOverviewPage() {
         </div>
       </header>
 
-      {payments.length === 0 && !isLoading ? (
+      <Card className="mb-6 shadow-md">
+        <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-end sm:justify-between">
+          <DateRangeFilter value={dateFilter} onChange={setDateFilter} idPrefix="paymentsDate" />
+          <p className="text-sm text-muted-foreground" role="status">
+            {isFiltering ? 'Loading…' : `${payments.length} payment${payments.length === 1 ? '' : 's'} · ₹${payments.reduce((sum, p) => sum + p.amount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · ${describeDateFilter(dateFilter)}`}
+          </p>
+        </CardContent>
+      </Card>
+
+      {payments.length === 0 && !isLoading && dateFilter.preset !== 'all' ? (
+        <Card className="text-center shadow-lg">
+          <CardHeader>
+            <CardTitle>No Payments in This Period</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CardDescription>Choose a longer period, or &quot;All time&quot;, to see older payments.</CardDescription>
+          </CardContent>
+        </Card>
+      ) : payments.length === 0 && !isLoading ? (
         <Card className="text-center shadow-lg">
           <CardHeader>
             <CardTitle>No Payments Found</CardTitle>
           </CardHeader>
           <CardContent>
-            <CardDescription className="mb-4">
+            <CardDescription>
               There are no payments recorded yet. Click "Record New Payment" to start.
             </CardDescription>
-            <img
-              src="https://placehold.co/600x300.png"
-              data-ai-hint="empty ledger document"
-              alt="No payments placeholder"
-              className="mx-auto rounded-md mt-4 shadow-md"
-            />
           </CardContent>
         </Card>
       ) : (
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>All Recorded Payments</CardTitle>
-            <CardDescription>List of all recorded outgoing payments.</CardDescription>
+            <CardTitle>Recorded Payments</CardTitle>
+            <CardDescription>{dateFilter.preset === 'all' ? 'All outgoing payments' : `Outgoing payments dated ${describeDateFilter(dateFilter)}`}, newest first.</CardDescription>
             {/* Static Header Row */}
             <div className="mt-2 flex w-full text-sm font-semibold text-muted-foreground border-b pb-2">
               <span className="w-[25%] sm:w-[20%] truncate">Payment ID</span>

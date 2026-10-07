@@ -668,7 +668,6 @@ export default function PatientDetailPage() {
     return (
       <div className="container mx-auto p-8 text-center">
         <h1 className="text-2xl font-semibold mb-4">Patient Not Found</h1>
-        <img src="https://placehold.co/600x300.png" data-ai-hint="error medical" alt="Patient not found" className="mx-auto rounded-md mb-4" />
         <Link href="/dashboard" passHref>
           <Button variant="outline"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard</Button>
         </Link>

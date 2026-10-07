@@ -501,8 +501,13 @@ export const patients = invalidatesOnWrite({
 
 export type BillFields = Omit<Bill, 'id' | 'createdAt' | 'auditLog'>;
 
+// A date range for list filters: yyyy-MM-dd, both ends inclusive, either may be left open.
+export interface DateRange { from?: string; to?: string }
+
 function billFromRow(row: Row): Bill {
-  const bill = fromRow<Bill>(row);
+  // billed_on is worked out by the database from bill_date (for date filters); never written.
+  const { billed_on: _billedOn, ...rest } = row;
+  const bill = fromRow<Bill>(rest);
   bill.items = bill.items ?? [];
   bill.totalAmount = Number(bill.totalAmount);
   bill.auditLog = [];
@@ -510,9 +515,12 @@ function billFromRow(row: Row): Bill {
 }
 
 export const bills = invalidatesOnWrite({
-  async list(filter?: { patientId?: number }): Promise<Bill[]> {
+  async list(filter?: { patientId?: number; status?: string } & DateRange): Promise<Bill[]> {
     let query = db().from('bills').select('*');
     if (filter?.patientId !== undefined) query = query.eq('patient_id', filter.patientId);
+    if (filter?.status) query = query.eq('payment_status', filter.status);
+    if (filter?.from) query = query.gte('billed_on', filter.from);
+    if (filter?.to) query = query.lte('billed_on', filter.to);
     const rows = check(await query.order('created_at', { ascending: false }));
     return (rows as Row[]).map(billFromRow);
   },
@@ -551,7 +559,9 @@ export const bills = invalidatesOnWrite({
 export type PaymentFields = Omit<Payment, 'id' | 'createdAt' | 'auditLog'>;
 
 function paymentFromRow(row: Row): Payment {
-  const payment = fromRow<Payment>(row);
+  // paid_on is worked out by the database from payment_date (for date filters); never written.
+  const { paid_on: _paidOn, ...rest } = row;
+  const payment = fromRow<Payment>(rest);
   payment.amount = Number(payment.amount);
   payment.associatedPatientIds = (payment.associatedPatientIds ?? []).map(Number);
   payment.purchasedMedications = payment.purchasedMedications ?? [];
@@ -561,8 +571,12 @@ function paymentFromRow(row: Row): Payment {
 }
 
 export const payments = invalidatesOnWrite({
-  async list(): Promise<Payment[]> {
-    const rows = check(await db().from('payments').select('*').order('created_at', { ascending: false }));
+  // Newest first. With a range, only payments dated within it (by their payment date).
+  async list(range?: DateRange): Promise<Payment[]> {
+    let query = db().from('payments').select('*');
+    if (range?.from) query = query.gte('paid_on', range.from);
+    if (range?.to) query = query.lte('paid_on', range.to);
+    const rows = check(await query.order('paid_on', { ascending: false }).order('created_at', { ascending: false }));
     return (rows as Row[]).map(paymentFromRow);
   },
 

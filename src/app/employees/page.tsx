@@ -16,12 +16,6 @@ export default function StaffPortalPage() {
           <CardDescription>This section is under development.</CardDescription>
         </CardHeader>
         <CardContent className="text-center">
-          <img
-            src="https://placehold.co/600x300.png"
-            alt="Staff Portal Coming Soon"
-            data-ai-hint="team office"
-            className="mx-auto rounded-md mb-6 shadow-md"
-          />
           <p className="mb-6 text-muted-foreground">
             Features for managing staff, their roles, and other internal information will be available here.
           </p>
