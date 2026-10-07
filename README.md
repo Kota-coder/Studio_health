@@ -107,9 +107,14 @@ rules with row level security.
 - **Hospital Profile** (Super Admin): name, logo (upload, or design one from the initials),
   brand colour and contact details, used on the login page, header, browser tab, phone app icon
   and printouts, with a small "Powered by Seva".
-- **Menus** (Hospital Profile → Menus, Super Admin): switch off sections the hospital doesn't use
-  (e.g. Duty Roster, Medications, Vendors). They disappear from everyone's menu and their pages
-  show a notice; no data is deleted. The sections are listed in `src/config/modules.ts`.
+- **Menus and features** (Hospital Profile → Menus, Super Admin): switch off what a hospital
+  doesn't use: Billing, Payments, Doctor Fees, Referrals, Referral Fees, Financial Dashboard,
+  Duty Roster, Departments, catalogs and more. A switched-off feature disappears everywhere, not
+  just from the menu: e.g. Billing off removes the bills card and "Bill Test"/"Bill Meds" from the
+  patient page and the billing totals from the Financial Dashboard; Doctor Fees off removes the
+  fee from the care team, departments and payments. Features that depend on another switch off
+  with it (fees need Payments; the Financial Dashboard needs Billing or Payments). No data is
+  deleted. The list is in `src/config/modules.ts`; screens check it with `useFeatures()`.
 
 ## Online payment providers (future)
 
@@ -202,7 +207,7 @@ npm run typecheck
 | `src/lib/branding.ts`, `src/components/branding-provider.tsx` | Hospital name, logo and colour |
 | `src/lib/storage.ts`, `src/lib/images.ts` | Image upload, signed links and compression |
 | `src/config/permissions.ts` | Which roles open which screens |
-| `src/config/modules.ts` | Menu sections a hospital can switch off |
+| `src/config/modules.ts`, `src/hooks/use-features.ts` | Features a hospital can switch off |
 | `scripts/migrate-hospitals.mjs` | Applies the database files to every hospital |
 
 Database changes: add a new file to `supabase/migrations` written so it can be re-run (`if not

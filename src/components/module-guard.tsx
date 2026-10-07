@@ -6,7 +6,7 @@ import { EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useBranding } from '@/components/branding-provider';
-import { moduleForPath } from '@/config/modules';
+import { isModuleEnabled, moduleForPath } from '@/config/modules';
 import { useAuth } from '@/context/AuthContext';
 
 // Shows a short notice instead of a page whose section the hospital has switched off
@@ -16,7 +16,7 @@ export function ModuleGuard({ children }: { children: React.ReactNode }) {
   const { profile } = useBranding();
   const { currentUser } = useAuth();
   const section = moduleForPath(pathname ?? '');
-  if (!section || !(profile.disabledModules ?? []).includes(section.key)) return <>{children}</>;
+  if (!section || isModuleEnabled(profile.disabledModules, section.key)) return <>{children}</>;
   return (
     <div className="container mx-auto max-w-lg p-4 sm:p-6">
       <Card>

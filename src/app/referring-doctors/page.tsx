@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Edit3, HeartHandshake, ArrowLeft, Upload } from 'lucide-react';
 import { referringDoctors as referringDoctorsRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
+import { useFeatures } from '@/hooks/use-features';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
 
@@ -33,6 +34,7 @@ export default function ReferringDoctorsPage() {
   const router = useRouter();
   const { toast } = useToast();
   const { currentUser, isLoading: authIsLoading } = useAuth();
+  const { isOn } = useFeatures();
 
   const [referringDoctors, setReferringDoctors] = useState<ReferringDoctor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -263,7 +265,7 @@ export default function ReferringDoctorsPage() {
                   <TableHead className="hidden sm:table-cell">Hospital/Clinic Name</TableHead>
                   <TableHead className="hidden md:table-cell">Phone</TableHead>
                   <TableHead className="hidden lg:table-cell">Email</TableHead>
-                  <TableHead className="hidden sm:table-cell text-right">Referral Fee</TableHead>
+                  {isOn('referralFees') && <TableHead className="hidden sm:table-cell text-right">Referral Fee</TableHead>}
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -274,7 +276,7 @@ export default function ReferringDoctorsPage() {
                     <TableCell className="hidden sm:table-cell">{doctor.location}</TableCell>
                     <TableCell className="hidden md:table-cell">{doctor.phoneNumber}</TableCell>
                     <TableCell className="hidden lg:table-cell">{doctor.email}</TableCell>
-                    <TableCell className="hidden sm:table-cell text-right">{[doctor.defaultReferralFee != null ? `₹${doctor.defaultReferralFee.toFixed(2)}` : null, doctor.defaultReferralPercent != null ? `${doctor.defaultReferralPercent}%` : null].filter(Boolean).join(' or ') || '—'}</TableCell>
+                    {isOn('referralFees') && <TableCell className="hidden sm:table-cell text-right">{[doctor.defaultReferralFee != null ? `₹${doctor.defaultReferralFee.toFixed(2)}` : null, doctor.defaultReferralPercent != null ? `${doctor.defaultReferralPercent}%` : null].filter(Boolean).join(' or ') || '—'}</TableCell>}
                     <TableCell className="text-right space-x-2">
                       <Link href={`/referring-doctors/form?id=${doctor.id}`} passHref>
                         <Button variant="outline" size="sm" aria-label={`Edit ${doctor.name}`}>

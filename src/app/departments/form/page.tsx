@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/context/AuthContext';
+import { useFeatures } from '@/hooks/use-features';
 import { useToast } from '@/hooks/use-toast';
 import { PAGE_ROLES } from '@/config/permissions';
 import { departments as departmentsRepo, staff as staffRepo } from '@/lib/data';
@@ -48,6 +49,7 @@ function DepartmentForm() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const { currentUser, isLoading: authIsLoading } = useAuth();
+  const { isOn } = useFeatures();
   const departmentId = searchParams.get('id') ? Number(searchParams.get('id')) : null;
   const isEditMode = departmentId !== null;
 
@@ -179,6 +181,7 @@ function DepartmentForm() {
             <Label htmlFor="description">Description</Label>
             <Textarea id="description" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional" />
           </div>
+          {isOn('doctorFees') && (
           <div>
             <Label htmlFor="defaultDoctorFee">Default doctor fee per case (₹)</Label>
             <Input id="defaultDoctorFee" type="number" inputMode="decimal" min={0} value={defaultDoctorFee} placeholder="e.g. 1500"
@@ -188,6 +191,7 @@ function DepartmentForm() {
               ? <p className="text-destructive text-sm mt-1">{feeError}</p>
               : <p className="text-xs text-muted-foreground mt-1">Suggested when a doctor is assigned to a patient in this department; it can be changed per case.</p>}
           </div>
+          )}
           <div className="flex items-center gap-3">
             <Switch id="active" checked={active} onCheckedChange={setActive} />
             <Label htmlFor="active">Active (shown when assigning patients)</Label>

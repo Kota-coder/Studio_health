@@ -4,6 +4,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { useFeatures } from '@/hooks/use-features';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 import { ChartContainer, ChartTooltip as ShadCNChartTooltip, ChartTooltipContent as ShadCNChartTooltipContent, ChartLegend as ShadCNChartLegend, ChartLegendContent as ShadCNChartLegendContent, type ChartConfig } from "@/components/ui/chart";
@@ -37,6 +38,7 @@ const chartColorMapping: { [key: string]: string } = {
 export default function FinancialDashboardPage() {
   const router = useRouter();
   const { currentUser, isLoading: authIsLoading } = useAuth();
+  const { isOn } = useFeatures();
 
   // Totals are worked out by the database (financial_summary), so the page downloads a
   // small summary rather than every bill, payment and patient.
@@ -204,7 +206,8 @@ export default function FinancialDashboardPage() {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card>
+            {isOn('billing') && (
+<Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Billed</CardTitle>
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
@@ -213,7 +216,9 @@ export default function FinancialDashboardPage() {
                 <div className="text-2xl font-bold">{formatCurrency(financialSummary.totalBilled)}</div>
               </CardContent>
             </Card>
-            <Card>
+)}
+            {isOn('billing') && (
+<Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Collected</CardTitle>
                 <TrendingUp className="h-4 w-4 text-muted-foreground text-green-500" />
@@ -222,7 +227,9 @@ export default function FinancialDashboardPage() {
                 <div className="text-2xl font-bold">{formatCurrency(financialSummary.totalCollected)}</div>
               </CardContent>
             </Card>
-            <Card>
+)}
+            {isOn('billing') && (
+<Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Outstanding</CardTitle>
                 <TrendingDown className="h-4 w-4 text-muted-foreground text-red-500" />
@@ -231,7 +238,9 @@ export default function FinancialDashboardPage() {
                 <div className="text-2xl font-bold">{formatCurrency(financialSummary.totalOutstanding)}</div>
               </CardContent>
             </Card>
-            <Card>
+)}
+            {isOn('payments') && (
+<Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Payments Made</CardTitle>
                 <Receipt className="h-4 w-4 text-muted-foreground" />
@@ -240,6 +249,7 @@ export default function FinancialDashboardPage() {
                 <div className="text-2xl font-bold">{formatCurrency(financialSummary.totalSpent)}</div>
               </CardContent>
             </Card>
+)}
           </div>
 
           <Card>
@@ -266,7 +276,8 @@ export default function FinancialDashboardPage() {
 
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
+            {isOn('billing') && (
+<Card>
               <CardHeader>
                 <CardTitle>Bill Status Distribution</CardTitle>
                 <CardDescription>Count of bills by their current payment status.</CardDescription>
@@ -285,8 +296,10 @@ export default function FinancialDashboardPage() {
                 </ChartContainer>
               </CardContent>
             </Card>
+)}
 
-            <Card>
+            {isOn('payments') && (
+<Card>
               <CardHeader>
                 <CardTitle>Payments by Type</CardTitle>
                 <CardDescription>Total amount spent for each payment category.</CardDescription>
@@ -319,8 +332,10 @@ export default function FinancialDashboardPage() {
                 </ChartContainer>
               </CardContent>
             </Card>
+)}
           </div>
-           <Card>
+           {isOn('billing') && (
+<Card>
             <CardHeader>
                 <CardTitle>Billed Amount by Type</CardTitle>
                 <CardDescription>Distribution of total billed amounts between Pharmacy and Treatment types.</CardDescription>
@@ -353,6 +368,7 @@ export default function FinancialDashboardPage() {
                 </ChartContainer>
             </CardContent>
           </Card>
+)}
 
           <Card className="shadow-lg mt-6">
             <CardHeader>
@@ -360,7 +376,7 @@ export default function FinancialDashboardPage() {
               <CardDescription>Money received on bills (partly paid bills count as half) and paid out, for {describeDateFilter(dateFilter)}.</CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              {([['Received', summary.receivedByMethod], ['Paid out', summary.paidOutByMethod]] as const).map(([title, values]) => {
+              {([['Received', summary.receivedByMethod, 'billing'], ['Paid out', summary.paidOutByMethod, 'payments']] as const).filter(([, , key]) => isOn(key)).map(([title, values]) => {
                 const rows = Object.entries(values ?? {}).map(([method, amount]) => [method, Number(amount)] as const).sort((a, b) => b[1] - a[1]);
                 const total = rows.reduce((sum, [, amount]) => sum + amount, 0);
                 return (
@@ -393,7 +409,8 @@ export default function FinancialDashboardPage() {
             </CardContent>
           </Card>
 
-          <Card className="shadow-lg mt-6">
+          {isOn('doctorFees') && (
+<Card className="shadow-lg mt-6">
             <CardHeader>
               <CardTitle>Doctor Fees</CardTitle>
               <CardDescription>Fees earned per case by each attending doctor, as they stand now (not limited by the period above). Pay pending fees from Payments → Record New Payment → Doctor Fee.</CardDescription>
@@ -427,8 +444,10 @@ export default function FinancialDashboardPage() {
               )}
             </CardContent>
           </Card>
+)}
 
-          <Card className="shadow-lg mt-6">
+          {isOn('referralFees') && (
+<Card className="shadow-lg mt-6">
             <CardHeader>
               <CardTitle>Referral Fees</CardTitle>
               <CardDescription>Fees owed to referring doctors for the patients they referred, as they stand now (not limited by the period above). Pay them from Payments → Record New Payment → Referral/CC.</CardDescription>
@@ -463,6 +482,7 @@ export default function FinancialDashboardPage() {
               )}
             </CardContent>
           </Card>
+)}
         </>
       )}
     </div>

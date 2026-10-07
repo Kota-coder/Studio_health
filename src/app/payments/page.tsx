@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { StaffMember } from '@/types/staff';
 import { useAuth } from '@/context/AuthContext';
+import { useFeatures } from '@/hooks/use-features';
 import type { StaffRole } from '@/types/staff';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { PAGE_ROLES } from '@/config/permissions';
@@ -30,6 +31,7 @@ export default function PaymentsOverviewPage() {
   const router = useRouter();
   const { toast } = useToast();
   const { currentUser, isLoading: authIsLoading } = useAuth();
+  const { isOn } = useFeatures();
 
   const [payments, setPayments] = useState<Payment[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -219,7 +221,7 @@ export default function PaymentsOverviewPage() {
               <SelectTrigger id="filterPaymentType"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="All">All Types</SelectItem>
-                {["Salary", "Material", "Pharmacy", "Doctor Fee", "Referral/CC", "Other"].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                {["Salary", "Material", "Pharmacy", "Doctor Fee", "Referral/CC", "Other"].filter(t => (t !== 'Doctor Fee' || isOn('doctorFees')) && (t !== 'Referral/CC' || isOn('referralFees'))).map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>

@@ -13,6 +13,7 @@ import { ReferringDoctor } from '@/types/referringDoctor';
 import { ArrowLeft, Save, HeartHandshake } from 'lucide-react';
 import { referringDoctors as referringDoctorsRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
+import { useFeatures } from '@/hooks/use-features';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
 
@@ -35,6 +36,7 @@ export default function ReferringDoctorFormPage() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const { currentUser, isLoading: authIsLoading } = useAuth();
+  const { isOn } = useFeatures();
 
   const doctorIdToEdit = searchParams.get('id');
   const isEditMode = Boolean(doctorIdToEdit);
@@ -200,6 +202,7 @@ export default function ReferringDoctorFormPage() {
             }} placeholder="name@example.com"/>
             {emailError && <p className="text-destructive text-sm mt-1">{emailError}</p>}
           </div>
+          {isOn('referralFees') && (
           <div className="rounded-md border p-3 space-y-3">
             <p className="text-sm text-muted-foreground">
               Referral fees are paid by the hospital to this doctor, not by the patient. Set either default; both can be changed for each patient.
@@ -210,14 +213,15 @@ export default function ReferringDoctorFormPage() {
                 <Input id="defaultReferralFee" type="number" inputMode="decimal" min={0} value={defaultReferralFee}
                   onChange={(e) => setDefaultReferralFee(e.target.value)} placeholder="e.g. 500" />
               </div>
-              <div>
+              {isOn('billing') && <div>
                 <Label htmlFor="defaultReferralPercent">Or % of billed procedures (optional)</Label>
                 <Input id="defaultReferralPercent" type="number" inputMode="decimal" min={0} max={100} step="0.5" value={defaultReferralPercent}
                   onChange={(e) => setDefaultReferralPercent(e.target.value)} placeholder="e.g. 10" />
-              </div>
+              </div>}
             </div>
             <p className="text-xs text-muted-foreground">Paid through Payments → Referral/CC.</p>
           </div>
+          )}
         </CardContent>
         <CardFooter className="flex justify-between mt-4">
           <Button variant="outline" onClick={() => router.push('/referring-doctors')}>
