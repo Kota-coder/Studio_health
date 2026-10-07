@@ -1,0 +1,38 @@
+modules = ["nodejs-20", "web", "nix"]
+run = "npm run dev"
+
+[nix]
+channel = "stable-24_05"
+
+[deployment]
+run = ["sh", "-c", "npm start"]
+build = ["sh", "-c", "npm run build"]
+
+[[ports]]
+localPort = 9002
+externalPort = 80
+
+[workflows]
+runButton = "dev"
+
+[[workflows.workflow]]
+name = "dev"
+author = 41955920
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+
+[[workflows.workflow]]
+name = "Production Build"
+author = 41955920
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run build"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run start"

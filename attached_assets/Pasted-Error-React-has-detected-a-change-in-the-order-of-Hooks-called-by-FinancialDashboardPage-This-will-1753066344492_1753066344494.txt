@@ -1,0 +1,21 @@
+Error: React has detected a change in the order of Hooks called by FinancialDashboardPage. This will lead to bugs and errors if not fixed. For more information, read the Rules of Hooks: https://react.dev/link/rules-of-hooks
+
+   Previous render            Next render
+   ------------------------------------------------------
+1. useContext                 useContext
+2. useContext                 useContext
+3. useState                   useState
+4. useState                   useState
+5. useState                   useState
+6. useState                   useState
+7. undefined                  useEffect
+   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+    at createConsoleError (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_next_dist_client_8f19e6fb._.js:882:71)
+    at handleConsoleError (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_next_dist_client_8f19e6fb._.js:1058:54)
+    at console.error (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_next_dist_client_8f19e6fb._.js:1223:57)
+    at updateHookTypesDev (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_next_dist_compiled_2ce9398a._.js:6168:25)
+    at Object.useEffect (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_next_dist_compiled_2ce9398a._.js:15300:13)
+    at exports.useEffect (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_next_dist_compiled_2ce9398a._.js:1670:36)
+    at FinancialDashboardPage (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/src_5a58de22._.js:863:180)
+    at ClientPageRoot (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_next_dist_1a6ee436._.js:2061:50)

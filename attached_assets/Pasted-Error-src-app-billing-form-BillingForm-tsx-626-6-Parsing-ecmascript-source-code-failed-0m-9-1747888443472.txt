@@ -1,0 +1,23 @@
+Error: ./src/app/billing/form/BillingForm.tsx:626:6
+Parsing ecmascript source code failed
+[0m [90m 624 |[39m[0m
+[0m [90m 625 |[39m   [36mreturn[39m ([0m
+[0m[31m[1m>[22m[39m[90m 626 |[39m     [33m<[39m[33mdiv[39m className[33m=[39m[32m"container mx-auto p-4 sm:p-6 lg:p-8 flex flex-col items-center"[39m[33m>[39m[0m
+[0m [90m     |[39m      [31m[1m^[22m[39m[31m[1m^[22m[39m[31m[1m^[22m[39m[0m
+[0m [90m 627 |[39m       [33m<[39m[33mCard[39m className[33m=[39m[32m"w-full max-w-2xl mt-6 shadow-xl"[39m[33m>[39m[0m
+[0m [90m 628 |[39m         [33m<[39m[33mCardHeader[39m[33m>[39m[0m
+[0m [90m 629 |[39m           [33m<[39m[33mCardTitle[39m className[33m=[39m[32m"text-2xl flex items-center"[39m[33m>[39m[0m
+
+Unexpected token `div`. Expected jsx identifier
+    at BuildError (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/%5Broot-of-the-server%5D__e2c08166._.js:17395:41)
+    at renderWithHooks (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_react-dom_cjs_react-dom_development_ab7e073c.js:13260:28)
+    at updateFunctionComponent (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_react-dom_cjs_react-dom_development_ab7e073c.js:16755:32)
+    at beginWork (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_react-dom_cjs_react-dom_development_ab7e073c.js:18388:32)
+    at beginWork$1 (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_react-dom_cjs_react-dom_development_ab7e073c.js:23101:28)
+    at performUnitOfWork (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_react-dom_cjs_react-dom_development_ab7e073c.js:22402:24)
+    at workLoopSync (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_react-dom_cjs_react-dom_development_ab7e073c.js:22331:17)
+    at renderRootSync (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_react-dom_cjs_react-dom_development_ab7e073c.js:22308:21)
+    at performConcurrentWorkOnRoot (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_react-dom_cjs_react-dom_development_ab7e073c.js:21732:84)
+    at workLoop (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_3bfdc6a4._.js:291:48)
+    at flushWork (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_3bfdc6a4._.js:270:28)
+    at MessagePort.performWorkUntilDeadline (https://8b036299-797c-4f20-8f0b-98dadeb18ef7-00-49ic75upt45a.pike.replit.dev/_next/static/chunks/node_modules_3bfdc6a4._.js:498:35)
