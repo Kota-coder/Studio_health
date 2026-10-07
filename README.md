@@ -41,6 +41,7 @@ devices, protected by login and backed up.
    3. `20261008000000_departments.sql` (departments, care teams, doctor fees)
    4. `20261009000000_referral_fees.sql` (referral fees)
    5. `20261010000000_referral_percent.sql` (referral fees as a % of billed procedures)
+   6. `20261011000000_staff_duty.sql` (duty roster and attendance)
 3. **Auth settings** (*Authentication*):
    - *Sign In / Providers*: keep Email enabled and **turn off "Allow new users to sign up"**.
    - *URL Configuration*: set *Site URL* to your app's address (e.g. `https://clinic.example.com`)
@@ -92,6 +93,27 @@ devices, protected by login and backed up.
   totals. Use *Print / Save as PDF* to hand it over.
 - The Patient Dashboard filters by department or "My Patients", and the Financial Dashboard
   lists paid and pending doctor fees and referral fees.
+
+## Duty roster and attendance
+
+**Duty Roster & Attendance** in the menu (every role):
+
+- **My Duty**: everyone clocks in when they start work and clocks out when they leave. The
+  server's clock is used, so a phone with the wrong time can't change the record. It also shows
+  your current or next shift.
+- **Schedule**: a weekly roster of doctors, nurses and other staff, filterable by role and
+  department. Super Admin and Admin add shifts with **+** (Morning, Evening, Night, Day, On Call
+  or custom times, optionally repeated on other days that week), click a shift to change or
+  remove it, and **Copy last week** to roll the roster forward. Overlapping shifts for the same
+  person are refused. A shift whose end time is earlier than its start ends the next day. On a
+  phone the roster shows one day at a time.
+- **Who was on duty**: pick a date and time (or *Now*) to see who was on the roster and who was
+  clocked in, flagging people on the roster who hadn't clocked in and people clocked in without
+  a shift.
+- **Attendance**: for a date range, hours planned vs worked per person, each shift's status
+  (On time, Late, Left early, Absent, On duty) and every time record. Admins can add or correct
+  entries for someone who forgot to clock in or out; these are marked *Manual* with the admin's
+  name. Super Admin, Admin and Accounts see everyone; other staff see only their own.
 
 ## Sample data for testing
 

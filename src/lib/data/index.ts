@@ -14,6 +14,7 @@ import type { Vendor } from '@/types/vendor';
 import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 import type { TreatmentTemplate } from '@/config/treatmentTemplates';
 import type { Department, DepartmentMembers } from '@/types/department';
+import type { AttendanceEntry, StaffShift } from '@/types/duty';
 
 type Row = Record<string, unknown>;
 
@@ -195,6 +196,67 @@ export const staff = {
   async deactivate(id: number): Promise<void> {
     await staffApi('DELETE', undefined, `?id=${id}`);
   },
+};
+
+// ---------------------------------------------------------------------------
+// Duty roster (planned shifts) and attendance (actual time on duty)
+// ---------------------------------------------------------------------------
+
+const shiftTable = table<StaffShift>('staff_shifts', 'shift_date', ['created_at']);
+// Postgres returns times as HH:mm:ss.
+const shiftFromRow = (shift: StaffShift): StaffShift =>
+  ({ ...shift, startTime: shift.startTime.slice(0, 5), endTime: shift.endTime.slice(0, 5) });
+
+export const shifts = {
+  // Shifts dated from..to (yyyy-MM-dd, inclusive).
+  async list(from: string, to: string): Promise<StaffShift[]> {
+    const rows = check(await db().from('staff_shifts').select('*')
+      .gte('shift_date', from).lte('shift_date', to)
+      .order('shift_date').order('start_time'));
+    return (rows as Row[]).map(r => shiftFromRow(fromRow<StaffShift>(r)));
+  },
+  async create(fields: Omit<StaffShift, 'id'>): Promise<StaffShift> {
+    return shiftFromRow(await shiftTable.create(fields));
+  },
+  async createMany(list: Omit<StaffShift, 'id'>[]): Promise<StaffShift[]> {
+    return (await shiftTable.createMany(list)).map(shiftFromRow);
+  },
+  async update(id: number, changes: Partial<StaffShift>): Promise<StaffShift> {
+    return shiftFromRow(await shiftTable.update(id, changes));
+  },
+  remove: shiftTable.remove,
+};
+
+const attendanceTable = table<AttendanceEntry>('staff_attendance', 'clock_in', ['created_at', 'source', 'recorded_by_staff_id']);
+
+export const attendance = {
+  // Entries that overlap fromIso..toIso, including people still on duty.
+  // Staff without a manager role only get their own entries (row level security).
+  async list(fromIso: string, toIso: string): Promise<AttendanceEntry[]> {
+    const rows = check(await db().from('staff_attendance').select('*')
+      .lt('clock_in', toIso)
+      .or(`clock_out.gte.${fromIso},clock_out.is.null`)
+      .order('clock_in', { ascending: false }));
+    return (rows as Row[]).map(r => fromRow<AttendanceEntry>(r));
+  },
+  async openEntry(staffId: number): Promise<AttendanceEntry | null> {
+    const row = check(await db().from('staff_attendance').select('*')
+      .eq('staff_id', staffId).is('clock_out', null).maybeSingle());
+    return row ? fromRow<AttendanceEntry>(row as Row) : null;
+  },
+  // Clocking in and out uses the server's clock, not the device's.
+  async clockIn(note?: string): Promise<AttendanceEntry> {
+    return fromRow<AttendanceEntry>(check(await db().rpc('clock_in', { note: note ?? null })) as Row);
+  },
+  async clockOut(note?: string): Promise<AttendanceEntry> {
+    return fromRow<AttendanceEntry>(check(await db().rpc('clock_out', { note: note ?? null })) as Row);
+  },
+  // Manual entries and corrections (Super Admin, Admin).
+  create: (fields: Pick<AttendanceEntry, 'staffId' | 'clockIn' | 'clockOut' | 'notes'>) =>
+    attendanceTable.create(fields as Omit<AttendanceEntry, 'id'>),
+  update: (id: number, changes: Partial<Pick<AttendanceEntry, 'clockIn' | 'clockOut' | 'notes'>>) =>
+    attendanceTable.update(id, changes),
+  remove: attendanceTable.remove,
 };
 
 export async function countRows(tableName: 'patients' | 'staff'): Promise<number> {
