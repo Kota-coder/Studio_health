@@ -34,7 +34,7 @@ devices, protected by login and backed up.
 1. **Create a project** at supabase.com in region **South Asia (Mumbai)**. The Pro plan
    (about $25/month) is recommended for daily backups and no pausing.
 2. **Create the schema**: open *SQL Editor* and run each file in `supabase/migrations`, in
-   order (paste the contents, click *Run*). Files 2–6 are safe to run again, so when you
+   order (paste the contents, click *Run*). Files 2–7 are safe to run again, so when you
    update the app you can simply run them all again in order; never run file 1 a second time.
    1. `20261007000000_init.sql` (tables, security rules, photo storage)
    2. `20261007120000_upgrade_previous_schema.sql` (only changes anything on a database set up
@@ -43,6 +43,7 @@ devices, protected by login and backed up.
    4. `20261009000000_referral_fees.sql` (referral fees)
    5. `20261010000000_referral_percent.sql` (referral fees as a % of billed procedures)
    6. `20261011000000_staff_duty.sql` (duty roster and attendance)
+   7. `20261012000000_dashboard_summary.sql` (Financial Dashboard totals worked out in the database)
 3. **Auth settings** (*Authentication*):
    - *Sign In / Providers*: keep Email enabled and **turn off "Allow new users to sign up"**.
    - *URL Configuration*: set *Site URL* to your app's address (e.g. `https://clinic.example.com`)
@@ -115,6 +116,28 @@ devices, protected by login and backed up.
   (On time, Late, Left early, Absent, On duty) and every time record. Admins can add or correct
   entries for someone who forgot to clock in or out; these are marked *Manual* with the admin's
   name. Super Admin, Admin and Accounts see everyone; other staff see only their own.
+
+## Keeping Supabase usage low
+
+Supabase bills mainly for data transferred out (egress) and the database's size and compute,
+not per request; the included quota is generous for one hospital. The app still keeps
+downloads small so it stays fast and cheap as records pile up:
+
+- **Totals in the database**: the Financial Dashboard calls `financial_summary()` and gets one
+  small summary (about 2 KB) instead of every bill, payment and patient.
+- **Only what a screen shows**: the Patient Dashboard loads each patient's name, condition,
+  care team and *latest* note only; payment and bill screens load patient names only.
+- **Short-lived cache in the open tab** (`src/lib/data/cache.ts`): staff, departments, referring
+  doctors and catalogs are kept for 10 minutes, dashboards for 1 minute, so moving between pages
+  doesn't download them again. Saving anything clears the related entries, so your own changes
+  show straight away; other people's appear within a minute or with **Refresh** on the
+  dashboards. Nothing is stored on the device.
+- **Session checks without a network call**: page loads verify the login token locally
+  (`getClaims`) when the project uses asymmetric JWT signing keys, the default for new
+  projects. Older projects can switch under *Project Settings → JWT Keys*.
+
+In a test session (log in, open the dashboards, a patient, the duty roster and payments), this
+cut traffic from 50 requests / 666 KB plus 32 session checks to 25 requests / 85 KB plus 1.
 
 ## Sample data for testing
 

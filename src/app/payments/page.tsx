@@ -41,7 +41,7 @@ export default function PaymentsOverviewPage() {
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(true);
-      Promise.all([paymentsRepo.list(), patientsRepo.listBasic()])
+      Promise.all([paymentsRepo.list(), patientsRepo.listNames()])
         .then(([paymentList, patientList]) => {
           setPayments(paymentList);
           setPatients(patientList);

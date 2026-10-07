@@ -39,7 +39,7 @@ export default function DepartmentsPage() {
 
   useEffect(() => {
     if (!allowed) return;
-    Promise.all([departmentsRepo.list(), departmentsRepo.listMembers(), staffRepo.list(), patientsRepo.listBasic()])
+    Promise.all([departmentsRepo.list(), departmentsRepo.listMembers(), staffRepo.list(), patientsRepo.listNames()])
       .then(([departmentList, memberMap, staffList, patientList]) => {
         setDepartments(departmentList);
         setMembers(memberMap);

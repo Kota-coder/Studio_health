@@ -11,6 +11,8 @@ import { StaffMember } from '@/types/staff';
 import { Bill } from '@/types/billing';
 import { ArrowRight, UserPlus, AlertTriangle, ShieldCheck, Activity, HelpCircle, BriefcaseMedical, ClipboardList, Users as UsersIcon, CheckCircle2, Trash2, PlusCircle, ArrowLeft, Building2 } from 'lucide-react';
 import { bills as billsRepo, departments as departmentsRepo, patients as patientsRepo, staff as staffRepo } from '@/lib/data';
+import { cachedAt, invalidate } from '@/lib/data/cache';
+import { RefreshStamp } from '@/components/refresh-stamp';
 import type { Department } from '@/types/department';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -65,26 +67,40 @@ export default function DashboardPage() {
     }
   }, [authIsLoading, currentUser, router]);
 
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Patients, staff and departments come from a short-lived cache (see lib/data/cache.ts);
+  // Refresh fetches them again.
+  const loadDashboard = useCallback(async (refresh = false) => {
+    if (refresh) invalidate('dashboard:', 'staff:', 'departments:');
+    try {
+      const [patientList, staffList, departmentsLoaded] = await Promise.all([patientsRepo.listForDashboard(), staffRepo.list(), departmentsRepo.list()]);
+      setDepartmentList(departmentsLoaded);
+      setAllPatients(patientList.map(p => ({ ...p, reasonForVisit: p.reasonForVisit || "Not specified" })));
+      setAvailableStaff(staffList);
+      setLoadedAt(cachedAt('dashboard:patients'));
+    } catch (error) {
+      console.error("Error loading patients or staff:", error);
+      toast({ title: "Error", description: "Could not load patient or staff data.", variant: "destructive" });
+    }
+  }, [toast]);
+
   useEffect(() => {
     if (currentUser) {
       setIsLoading(true);
-      Promise.all([patientsRepo.list(), staffRepo.list(), departmentsRepo.list()])
-        .then(([patientList, staffList, departmentsLoaded]) => {
-          setDepartmentList(departmentsLoaded);
-          setAllPatients(patientList.map(p => ({ ...p, reasonForVisit: p.reasonForVisit || "Not specified" })));
-          setAvailableStaff(staffList);
-        })
-        .catch(error => {
-          console.error("Error loading patients or staff:", error);
-          toast({ title: "Error", description: "Could not load patient or staff data.", variant: "destructive" });
-        })
-        .finally(() => setIsLoading(false));
+      loadDashboard().finally(() => setIsLoading(false));
     } else {
       setAllPatients([]);
       setAvailableStaff([]);
       setIsLoading(false);
     }
-  }, [currentUser, toast]);
+  }, [currentUser, loadDashboard]);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    loadDashboard(true).finally(() => setIsRefreshing(false));
+  };
 
   const filteredAndGroupedPatients = useMemo(() => {
     let patientsToProcess = [...allPatients];
@@ -262,6 +278,7 @@ export default function DashboardPage() {
           </Link>
         </div>
       </header>
+      <RefreshStamp loadedAt={loadedAt} onRefresh={handleRefresh} isRefreshing={isRefreshing} className="-mt-6 mb-2 justify-end" />
 
       <Card className="mb-6 shadow-md">
         <CardHeader>

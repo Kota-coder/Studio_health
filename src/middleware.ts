@@ -35,7 +35,12 @@ export async function middleware(request: NextRequest) {
       },
     },
   );
-  const { data: { user } } = await supabase.auth.getUser();
+  // getClaims() checks the session token's signature locally when the project uses
+  // asymmetric JWT signing keys (the default for new Supabase projects), so a page load
+  // or link prefetch doesn't need a call to Supabase Auth. Projects still on the legacy
+  // shared secret fall back to asking the Auth server, as before.
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const user = claimsData?.claims?.sub ? claimsData.claims : null;
 
   const { pathname } = request.nextUrl;
   if (!user && !PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(`${p}/`))) {
