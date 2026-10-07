@@ -2,17 +2,20 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Check, Hospital, ImageUp, Palette, Save } from 'lucide-react';
+import { ArrowLeft, Check, Hospital, ImageUp, LayoutList, Palette, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { PAGE_ROLES } from '@/config/permissions';
+import { MODULES } from '@/config/modules';
 import { hospitalProfile as profileRepo } from '@/lib/data';
+import { invalidate } from '@/lib/data/cache';
 import { useBranding } from '@/components/branding-provider';
 import {
   BRAND_COLORS, brandingUrls, contrastWithWhite, initialsFor, monogramSvg,
@@ -51,6 +54,7 @@ export default function HospitalProfilePage() {
   const [shape, setShape] = useState<MonogramShape>('shield');
   const [emblem, setEmblem] = useState<MonogramEmblem>('cross');
   const [upload, setUpload] = useState<string | null>(null);
+  const [disabledModules, setDisabledModules] = useState<string[]>(current.disabledModules ?? []);
   const [isSaving, setIsSaving] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -65,6 +69,7 @@ export default function HospitalProfilePage() {
     profileRepo.get().then(p => {
       setDetails(pickDetails(p));
       setLogoChoice(p.logoFolder ? 'keep' : 'design');
+      setDisabledModules(p.disabledModules ?? []);
       if (!initialsEdited && p.configuredAt) setInitials(initialsFor(p.name));
     }).catch(error => console.error('Could not load the hospital profile', error));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once
@@ -105,6 +110,7 @@ export default function HospitalProfilePage() {
         email: details.email?.trim() || null,
         website: details.website?.trim() || null,
         registrationNumber: details.registrationNumber?.trim() || null,
+        disabledModules: MODULES.map(m => m.key).filter(key => disabledModules.includes(key)),
       };
       if (logoChoice !== 'keep') {
         const src = logoChoice === 'upload' ? upload! : svgToDataUrl(designed);
@@ -112,6 +118,7 @@ export default function HospitalProfilePage() {
       }
       const saved = await profileRepo.update(changes);
       setProfile(saved);
+      invalidate('branding:');
       setLogoChoice(saved.logoFolder ? 'keep' : 'design');
       setUpload(null);
       // Refresh the server's copy so the page title, icons and colours update for everyone.
@@ -244,6 +251,34 @@ export default function HospitalProfilePage() {
                   <p className="text-xs text-muted-foreground">PNG, JPG or SVG, up to 5 MB. It is resized and saved as PNG, with app icons made from it.</p>
                 </TabsContent>
               </Tabs>
+            </CardContent>
+          </Card>
+
+          <Card id="menus" className="scroll-mt-20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg"><LayoutList className="h-5 w-5 text-primary" /> Menus</CardTitle>
+              <CardDescription>
+                Switch off the sections your hospital doesn&apos;t use; they disappear from everyone&apos;s menu and their pages
+                show a short notice. Nothing is deleted, and you can switch them back on at any time. Patients, Staff Management
+                and this page are always on.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ul className="divide-y rounded-md border">
+                {MODULES.map(m => {
+                  const on = !disabledModules.includes(m.key);
+                  return (
+                    <li key={m.key} className="flex items-center justify-between gap-4 p-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">{m.label}</p>
+                        <p className="text-xs text-muted-foreground">{m.description}</p>
+                      </div>
+                      <Switch checked={on} aria-label={`Show ${m.label}`}
+                        onCheckedChange={next => setDisabledModules(prev => next ? prev.filter(k => k !== m.key) : [...prev, m.key])} />
+                    </li>
+                  );
+                })}
+              </ul>
             </CardContent>
           </Card>
         </div>

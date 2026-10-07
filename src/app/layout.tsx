@@ -8,6 +8,7 @@ import { Suspense } from 'react';
 import { ServiceWorkerRegistration } from '@/components/service-worker-registration';
 import { BrandingProvider, HospitalMark, HospitalName } from '@/components/branding-provider';
 import { getHospitalProfile } from '@/lib/hospital-profile.server';
+import { ModuleGuard } from '@/components/module-guard';
 import { brandingUrls, displayName, hexToHslTriplet } from '@/lib/branding';
 import { AuthProviderClient, AppHeaderMenu } from '@/components/auth-provider-client'; // Import AppHeaderMenu
 
@@ -21,9 +22,10 @@ const geistMono = Geist_Mono({
   subsets: ['latin'],
 });
 
-// Rendered per request so a changed hospital profile shows on the next page load (the profile
-// itself is cached; see lib/hospital-profile.server.ts).
-export const dynamic = 'force-dynamic';
+// Pages are built once and served from the CDN, rebuilt at most every 5 minutes or as soon
+// as the Super Admin saves the hospital profile (see lib/hospital-profile.server.ts). The
+// browser also checks the profile once per tab (BrandingProvider), so nobody sees an old logo.
+export const revalidate = 300;
 
 // Title, icons and colours come from this hospital's profile (Organization Setup →
 // Hospital Profile); before it is set up they are Seva's.
@@ -83,7 +85,7 @@ export default async function RootLayout({
           </header>
           <main className="flex-1 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] print:py-0">
             <Suspense fallback={<div className="flex justify-center items-center py-20 text-muted-foreground">Loading...</div>}>
-              {children}
+              <ModuleGuard>{children}</ModuleGuard>
             </Suspense>
           </main>
           <Toaster />

@@ -8,6 +8,7 @@ export interface PaymentMethodOption {
   usedFor: PaymentMethodUse;
   active: boolean;
   sortOrder: number;
+  gateway?: string | null; // online payment provider that collects this method, e.g. 'razorpay' (see src/lib/payments)
   createdAt?: string;
 }
 
