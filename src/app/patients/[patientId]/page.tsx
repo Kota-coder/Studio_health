@@ -747,6 +747,9 @@ export default function PatientDetailPage() {
           <Button variant="outline" onClick={() => router.push('/dashboard')}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
           </Button>
+          <Button variant="outline" asChild>
+            <Link href={`/patients/${patient.id.toString().padStart(3, '0')}/summary`}><FileText className="mr-2 h-4 w-4" /> Treatment Summary</Link>
+          </Button>
           {PATIENT_DATA_REQUESTS_ENABLED && currentUser?.role === "Super Admin" && (
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={handleDownloadPatientData} disabled={isHandlingDataRequest}>

@@ -1,11 +1,11 @@
 import type { MetadataRoute } from 'next';
 
-// Lets staff add CardioCare to their phone's home screen and open it full-screen like an app.
+// Lets staff add Seva to their phone's home screen and open it full-screen like an app.
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: 'CardioCare',
-    short_name: 'CardioCare',
-    description: 'Patient management for the clinic',
+    name: 'Seva',
+    short_name: 'Seva',
+    description: 'Hospital and patient care management',
     start_url: '/dashboard',
     scope: '/',
     display: 'standalone',

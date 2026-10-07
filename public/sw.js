@@ -1,7 +1,7 @@
-// CardioCare service worker. Its only job is to show a friendly page when the
+// Seva service worker. Its only job is to show a friendly page when the
 // phone or computer has no internet connection. Patient data is never cached
 // on the device; every page still comes from the server.
-const CACHE = 'cardiocare-offline-v1';
+const CACHE = 'seva-offline-v1';
 const OFFLINE_URL = '/offline.html';
 
 self.addEventListener('install', (event) => {

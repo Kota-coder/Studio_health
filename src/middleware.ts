@@ -6,9 +6,9 @@ import { createServerClient } from '@supabase/ssr';
 const PUBLIC_PATHS = ['/login', '/auth/confirm', '/set-password', '/forgot-password', '/reset-password', '/signup'];
 
 const SETUP_MESSAGE = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CardioCare setup needed</title>
+<title>Seva setup needed</title>
 <body style="font-family:system-ui;max-width:40rem;margin:3rem auto;padding:0 1rem;line-height:1.5">
-<h1>CardioCare isn't connected to its database yet</h1>
+<h1>Seva isn't connected to its database yet</h1>
 <p>Add <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to your
 <code>.env</code> file (see <code>.env.example</code> and the README's "Supabase setup"), then restart the app.</p>
 </body>`;

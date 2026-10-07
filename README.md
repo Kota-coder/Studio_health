@@ -1,6 +1,6 @@
-# CardioCare
+# Seva
 
-Patient management for a cardiology clinic: registration with ID card scanning, care notes,
+Hospital and patient care management (formerly CardioCare): registration with ID card scanning, care notes,
 tests, billing, clinic payments, financial dashboard and staff management. Works in a desktop
 browser and on phones (it can be added to the home screen like an app).
 

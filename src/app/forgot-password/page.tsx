@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Heart, ArrowLeft, Mail, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Mail, CheckCircle } from 'lucide-react';
+import { SevaLogo } from '@/components/seva-logo';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { getSupabase } from '@/lib/supabase/client';
@@ -69,11 +70,11 @@ export default function ForgotPasswordPage() {
       <Card className="w-full max-w-md shadow-2xl border-0 overflow-hidden">
         <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 pb-10 sm:p-8 sm:pb-12 relative">
           <div className="flex items-center justify-center gap-3 mb-2">
-            <div className="bg-white/20 backdrop-blur-sm rounded-full p-3">
-              <Heart className="h-8 w-8 text-white fill-white" />
+            <div className="bg-white rounded-full p-2 shadow-sm">
+              <SevaLogo className="h-10 w-10" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">CardioCare</h1>
+              <h1 className="text-3xl font-bold tracking-tight">Seva</h1>
               <p className="text-blue-100 text-sm">Healthcare Management</p>
             </div>
           </div>
