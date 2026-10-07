@@ -1,5 +1,5 @@
-// Sample data for trying CardioCare out: about six months of a small clinic's
-// activity (patients, notes, tests, bills, payments and catalogs) so every screen
+// Sample data for trying Seva out: about six months of a small hospital's activity
+// (patients, notes, tests, bills, payments, fees, catalogs and the duty roster) so every screen
 // and chart has something to show. Every sample record is marked so it can be
 // removed again with removeSampleDataFromDatabase().
 
@@ -7,9 +7,12 @@ import {
   bills, countRows, departments, materials, medications, patients, payments, referringDoctors, testCatalog, vendors,
 } from '@/lib/data';
 import { maskAadhaarNumber, isAadhaarCard } from '@/lib/aadhaar';
+import { SHIFT_PRESETS, dateKey, shiftWindow, weekStartOf } from '@/lib/duty';
+import { billedProcedures, referralLines, referralTotal } from '@/lib/referralFee';
 import type { Bill, BillItem, PaymentMethod, PaymentStatus } from '@/types/billing';
 import type { CareNote, PatientCondition, PatientAdmissionCondition, TestEntry, TestFieldData } from '@/types/patient';
 import type { Payment } from '@/types/payment';
+import type { ShiftType, StaffShift } from '@/types/duty';
 import { SEED_PATIENTS } from './patients';
 import { SEED_MEDICATIONS } from './medications';
 import { SEED_REFERRING_DOCTORS } from './referringDoctors';
@@ -26,6 +29,9 @@ export interface SampleDataSummary {
   staff: number;
   departments: number;
   doctorFeePayments: number;
+  referralFeePayments: number;
+  shifts: number;
+  attendance: number;
   referringDoctors: number;
   medications: number;
   materials: number;
@@ -132,7 +138,7 @@ export async function loadSampleDataIntoDatabase(
   }
   const random = createRandom(20261007);
   const summary: SampleDataSummary = {
-    staff: 0, departments: 0, doctorFeePayments: 0, referringDoctors: 0, medications: 0, materials: 0, vendors: 0, testCatalog: 0,
+    staff: 0, departments: 0, doctorFeePayments: 0, referralFeePayments: 0, shifts: 0, attendance: 0, referringDoctors: 0, medications: 0, materials: 0, vendors: 0, testCatalog: 0,
     patients: 0, careNotes: 0, tests: 0, bills: 0, payments: 0,
   };
 
@@ -169,8 +175,13 @@ export async function loadSampleDataIntoDatabase(
   };
 
   onProgress?.('Adding catalogs...');
+  // Some referring doctors are paid a fixed fee per patient, some a % of the procedures
+  // billed, and one has no agreed fee yet.
+  const referralTerms: Array<{ defaultReferralFee?: number; defaultReferralPercent?: number }> = [
+    { defaultReferralFee: 500 }, { defaultReferralPercent: 10 }, { defaultReferralFee: 750 }, { defaultReferralPercent: 5 }, {},
+  ];
   const createdDoctors = await referringDoctors.createMany(
-    SEED_REFERRING_DOCTORS.map(({ id: _id, ...doctor }) => ({ ...doctor, notes: SAMPLE_MARK }) as typeof doctor),
+    SEED_REFERRING_DOCTORS.map(({ id: _id, ...doctor }, i) => ({ ...doctor, ...referralTerms[i % referralTerms.length], notes: SAMPLE_MARK }) as typeof doctor),
   );
   summary.referringDoctors = createdDoctors.length;
   const createdMedications = await medications.createMany(
@@ -297,12 +308,12 @@ export async function loadSampleDataIntoDatabase(
   }
 
   const billPlans: Array<WithCreatedAt<Omit<Bill, 'id' | 'createdAt' | 'auditLog'>>> = [];
-  const createdCases: Array<{ id: number; doctorId?: number | null; fee?: number | null; visitDaysAgo: number }> = [];
+  const createdCases: Array<{ id: number; doctorId?: number | null; fee?: number | null; referredDoctorId?: number | null; visitDaysAgo: number }> = [];
   for (const [index, plan] of plans.entries()) {
     onProgress?.(`Adding patient ${index + 1} of ${plans.length}...`);
     const created = await patients.create(plan.fields, { actionType: 'Patient Registered', details: 'Sample patient loaded for testing.' });
     summary.patients++;
-    createdCases.push({ id: created.id, doctorId: plan.fields.attendingDoctorId, fee: plan.fields.doctorFee, visitDaysAgo: plan.visitDaysAgo });
+    createdCases.push({ id: created.id, doctorId: plan.fields.attendingDoctorId, fee: plan.fields.doctorFee, referredDoctorId: plan.fields.referredDoctorId, visitDaysAgo: plan.visitDaysAgo });
     for (const note of plan.notes) {
       await patients.addCareNote(created.id, note as WithCreatedAt<typeof note>);
       summary.careNotes++;
@@ -405,13 +416,6 @@ export async function loadSampleDataIntoDatabase(
       paymentDate: '', paymentType: 'Other', payeeName: 'Electricity Board', payeeType: 'Other',
       description: 'Electricity bill', amount: random.int(4000, 7000), paymentMethod: 'UPI',
     });
-    if (createdDoctors.length) {
-      const doctor = random.pick(createdDoctors);
-      addPayment(monthDays + 20, {
-        paymentDate: '', paymentType: 'Referral/CC', payeeId: doctor.id, payeeName: doctor.name, payeeType: 'ReferringDoctor',
-        description: 'Referral fee', amount: random.int(2, 6) * 500, paymentMethod: 'Cash',
-      });
-    }
   }
   for (const payment of paymentPlans.filter(p => Date.parse(p.createdAt ?? '') <= Date.now())) {
     await payments.create(payment, 'Sample payment loaded for testing.');
@@ -441,7 +445,150 @@ export async function loadSampleDataIntoDatabase(
     summary.doctorFeePayments++;
   }
 
+  // Referral fees: worked out from each referring doctor's terms (a % of what was billed,
+  // pharmacy excluded, or their fixed fee). Referrals older than a month have been paid,
+  // one payment per doctor; newer ones are pending for Payments → Referral/CC.
+  onProgress?.('Adding referral fees...');
+  const referralFees = new Map<number, number>();
+  for (const c of createdCases) {
+    const doctor = createdDoctors.find(d => d.id === c.referredDoctorId);
+    if (!doctor) continue;
+    if (doctor.defaultReferralPercent != null) {
+      const percent = String(doctor.defaultReferralPercent);
+      const procedures = billedProcedures(billPlans.filter(b => b.patientId === c.id) as Bill[]);
+      const lines = referralLines(procedures, Object.fromEntries(procedures.map(p => [p.key, p.billType === 'Pharmacy' ? '0' : percent])));
+      const fee = referralTotal(lines);
+      await patients.update(c.id, { referralFee: fee, referralFeeBasis: { mode: 'percent', lines } },
+        { actionType: 'Care Team Updated', details: `Referral fee: ₹${fee.toFixed(2)} (${percent}% of procedures billed).` });
+      referralFees.set(c.id, fee);
+    } else if (doctor.defaultReferralFee != null) {
+      referralFees.set(c.id, doctor.defaultReferralFee);
+    }
+  }
+  for (const doctor of createdDoctors) {
+    const paid = createdCases.filter(c => c.referredDoctorId === doctor.id && c.visitDaysAgo > 30 && referralFees.has(c.id));
+    if (paid.length === 0) continue;
+    const when = daysAgo(15, 16);
+    const amount = paid.reduce((sum, c) => sum + (referralFees.get(c.id) ?? 0), 0);
+    const payment = await payments.create({
+      paymentDate: dmy(when), paymentType: 'Referral/CC', payeeId: doctor.id, payeeName: doctor.name, payeeType: 'ReferringDoctor',
+      associatedPatientIds: paid.map(c => c.id),
+      description: `Referral fees for ${paid.length} patient${paid.length > 1 ? 's' : ''}`,
+      amount: Math.round(amount * 100) / 100,
+      paymentMethod: 'Bank Transfer',
+      transactionId: `${SAMPLE_PAYMENT_PREFIX}${String(paymentNumber++).padStart(3, '0')}`,
+      recordedByStaffId: currentStaff.id, recordedByStaffName: currentStaff.name,
+      notes: SAMPLE_MARK,
+      createdAt: when.toISOString(),
+    } as WithCreatedAt<Omit<Payment, 'id' | 'createdAt' | 'auditLog'>>, 'Sample referral fee payment loaded for testing.');
+    await patients.setReferralFeePayment(paid.map(c => ({ patientId: c.id, fee: referralFees.get(c.id) ?? null })), payment.id);
+    summary.payments++;
+    summary.referralFeePayments++;
+  }
+
+  onProgress?.('Adding the duty roster and attendance...');
+  const duty = buildSampleDuty(staff, sampleDepartments, currentStaff.id, random);
+  const response = await fetch('/api/sample-data', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(duty),
+  });
+  const dutyResult = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error((dutyResult as { error?: string }).error ?? 'Could not add the duty roster.');
+  summary.shifts = duty.shifts.length;
+  summary.attendance = duty.attendance.length;
+
   return summary;
+}
+
+type Random = ReturnType<typeof createRandom>;
+
+// Three weeks of past shifts with clock-ins, and two weeks planned ahead:
+// doctors work weekdays with a Saturday on-call rota, nurses rotate between morning,
+// evening and night weeks, and front-desk and accounts staff work days. Most people
+// clock in on time; a few are late, leave early or miss a shift.
+function buildSampleDuty(
+  staff: SampleStaff[],
+  sampleDepartments: Array<{ id: number; doctor?: SampleStaff; nurse?: SampleStaff }>,
+  recordedById: number,
+  random: Random,
+) {
+  const departmentOf = (id: number) => sampleDepartments.find(d => d.doctor?.id === id || d.nurse?.id === id)?.id ?? null;
+  const start = weekStartOf(new Date(Date.now() - 21 * DAY));
+  const shiftRows: Array<Omit<StaffShift, 'id'>> = [];
+  const doctors = staff.filter(s => s.role === 'Doctor');
+  const nurses = staff.filter(s => s.role === 'Nurse');
+  const NURSE_ROTATION: ShiftType[] = ['Morning', 'Evening', 'Night'];
+
+  for (let dayIndex = 0; dayIndex < 35; dayIndex++) {
+    const day = new Date(start.getFullYear(), start.getMonth(), start.getDate() + dayIndex);
+    const week = Math.floor(dayIndex / 7);
+    const weekday = dayIndex % 7; // 0 = Monday
+    const add = (person: SampleStaff, shiftType: ShiftType, notes?: string) => shiftRows.push({
+      staffId: person.id, shiftDate: dateKey(day), shiftType,
+      startTime: SHIFT_PRESETS[shiftType].start, endTime: SHIFT_PRESETS[shiftType].end,
+      departmentId: departmentOf(person.id), notes,
+    });
+    doctors.forEach((doctor, i) => {
+      if (weekday < 5) add(doctor, 'Day');
+      else if (weekday === 5 && (week + i) % doctors.length === 0) add(doctor, 'On Call', 'Weekend on-call cover');
+    });
+    nurses.forEach((nurse, i) => {
+      if (weekday === (i * 2 + week) % 7) return; // one day off a week, varying
+      add(nurse, NURSE_ROTATION[(i + week) % NURSE_ROTATION.length]);
+    });
+    for (const person of staff.filter(s => s.role === 'Receptionist')) if (weekday < 6) add(person, 'Morning');
+    for (const person of staff.filter(s => s.role === 'Accounts')) if (weekday < 5) add(person, 'Day');
+  }
+
+  const now = new Date();
+  const minutes = (n: number) => n * 60 * 1000;
+  const attendance: Array<Record<string, unknown>> = [];
+  const open = new Set<number>();
+  const lastOut = new Map<number, number>();
+  shiftRows.sort((a, b) => shiftWindow(a).start.getTime() - shiftWindow(b).start.getTime());
+  for (const shift of shiftRows) {
+    const { start: from, end: to } = shiftWindow(shift);
+    if (from > now) continue;
+    const roll = random.next();
+    if (roll < 0.04 && to <= now) continue; // absent
+    const lateBy = roll < 0.12 ? random.int(15, 45) : random.int(-12, 6);
+    // Never before the same person's previous clock-out (night shift into a morning week).
+    const clockIn = new Date(Math.max(from.getTime() + minutes(lateBy), (lastOut.get(shift.staffId) ?? 0) + minutes(1)));
+    if (clockIn > now) continue;
+    let clockOut: Date | null = new Date(to.getTime() + minutes(roll > 0.95 ? -random.int(30, 60) : random.int(-4, 20)));
+    if (clockOut > now) {
+      if (open.has(shift.staffId)) continue;
+      clockOut = null; // still on duty
+      open.add(shift.staffId);
+    }
+    if (clockOut) lastOut.set(shift.staffId, clockOut.getTime());
+    const forgot = clockOut && random.next() < 0.04;
+    attendance.push({
+      staff_id: shift.staffId,
+      clock_in: clockIn.toISOString(),
+      clock_out: clockOut?.toISOString() ?? null,
+      source: forgot ? 'Manual' : 'Clock',
+      notes: forgot ? 'Forgot to clock out; corrected by admin' : null,
+      recorded_by_staff_id: forgot ? recordedById : null,
+    });
+  }
+  // A doctor called in outside the roster.
+  if (doctors[0]) {
+    const callIn = new Date(start.getTime() + 6 * DAY + 2 * 60 * 60 * 1000);
+    if (callIn < now) attendance.push({
+      staff_id: doctors[0].id, clock_in: callIn.toISOString(), clock_out: new Date(callIn.getTime() + minutes(150)).toISOString(),
+      source: 'Clock', notes: 'Called in for an emergency', recorded_by_staff_id: null,
+    });
+  }
+
+  return {
+    shifts: shiftRows.map(s => ({
+      staff_id: s.staffId, shift_date: s.shiftDate, start_time: s.startTime, end_time: s.endTime,
+      shift_type: s.shiftType, department_id: s.departmentId, notes: s.notes ?? null,
+    })),
+    attendance,
+  };
 }
 
 /**

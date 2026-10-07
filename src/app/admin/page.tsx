@@ -40,12 +40,13 @@ export default function AdminPage() {
   };
 
   const handleLoad = () => {
-    if (!confirm('Load about six months of sample patients, bills, payments, staff and catalogs into the database?')) return;
+    if (!confirm('Load about six months of sample patients, bills, payments, staff, duty roster and catalogs into the database?')) return;
     setProgress('Starting...');
     run(async () => {
       const s = await loadSampleDataIntoDatabase(currentUser, setProgress);
       return `Loaded ${s.patients} patients (${s.careNotes} care notes, ${s.tests} tests), ${s.bills} bills, ${s.payments} payments, `
-        + `${s.staff} staff in ${s.departments} departments (${s.doctorFeePayments} doctor fee payments), ${s.referringDoctors} referring doctors, ${s.medications} medications, ${s.materials} materials, `
+        + `${s.staff} staff in ${s.departments} departments (${s.doctorFeePayments} doctor fee and ${s.referralFeePayments} referral fee payments), `
+        + `${s.shifts} roster shifts with ${s.attendance} clock-ins, ${s.referringDoctors} referring doctors, ${s.medications} medications, ${s.materials} materials, `
         + `${s.vendors} vendors and ${s.testCatalog} catalog tests.`;
     });
   };
@@ -65,9 +66,9 @@ export default function AdminPage() {
           <CardTitle className="flex items-center gap-2"><Database className="h-6 w-6" /> Sample Data</CardTitle>
           <CardDescription>
             For trying the app out. Loads about six months of a small hospital&apos;s activity: three departments (Cardiology, General Medicine,
-            Orthopaedics) with their doctors and nurses, 30 patients with care notes, tests and doctor fees, bills,
-            salary, supply and doctor-fee payments, referring doctors, medications,
-            materials, vendors and a test catalog. It only loads into a database with no patients, and everything it
+            Orthopaedics) with their doctors and nurses, 30 patients with care notes, tests, doctor fees and referral fees
+            (fixed and percentage), bills, salary, supply, doctor-fee and referral payments, a duty roster (three weeks past
+            with clock-ins and two weeks ahead), referring doctors, medications, materials, vendors and a test catalog. It only loads into a database with no patients, and everything it
             adds can be removed again before you start using the app for real.
           </CardDescription>
         </CardHeader>

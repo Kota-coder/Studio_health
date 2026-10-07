@@ -61,7 +61,7 @@ export function AppHeaderMenu() {
   if (isLoading) {
     return (
        <Button variant="ghost" size="icon" aria-label="Loading menu" disabled>
-          <MenuIcon className="h-5 w-5 animate-spin" />
+          <MenuIcon className="h-5 w-5 opacity-50" />
        </Button>
     );
   }

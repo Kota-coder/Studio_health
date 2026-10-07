@@ -34,7 +34,8 @@ devices, protected by login and backed up.
 1. **Create a project** at supabase.com in region **South Asia (Mumbai)**. The Pro plan
    (about $25/month) is recommended for daily backups and no pausing.
 2. **Create the schema**: open *SQL Editor* and run each file in `supabase/migrations`, in
-   order (paste the contents, click *Run*):
+   order (paste the contents, click *Run*). Files 2–6 are safe to run again, so when you
+   update the app you can simply run them all again in order; never run file 1 a second time.
    1. `20261007000000_init.sql` (tables, security rules, photo storage)
    2. `20261007120000_upgrade_previous_schema.sql` (only changes anything on a database set up
       with the earlier version; fixes "Could not find the 'id_card_images' column")
@@ -119,10 +120,19 @@ devices, protected by login and backed up.
 
 Log in as the Super Admin and open **Sample Data** in the menu (under Organization Setup).
 
-- **Load Sample Data** adds about six months of activity: 30 patients with care notes and
-  tests, bills, salary/supply/electricity payments, 6 sample staff (2 doctors, 2 nurses, a
-  receptionist and an accountant), referring doctors, medications, materials, vendors and a
-  test catalog. It only runs while the database has no patients.
+- **Load Sample Data** adds about six months of activity:
+  - 8 sample staff (3 doctors, 3 nurses, a receptionist and an accountant) in three
+    departments (Cardiology, General Medicine, Orthopaedics)
+  - 30 patients with care teams, care notes, tests, bills, and doctor fees (older ones paid,
+    recent ones pending)
+  - referring doctors on different terms (fixed fee, % of procedures, or none agreed), with
+    older referrals paid and recent ones pending
+  - salary, supply, electricity, doctor-fee and referral payments
+  - a duty roster: three weeks of past shifts with clock-ins (including a few late arrivals,
+    early departures and absences) and two weeks planned ahead
+  - medications, materials, vendors and a test catalog
+
+  It only runs while the database has no patients.
 - **Remove Sample Data** deletes everything it added and leaves records your staff entered.
 - Sample staff can't log in. To see what another role sees, invite yourself on a second email
   address from Staff Management.

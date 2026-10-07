@@ -361,7 +361,7 @@ export default function DashboardPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {patientsInGroup.map((patient) => (
                     <Link key={patient.id} href={`/patients/${patient.id.toString().padStart(3, '0')}`} passHref className="block group">
-                        <Card className={`shadow-lg hover:shadow-xl transition-shadow duration-300 border-2 ${config.colorClasses} h-full flex flex-col cursor-pointer group-hover:border-primary`}>
+                        <Card className={`shadow-lg hover:shadow-xl transition-colors border-2 ${config.colorClasses} h-full flex flex-col cursor-pointer group-hover:border-primary`}>
                         <CardHeader>
                             <CardTitle className="truncate">{`${patient.firstName} ${patient.lastName}`}</CardTitle>
                             <CardDescription className="truncate">

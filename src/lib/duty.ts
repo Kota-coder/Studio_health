@@ -61,13 +61,25 @@ export const formatHours = (hours: number) => {
 // 25 -> "25m", 130 -> "2h 10m".
 export const formatMinutes = (minutes: number) => (minutes < 60 ? `${minutes}m` : formatHours(minutes / 60));
 
+// A clock-in belongs to a shift when it covers a real part of it: 30 minutes, or half the
+// clock-in if that is shorter. A night shift that runs a few minutes into the next
+// morning shift doesn't count towards it.
+export function coversShift(shift: { start: Date; end: Date }, entry: { start: Date; end: Date }) {
+  if (!overlaps(shift, entry)) return false;
+  const overlapMinutes = differenceInMinutes(
+    new Date(Math.min(shift.end.getTime(), entry.end.getTime())),
+    new Date(Math.max(shift.start.getTime(), entry.start.getTime())),
+  );
+  return overlapMinutes >= Math.min(30, differenceInMinutes(entry.end, entry.start) / 2);
+}
+
 export type ShiftStatusTone = 'ok' | 'warn' | 'bad' | 'neutral' | 'live';
 
 // How a planned shift went, judged against that person's attendance entries.
 export function shiftStatus(shift: StaffShift, entries: AttendanceEntry[], now = new Date()): { label: string; tone: ShiftStatusTone; matched: AttendanceEntry[] } {
   const window = shiftWindow(shift);
   const matched = entries
-    .filter(e => e.staffId === shift.staffId && overlaps(window, entryWindow(e, now)))
+    .filter(e => e.staffId === shift.staffId && coversShift(window, entryWindow(e, now)))
     .sort((a, b) => a.clockIn.localeCompare(b.clockIn));
 
   if (matched.length === 0) {
