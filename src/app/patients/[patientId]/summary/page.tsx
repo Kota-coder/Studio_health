@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { HospitalMark, useBranding } from '@/components/branding-provider';
 import { useAuth } from '@/context/AuthContext';
+import { useFeatures } from '@/hooks/use-features';
 import {
   bills as billsRepo, departments as departmentsRepo, patients as patientsRepo,
   referringDoctors as referringDoctorsRepo, staff as staffRepo,
@@ -43,6 +44,7 @@ export default function PatientSummaryPage() {
   const params = useParams();
   const router = useRouter();
   const { currentUser, isLoading: authIsLoading } = useAuth();
+  const { isOn } = useFeatures();
   const patientId = Number(params.patientId);
 
   const [patient, setPatient] = useState<Patient | null>(null);
@@ -197,7 +199,7 @@ export default function PatientSummaryPage() {
             <Detail label="Department" value={department?.name} />
             <Detail label="Attending doctor" value={staffName(patient.attendingDoctorId)} />
             <Detail label="Nurse in charge" value={staffName(patient.attendingNurseId)} />
-            <Detail label="Referred by" value={referringDoctor ? `${referringDoctor.name}${referringDoctor.location ? `, ${referringDoctor.location}` : ''}` : null} />
+            {isOn('referringDoctors') && <Detail label="Referred by" value={referringDoctor ? `${referringDoctor.name}${referringDoctor.location ? `, ${referringDoctor.location}` : ''}` : null} />}
             <Detail label="Date of birth" value={dob ? format(dob, 'dd MMM yyyy') : null} />
             <Detail label="Emergency contact" value={patient.emergencyContactName ? `${patient.emergencyContactName} (${patient.emergencyContactNumber})` : null} />
           </dl>
@@ -286,6 +288,7 @@ export default function PatientSummaryPage() {
         </Card>
       )}
 
+      {isOn('billing') && (
       <Card className="print:shadow-none print:border-0 print:break-inside-avoid">
         <CardHeader className="print:px-0"><CardTitle className="text-lg">Billing</CardTitle></CardHeader>
         <CardContent className="print:px-0">
@@ -296,6 +299,7 @@ export default function PatientSummaryPage() {
           </dl>
         </CardContent>
       </Card>
+      )}
       <p className="text-center text-[11px] text-muted-foreground">Generated with Seva</p>
     </div>
   );

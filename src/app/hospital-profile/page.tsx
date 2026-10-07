@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { PAGE_ROLES } from '@/config/permissions';
-import { MODULES } from '@/config/modules';
+import { MODULES, blockedBy } from '@/config/modules';
 import { hospitalProfile as profileRepo } from '@/lib/data';
 import { invalidate } from '@/lib/data/cache';
 import { useBranding } from '@/components/branding-provider';
@@ -256,22 +256,24 @@ export default function HospitalProfilePage() {
 
           <Card id="menus" className="scroll-mt-20">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg"><LayoutList className="h-5 w-5 text-primary" /> Menus</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-lg"><LayoutList className="h-5 w-5 text-primary" /> Menus and features</CardTitle>
               <CardDescription>
-                Switch off the sections your hospital doesn&apos;t use; they disappear from everyone&apos;s menu and their pages
-                show a short notice. Nothing is deleted, and you can switch them back on at any time. Patients, Staff Management
-                and this page are always on.
+                Switch off what your hospital doesn&apos;t use. It disappears for everyone: from the menu, from other screens
+                (e.g. Billing off removes bills from the patient page) and its pages show a short notice. Nothing is deleted, and
+                you can switch it back on at any time. Patients, Staff Management and this page are always on.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <ul className="divide-y rounded-md border">
                 {MODULES.map(m => {
                   const on = !disabledModules.includes(m.key);
+                  const blocked = on ? blockedBy(disabledModules, m.key) : null;
                   return (
                     <li key={m.key} className="flex items-center justify-between gap-4 p-3">
                       <div className="min-w-0">
                         <p className="text-sm font-medium">{m.label}</p>
                         <p className="text-xs text-muted-foreground">{m.description}</p>
+                        {blocked && <p className="text-xs text-amber-700 dark:text-amber-400">Off until turned on: {blocked}.</p>}
                       </div>
                       <Switch checked={on} aria-label={`Show ${m.label}`}
                         onCheckedChange={next => setDisabledModules(prev => next ? prev.filter(k => k !== m.key) : [...prev, m.key])} />

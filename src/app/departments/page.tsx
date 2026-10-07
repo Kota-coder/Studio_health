@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/context/AuthContext';
+import { useFeatures } from '@/hooks/use-features';
 import { useToast } from '@/hooks/use-toast';
 import { PAGE_ROLES } from '@/config/permissions';
 import { departments as departmentsRepo, patients as patientsRepo, staff as staffRepo } from '@/lib/data';
@@ -21,6 +22,7 @@ export default function DepartmentsPage() {
   const router = useRouter();
   const { toast } = useToast();
   const { currentUser, isLoading: authIsLoading } = useAuth();
+  const { isOn } = useFeatures();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [members, setMembers] = useState<DepartmentMembers>({});
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -83,8 +85,9 @@ export default function DepartmentsPage() {
 
       <p className="text-sm text-muted-foreground mb-6 max-w-3xl">
         Each department has its own doctors and nurses. On a patient&apos;s page, choose the department and then the
-        attending doctor and nurse from that department. The default doctor fee is suggested as the doctor&apos;s
-        compensation for each case, and is paid through <span className="font-medium">Payments → Doctor Fee</span>.
+        attending doctor and nurse from that department.
+        {isOn('doctorFees') && <> The default doctor fee is suggested as the doctor&apos;s compensation for each case, and is
+        paid through <span className="font-medium">Payments → Doctor Fee</span>.</>}
       </p>
 
       {departments.length === 0 ? (
@@ -118,7 +121,7 @@ export default function DepartmentsPage() {
                 <CardContent className="space-y-3 text-sm">
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
                     <span className="flex items-center gap-1"><Users className="h-4 w-4" /> {activePatientCount(department.id)} active patients</span>
-                    <span>Default doctor fee: {department.defaultDoctorFee != null ? `₹${department.defaultDoctorFee.toFixed(2)}` : 'not set'}</span>
+                    {isOn('doctorFees') && <span>Default doctor fee: {department.defaultDoctorFee != null ? `₹${department.defaultDoctorFee.toFixed(2)}` : 'not set'}</span>}
                   </div>
                   <div>
                     <p className="font-medium flex items-center gap-1"><Stethoscope className="h-4 w-4 text-primary" /> Doctors</p>

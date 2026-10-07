@@ -15,6 +15,7 @@ import { ReferringDoctor } from '@/types/referringDoctor'; // Updated to use Ref
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Save, Paperclip, UploadCloud, UserPlus, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useFeatures } from '@/hooks/use-features';
 import type { StaffMember } from '@/types/staff';
 import { compressImageFiles } from '@/lib/images';
 import { uploadNewImages } from '@/lib/storage';
@@ -51,6 +52,7 @@ export default function AdmissionNotesPage() {
   const router = useRouter();
   const { toast } = useToast();
   const { currentUser, isLoading: authIsLoading } = useAuth();
+  const { isOn } = useFeatures();
   const patientId = params.patientId ? parseInt(params.patientId as string, 10) : null;
 
   const [patient, setPatient] = useState<Patient | null>(null);
@@ -202,6 +204,7 @@ export default function AdmissionNotesPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-6">
+          {isOn('referringDoctors') && (
           <div>
             <Label htmlFor="referredDoctor" className="mb-1 block">Referring Doctor</Label>
             <div className="flex items-center gap-2">
@@ -228,6 +231,7 @@ export default function AdmissionNotesPage() {
               </Link>
             </div>
           </div>
+          )}
 
           <div>
             <Label htmlFor="reasonForVisit">Reason for Visit *</Label>

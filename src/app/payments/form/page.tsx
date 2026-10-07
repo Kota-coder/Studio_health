@@ -28,6 +28,7 @@ import { ArrowLeft, Save, Receipt, UserPlus, Briefcase, List, PlusCircle, Trash2
 import { format, parse, isValid, parseISO } from 'date-fns';
 import { PAGE_ROLES } from '@/config/permissions';
 import { useAuth } from '@/context/AuthContext';
+import { useFeatures } from '@/hooks/use-features';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import {
   materials as materialsRepo, medications as medicationsRepo, patients as patientsRepo, payments as paymentsRepo,
@@ -50,6 +51,7 @@ export default function PaymentFormPage() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const { currentUser, isLoading: authIsLoading } = useAuth();
+  const { isOn } = useFeatures();
 
   const paymentIdToEdit = searchParams.get('paymentId');
   const isEditMode = Boolean(paymentIdToEdit);
@@ -617,6 +619,7 @@ export default function PaymentFormPage() {
                 <SelectContent>
                   {PAYMENT_TYPES
                     .filter(type => !FEE_PAYMENT_TYPES.includes(type) || DOCTOR_FEE_ROLES.includes(currentUser.role) || paymentType === type)
+                    .filter(type => paymentType === type || (type !== 'Doctor Fee' || isOn('doctorFees')) && (type !== 'Referral/CC' || isOn('referralFees')))
                     .map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}
                 </SelectContent>
               </Select>

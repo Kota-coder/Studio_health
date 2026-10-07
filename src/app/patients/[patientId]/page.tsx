@@ -49,6 +49,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { TEST_DEFINITIONS, TestTypeDef } from '@/config/testTypes';
 import { TREATMENT_TEMPLATES, TreatmentTemplate } from '@/config/treatmentTemplates';
 import { useAuth } from '@/context/AuthContext';
+import { useFeatures } from '@/hooks/use-features';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription as AlertDesc, AlertTitle as AlertTitleComponent } from '@/components/ui/alert';
@@ -82,6 +83,7 @@ export default function PatientDetailPage() {
   const patientIdParam = params.patientId ? params.patientId as string : null;
 
   const { currentUser, isLoading: authIsLoading } = useAuth();
+  const { isOn } = useFeatures();
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -826,7 +828,7 @@ export default function PatientDetailPage() {
                         <DetailItem label="Gender" value={patient.gender} icon={Users} />
                         <FormattedDateItem label="Date of Birth" dateString={patient.dateOfBirth} icon={CalendarDays}/>
                         <DetailItem label="Reason for Visit" value={patient.reasonForVisit || "N/A"} icon={FileText}/>
-                        <DetailItem label="Referred By" value={referredDoctorName || "N/A"} icon={BriefcaseMedical}/>
+                        {isOn('referringDoctors') && <DetailItem label="Referred By" value={referredDoctorName || "N/A"} icon={BriefcaseMedical}/>}
                         <DetailItem label="Emergency Contact" value={patient.emergencyContactName} icon={UserCircleIcon}/>
                         <DetailItem label="Emergency Mobile" value={patient.emergencyContactNumber} icon={Phone}/>
                     </div>
@@ -947,6 +949,7 @@ export default function PatientDetailPage() {
                     <div className="mt-4 space-y-2">
                         <div className="flex justify-between items-center">
                             <Label className="font-medium">Medications for this Note Entry</Label>
+                            {isOn('medications') && (
                             <Dialog open={isMedicationModalOpen} onOpenChange={setIsMedicationModalOpen}>
                                 <DialogTrigger asChild>
                                     <Button variant="outline" size="sm" onClick={() => {
@@ -993,6 +996,7 @@ export default function PatientDetailPage() {
                                     </DialogFooter>
                                 </DialogContent>
                             </Dialog>
+                            )}
                         </div>
                         {currentNoteMedications.length > 0 ? (
                             <div className="space-y-2 border p-2 rounded-md bg-muted/30">
@@ -1080,7 +1084,7 @@ export default function PatientDetailPage() {
                                             </>
                                         )}
                                         </p>
-                                        {note.medicationsMentioned && note.medicationsMentioned.length > 0 && (
+                                        {isOn('billing') && note.medicationsMentioned && note.medicationsMentioned.length > 0 && (
                                           <AlertDialog>
                                             <AlertDialogTrigger asChild>
                                                 <Button variant="outline" size="sm" onClick={() => setNoteToBill(note)}>
@@ -1345,6 +1349,7 @@ export default function PatientDetailPage() {
 
                                     {test.overallResults && <div className="mt-1.5"><p className="text-xs font-medium">Overall Results:</p><p className="text-xs whitespace-pre-wrap">{test.overallResults}</p></div>}
                                     {test.notes && <div className="mt-1.5"><p className="text-xs font-medium">General Notes:</p><p className="text-xs whitespace-pre-wrap">{test.notes}</p></div>}
+                                    {isOn('billing') && (
                                     <div className="mt-2 flex justify-end">
                                       <AlertDialog>
                                         <AlertDialogTrigger asChild>
@@ -1369,6 +1374,7 @@ export default function PatientDetailPage() {
                                         </AlertDialogContent>
                                       </AlertDialog>
                                     </div>
+                                    )}
                                     {test.attachments && test.attachments.length > 0 && (
                                         <div className="mt-2">
                                             <Label className="text-xs font-medium">Attachments:</Label>
@@ -1428,7 +1434,7 @@ export default function PatientDetailPage() {
         </div>
 
         <div className="space-y-6"> {/* Sidebar area */}
-            {currentUser && (
+            {currentUser && (isOn('departments') || (isOn('referralFees') && !!patient.referredDoctorId)) && (
               <CareTeamCard patient={patient} staff={availableStaff} currentUser={currentUser} bills={patientBills} referringDoctors={availableReferringDoctors} onSaved={() => reloadPatient(patient.id)} />
             )}
             <Card className="shadow-lg">
@@ -1468,6 +1474,7 @@ export default function PatientDetailPage() {
                 </CardContent>
             </Card>
 
+            {isOn('billing') && (
             <Card className="shadow-lg">
                 <CardHeader className="flex flex-row flex-wrap justify-between items-center gap-2 space-y-0">
                     <CardTitle className="flex items-center"><CreditCard className="mr-2 h-5 w-5 text-primary"/>Patient Bills</CardTitle>
@@ -1549,6 +1556,7 @@ export default function PatientDetailPage() {
                     )}
                 </CardContent>
             </Card>
+            )}
         </div>
       </div>
     </div>
