@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Patient } from '@/types/patient';
-import { Bill } from '@/types/billing';
+import { bills as billsRepo, patients as patientsRepo, type BillFields } from '@/lib/data';
 import { format } from 'date-fns';
 import { ArrowLeft, Save } from 'lucide-react';
 
@@ -22,13 +22,15 @@ export default function QuickPaymentEntry() {
   const [amount, setAmount] = useState<string>("");
 
   useEffect(() => {
-    const storedPatients = localStorage.getItem('patients');
-    if (storedPatients) {
-      setPatients(JSON.parse(storedPatients));
-    }
-  }, []);
+    patientsRepo.listBasic()
+      .then(setPatients)
+      .catch(error => {
+        console.error("Error loading patients:", error);
+        toast({ title: "Error", description: "Could not load patients.", variant: "destructive" });
+      });
+  }, [toast]);
 
-  const handleQuickPayment = () => {
+  const handleQuickPayment = async () => {
     if (!selectedPatientId || !amount) {
       toast({ title: "Error", description: "Please select a patient and enter amount", variant: "destructive" });
       return;
@@ -38,15 +40,7 @@ export default function QuickPaymentEntry() {
       const patient = patients.find(p => p.id.toString() === selectedPatientId);
       if (!patient) return;
 
-      const billsJSON = localStorage.getItem('bills');
-      let allBills: Bill[] = billsJSON ? JSON.parse(billsJSON) : [];
-      
-      const nextBillIdNumberJSON = localStorage.getItem('nextBillIdNumber');
-      let nextBillIdNumber = nextBillIdNumberJSON ? parseInt(nextBillIdNumberJSON, 10) : 1;
-      const newBillId = `BILL-${String(nextBillIdNumber).padStart(3, '0')}`;
-
-      const newBill: Bill = {
-        id: newBillId,
+      const newBill: BillFields = {
         patientId: parseInt(selectedPatientId),
         patientName: `${patient.firstName} ${patient.lastName}`,
         billDate: format(new Date(), 'dd/MM/yyyy'),
@@ -64,13 +58,9 @@ export default function QuickPaymentEntry() {
         paymentStatus: "Paid",
         paymentDate: format(new Date(), 'dd/MM/yyyy'),
         notes: "Quick payment entry",
-        createdAt: new Date().toISOString(),
-        auditLog: []
       };
 
-      allBills.push(newBill);
-      localStorage.setItem('bills', JSON.stringify(allBills));
-      localStorage.setItem('nextBillIdNumber', (nextBillIdNumber + 1).toString());
+      await billsRepo.create(newBill, "Quick payment entry recorded.");
 
       toast({ title: "Success", description: "Payment recorded successfully" });
       setSelectedPatientId("");

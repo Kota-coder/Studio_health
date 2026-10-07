@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { countRows } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import {
   Users, UserPlus, CreditCard, AreaChart, ClipboardList, Pill,
@@ -28,7 +29,7 @@ const dashboardCards: DashboardCard[] = [
     href: '/dashboard',
     icon: Users,
     color: 'bg-blue-50 border-blue-200 hover:bg-blue-100',
-    allowedRoles: ["Admin", "Doctor", "Nurse", "Receptionist"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"]
   },
   {
     title: 'Add New Patient',
@@ -36,7 +37,7 @@ const dashboardCards: DashboardCard[] = [
     href: '/patient-intake',
     icon: UserPlus,
     color: 'bg-green-50 border-green-200 hover:bg-green-100',
-    allowedRoles: ["Admin", "Doctor", "Nurse", "Receptionist"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"]
   },
   {
     title: 'Billing & Invoices',
@@ -44,7 +45,7 @@ const dashboardCards: DashboardCard[] = [
     href: '/billing',
     icon: CreditCard,
     color: 'bg-purple-50 border-purple-200 hover:bg-purple-100',
-    allowedRoles: ["Admin", "Doctor", "Nurse", "Receptionist"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"]
   },
   {
     title: 'Financial Dashboard',
@@ -52,7 +53,7 @@ const dashboardCards: DashboardCard[] = [
     href: '/financial-dashboard',
     icon: AreaChart,
     color: 'bg-orange-50 border-orange-200 hover:bg-orange-100',
-    allowedRoles: ["Admin", "Doctor"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor"]
   },
   {
     title: 'Payment Records',
@@ -60,7 +61,7 @@ const dashboardCards: DashboardCard[] = [
     href: '/payments',
     icon: DollarSign,
     color: 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100',
-    allowedRoles: ["Admin", "Doctor", "Receptionist"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Receptionist"]
   },
   {
     title: 'Staff Management',
@@ -68,7 +69,7 @@ const dashboardCards: DashboardCard[] = [
     href: '/staff',
     icon: Users,
     color: 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100',
-    allowedRoles: ["Admin", "Doctor"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor"]
   },
   {
     title: 'Care Templates',
@@ -76,7 +77,7 @@ const dashboardCards: DashboardCard[] = [
     href: '/patient-care',
     icon: FileText,
     color: 'bg-teal-50 border-teal-200 hover:bg-teal-100',
-    allowedRoles: ["Admin", "Doctor", "Nurse"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse"]
   },
   {
     title: 'Medications',
@@ -84,7 +85,7 @@ const dashboardCards: DashboardCard[] = [
     href: '/medications',
     icon: Pill,
     color: 'bg-pink-50 border-pink-200 hover:bg-pink-100',
-    allowedRoles: ["Admin", "Doctor", "Nurse"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse"]
   },
   {
     title: 'Medical Tests',
@@ -92,7 +93,7 @@ const dashboardCards: DashboardCard[] = [
     href: '/medical-tests',
     icon: FlaskConical,
     color: 'bg-cyan-50 border-cyan-200 hover:bg-cyan-100',
-    allowedRoles: ["Admin", "Doctor", "Nurse"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse"]
   },
   {
     title: 'Materials & Inventory',
@@ -100,7 +101,7 @@ const dashboardCards: DashboardCard[] = [
     href: '/materials',
     icon: Archive,
     color: 'bg-amber-50 border-amber-200 hover:bg-amber-100',
-    allowedRoles: ["Admin", "Doctor", "Nurse"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse"]
   },
   {
     title: 'Vendors',
@@ -108,7 +109,7 @@ const dashboardCards: DashboardCard[] = [
     href: '/vendors',
     icon: Truck,
     color: 'bg-red-50 border-red-200 hover:bg-red-100',
-    allowedRoles: ["Admin", "Doctor", "Nurse"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse"]
   },
   {
     title: 'Referring Doctors',
@@ -116,7 +117,7 @@ const dashboardCards: DashboardCard[] = [
     href: '/referring-doctors',
     icon: HeartHandshake,
     color: 'bg-slate-50 border-slate-200 hover:bg-slate-100',
-    allowedRoles: ["Admin", "Doctor", "Nurse", "Receptionist"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"]
   }
 ];
 
@@ -139,9 +140,10 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    setPatientsCount(JSON.parse(localStorage.getItem('patients') || '[]').length);
-    setStaffCount(JSON.parse(localStorage.getItem('staffMembers') || '[]').length);
-  }, []);
+    if (!currentUser) return;
+    countRows('patients').then(setPatientsCount).catch(error => console.error("Error counting patients:", error));
+    countRows('staff').then(setStaffCount).catch(error => console.error("Error counting staff:", error));
+  }, [currentUser]);
 
   if (authIsLoading || !currentUser) {
     return <div className="flex justify-center items-center min-h-screen"><p>Loading...</p></div>;

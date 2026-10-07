@@ -13,13 +13,11 @@ import { useToast } from "@/hooks/use-toast";
 import { Material } from '@/types/material';
 import { TreatmentTemplate, TREATMENT_TEMPLATES } from '@/config/treatmentTemplates'; // For treatment template selection
 import { ArrowLeft, Save, Archive } from 'lucide-react';
+import { materials as materialsRepo, treatmentTemplates as templatesRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 
-const MATERIALS_STORAGE_KEY = 'materialsData';
-const MATERIAL_ID_COUNTER_KEY = 'nextMaterialId';
-const USER_TEMPLATES_STORAGE_KEY = 'userDefinedTreatmentTemplates'; // For fetching treatment templates
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse"];
+const ALLOWED_ROLES: StaffRole[] = ["Super Admin", "Admin", "Doctor", "Nurse"];
 const NO_TEMPLATE_OPTION_VALUE = "__NO_TEMPLATE_OPTION_VALUE__"; // Unique value for the "None" option
 
 export default function MaterialFormPage() {
@@ -58,42 +56,42 @@ export default function MaterialFormPage() {
     }
     setFormIsLoading(true);
 
-    // Load treatment templates
-    let userTemplates: TreatmentTemplate[] = [];
-    try {
-        const storedUserTemplates = localStorage.getItem(USER_TEMPLATES_STORAGE_KEY);
-        if (storedUserTemplates) {
-            userTemplates = JSON.parse(storedUserTemplates);
-        }
-    } catch (e) {
+    const load = async () => {
+      try {
+        const userTemplates = await templatesRepo.list();
+        setAllTreatmentTemplates([...TREATMENT_TEMPLATES, ...userTemplates]);
+      } catch (e) {
         console.error("Error loading user-defined treatment templates:", e);
+        setAllTreatmentTemplates([...TREATMENT_TEMPLATES]);
         toast({ title: "Warning", description: "Could not load custom treatment templates.", variant: "default" });
-    }
-    setAllTreatmentTemplates([...TREATMENT_TEMPLATES, ...userTemplates]);
+      }
 
-    if (isEditMode && materialIdToEdit) {
-      const storedData = localStorage.getItem(MATERIALS_STORAGE_KEY);
-      if (storedData) {
-        const materials: Material[] = JSON.parse(storedData);
-        const matToEdit = materials.find(mat => mat.id === materialIdToEdit);
-        if (matToEdit) {
-          setCurrentMaterialId(matToEdit.id);
-          setName(matToEdit.name);
-          setCategory(matToEdit.category || "");
-          setUnitOfMeasure(matToEdit.unitOfMeasure);
-          setListPrice(matToEdit.listPrice !== undefined ? String(matToEdit.listPrice) : "");
-          setAssociatedTreatmentTemplateName(matToEdit.associatedTreatmentTemplateName || "");
-          setNotes(matToEdit.notes || "");
-        } else {
-          toast({ title: "Error", description: "Material not found.", variant: "destructive" });
-          router.push('/materials');
+      if (isEditMode && materialIdToEdit) {
+        try {
+          const matToEdit = await materialsRepo.get(materialIdToEdit);
+          if (matToEdit) {
+            setCurrentMaterialId(matToEdit.id);
+            setName(matToEdit.name);
+            setCategory(matToEdit.category || "");
+            setUnitOfMeasure(matToEdit.unitOfMeasure);
+            setListPrice(matToEdit.listPrice !== undefined ? String(matToEdit.listPrice) : "");
+            setAssociatedTreatmentTemplateName(matToEdit.associatedTreatmentTemplateName || "");
+            setNotes(matToEdit.notes || "");
+          } else {
+            toast({ title: "Error", description: "Material not found.", variant: "destructive" });
+            router.push('/materials');
+          }
+        } catch (e) {
+          console.error("Error loading material:", e);
+          toast({ title: "Error", description: "Could not load material.", variant: "destructive" });
         }
       }
-    }
-    setFormIsLoading(false);
+      setFormIsLoading(false);
+    };
+    load();
   }, [isEditMode, materialIdToEdit, router, toast, currentUser, authIsLoading]);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!name.trim()) { toast({ title: "Validation Error", description: "Material Name is required.", variant: "destructive" }); return; }
     if (!unitOfMeasure.trim()) { toast({ title: "Validation Error", description: "Unit of Measure is required.", variant: "destructive" }); return; }
     
@@ -115,34 +113,19 @@ export default function MaterialFormPage() {
     };
 
     try {
-      const storedData = localStorage.getItem(MATERIALS_STORAGE_KEY);
-      let materials: Material[] = storedData ? JSON.parse(storedData) : [];
-      
       if (isEditMode && currentMaterialId) {
-        materials = materials.map(mat => mat.id === currentMaterialId ? { ...materialData, id: currentMaterialId } : mat);
+        await materialsRepo.update(currentMaterialId, materialData);
         toast({ title: "Success", description: "Material updated." });
       } else {
-        const nextIdStr = localStorage.getItem(MATERIAL_ID_COUNTER_KEY) || 'mat_1';
-        let nextIdNum = 1;
-        if (nextIdStr.startsWith('mat_')) {
-            try { nextIdNum = parseInt(nextIdStr.split('_')[1], 10) + 1; } catch { /* keep 1 */ }
-        }
-        const newMaterialId = `mat_${nextIdNum}`;
-        
-        const newMaterial: Material = { ...materialData, id: newMaterialId };
-        materials.push(newMaterial);
-        localStorage.setItem(MATERIAL_ID_COUNTER_KEY, `mat_${nextIdNum}`);
+        await materialsRepo.create(materialData);
         toast({ title: "Success", description: "New material added." });
       }
-      
-      localStorage.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(materials));
       router.push('/materials');
-
     } catch (e) {
-      console.error("Failed to save material to localStorage", e);
+      console.error("Failed to save material", e);
       toast({
-        title: "Storage Error",
-        description: "Could not save material data. LocalStorage might be full or disabled.",
+        title: "Save Error",
+        description: "Could not save material data. Please check your connection and try again.",
         variant: "destructive",
       });
     }

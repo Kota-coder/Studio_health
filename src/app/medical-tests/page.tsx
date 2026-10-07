@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Edit3, Trash2, FlaskConical, ArrowLeft, Upload } from 'lucide-react';
+import { testCatalog as testCatalogRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 
@@ -24,9 +25,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-const CATALOG_STORAGE_KEY = 'medicalTestCatalog';
-const CATALOG_ID_COUNTER_KEY = 'nextMedicalTestCatalogId';
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse"];
+const ALLOWED_ROLES: StaffRole[] = ["Super Admin", "Admin", "Doctor", "Nurse"];
 
 export default function MedicalTestsCatalogPage() {
   const router = useRouter();
@@ -50,19 +49,13 @@ export default function MedicalTestsCatalogPage() {
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(true);
-      try {
-        const storedCatalog = localStorage.getItem(CATALOG_STORAGE_KEY);
-        if (storedCatalog) {
-          setTestCatalog(JSON.parse(storedCatalog));
-        }
-        if (!localStorage.getItem(CATALOG_ID_COUNTER_KEY)) {
-          localStorage.setItem(CATALOG_ID_COUNTER_KEY, 'test_cat_1');
-        }
-      } catch (error) {
-        console.error("Error loading medical test catalog from localStorage:", error);
-        toast({ title: "Error", description: "Could not load medical test catalog.", variant: "destructive" });
-      }
-      setIsLoading(false);
+      testCatalogRepo.list()
+        .then(setTestCatalog)
+        .catch(error => {
+          console.error("Error loading medical test catalog:", error);
+          toast({ title: "Error", description: "Could not load medical test catalog data.", variant: "destructive" });
+        })
+        .finally(() => setIsLoading(false));
     } else if (currentUser && !ALLOWED_ROLES.includes(currentUser.role)){
         setIsLoading(false);
     } else {
@@ -71,12 +64,11 @@ export default function MedicalTestsCatalogPage() {
     }
   }, [toast, currentUser]);
 
-  const handleDeleteItem = () => {
+  const handleDeleteItem = async () => {
     if (!itemToDelete) return;
     try {
-      const updatedCatalog = testCatalog.filter(item => item.id !== itemToDelete.id);
-      localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(updatedCatalog));
-      setTestCatalog(updatedCatalog);
+      await testCatalogRepo.remove(itemToDelete.id);
+      setTestCatalog(testCatalog.filter(item => item.id !== itemToDelete.id));
       toast({ title: "Success", description: `Test "${itemToDelete.name}" deleted from catalog.` });
       setItemToDelete(null);
     } catch (error) {
@@ -113,7 +105,7 @@ export default function MedicalTestsCatalogPage() {
     }
   };
 
-  const processCSV = (csvText: string) => {
+  const processCSV = async (csvText: string) => {
     const rows = csvText.split(/\r\n|\n/).filter(row => row.trim() !== '');
     if (rows.length < 2) {
       toast({ title: "CSV Error", description: "CSV file must contain a header row and at least one data row.", variant: "destructive" });
@@ -133,12 +125,7 @@ export default function MedicalTestsCatalogPage() {
     const descriptionIndex = header.indexOf('description');
     const defaultPriceIndex = header.indexOf('defaultprice');
 
-    let currentCatalog = [...testCatalog];
-    let nextIdStr = localStorage.getItem(CATALOG_ID_COUNTER_KEY) || 'test_cat_1';
-    let nextIdNum = 1;
-    if (nextIdStr.startsWith('test_cat_')) {
-        try { nextIdNum = parseInt(nextIdStr.split('_cat_')[1], 10); } catch { /* keep 1 */ }
-    }
+    const newItems: Omit<MedicalTestCatalogItem, 'id'>[] = [];
 
     let importedCount = 0;
     let failedCount = 0;
@@ -164,26 +151,24 @@ export default function MedicalTestsCatalogPage() {
         }
       }
 
-      const newItem: MedicalTestCatalogItem = {
-        id: `test_cat_${nextIdNum++}`,
+      const newItem: Omit<MedicalTestCatalogItem, 'id'> = {
         name,
         category,
         description,
         defaultPrice,
       };
-      currentCatalog.push(newItem);
+      newItems.push(newItem);
       importedCount++;
     }
 
     if (importedCount > 0) {
         try {
-            localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(currentCatalog));
-            localStorage.setItem(CATALOG_ID_COUNTER_KEY, `test_cat_${nextIdNum}`);
-            setTestCatalog(currentCatalog);
+            await testCatalogRepo.createMany(newItems);
+            setTestCatalog(await testCatalogRepo.list());
             toast({ title: "Import Successful", description: `${importedCount} tests imported into catalog. ${failedCount > 0 ? `${failedCount} rows failed.` : ''}` });
         } catch (e) {
             console.error("Error saving imported test catalog:", e);
-            toast({ title: "Storage Error", description: "Could not save imported test catalog.", variant: "destructive" });
+            toast({ title: "Save Error", description: "Could not save imported test catalog.", variant: "destructive" });
         }
     } else if (failedCount > 0) {
          toast({ title: "Import Failed", description: `No tests imported. ${failedCount} rows had errors. Check console for details.`, variant: "destructive" });

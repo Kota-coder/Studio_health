@@ -35,19 +35,19 @@ interface MenuItemConfig {
 
 const allMenuItems: MenuItemConfig[] = [
   // Primary Patient-Facing & Operational Links
-  { href: '/dashboard', label: 'Patient Dashboard', icon: LayoutDashboard, allowedRoles: ["Admin", "Doctor", "Nurse", "Receptionist"], isPrimary: true },
-  { href: '/billing', label: 'Billing', icon: CreditCard, allowedRoles: ["Admin", "Doctor", "Nurse", "Receptionist"], isPrimary: true },
-  { href: '/payments', label: 'Payments', icon: Receipt, allowedRoles: ["Admin", "Doctor"], isPrimary: true },
-  { href: '/financial-dashboard', label: 'Financial Dashboard', icon: AreaChart, allowedRoles: ["Admin", "Doctor"], isPrimary: true },
+  { href: '/dashboard', label: 'Patient Dashboard', icon: LayoutDashboard, allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"], isPrimary: true },
+  { href: '/billing', label: 'Billing', icon: CreditCard, allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"], isPrimary: true },
+  { href: '/payments', label: 'Payments', icon: Receipt, allowedRoles: ["Super Admin", "Admin", "Doctor"], isPrimary: true },
+  { href: '/financial-dashboard', label: 'Financial Dashboard', icon: AreaChart, allowedRoles: ["Super Admin", "Admin", "Doctor"], isPrimary: true },
 
   // Organization Setup Links
-  { href: '/patient-care', label: 'Patient Care Templates', icon: FileText, allowedRoles: ["Admin", "Doctor", "Nurse"], isPrimary: false },
-  { href: '/medications', label: 'Medications', icon: Pill, allowedRoles: ["Admin", "Doctor", "Nurse"], isPrimary: false },
-  { href: '/materials', label: 'Materials', icon: Archive, allowedRoles: ["Admin", "Doctor", "Nurse"], isPrimary: false },
-  { href: '/vendors', label: 'Material Vendors', icon: Truck, allowedRoles: ["Admin", "Doctor", "Nurse"], isPrimary: false },
-  { href: '/staff', label: 'Staff Management', icon: Users, allowedRoles: ["Admin", "Doctor"], isPrimary: false },
-  { href: '/medical-tests', label: 'Medical Tests Catalog', icon: FlaskConical, allowedRoles: ["Admin", "Doctor", "Nurse"], isPrimary: false },
-  { href: '/referring-doctors', label: 'Referring Doctors', icon: HeartHandshake, allowedRoles: ["Admin", "Doctor", "Nurse", "Receptionist"], isPrimary: false },
+  { href: '/patient-care', label: 'Patient Care Templates', icon: FileText, allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse"], isPrimary: false },
+  { href: '/medications', label: 'Medications', icon: Pill, allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse"], isPrimary: false },
+  { href: '/materials', label: 'Materials', icon: Archive, allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse"], isPrimary: false },
+  { href: '/vendors', label: 'Material Vendors', icon: Truck, allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse"], isPrimary: false },
+  { href: '/staff', label: 'Staff Management', icon: Users, allowedRoles: ["Super Admin", "Admin", "Doctor"], isPrimary: false },
+  { href: '/medical-tests', label: 'Medical Tests Catalog', icon: FlaskConical, allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse"], isPrimary: false },
+  { href: '/referring-doctors', label: 'Referring Doctors', icon: HeartHandshake, allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"], isPrimary: false },
 ];
 
 

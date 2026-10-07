@@ -11,12 +11,11 @@ import { Textarea } from '@/components/ui/textarea'; // Textarea is not used for
 import { useToast } from "@/hooks/use-toast";
 import { ReferringDoctor } from '@/types/referringDoctor';
 import { ArrowLeft, Save, HeartHandshake } from 'lucide-react';
+import { referringDoctors as referringDoctorsRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 
-const LOCAL_STORAGE_KEY = 'referringDoctorsData';
-const ID_COUNTER_KEY = 'nextReferringDoctorId';
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse", "Receptionist"];
+const ALLOWED_ROLES: StaffRole[] = ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"];
 
 const isValidEmailOptional = (email?: string): boolean => {
   if (!email || email.trim() === "") return true;
@@ -64,11 +63,11 @@ export default function ReferringDoctorFormPage() {
         return;
     }
     setFormIsLoading(true);
-    if (isEditMode && doctorIdToEdit) {
-      const storedData = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (storedData) {
-        const doctors: ReferringDoctor[] = JSON.parse(storedData);
-        const doctorToEdit = doctors.find(doc => doc.id === parseInt(doctorIdToEdit, 10));
+    if (!(isEditMode && doctorIdToEdit)) {
+      setFormIsLoading(false);
+      return;
+    }
+    referringDoctorsRepo.get(parseInt(doctorIdToEdit, 10)).then(doctorToEdit => {
         if (doctorToEdit) {
           setCurrentDoctorId(doctorToEdit.id);
           setName(doctorToEdit.name);
@@ -79,12 +78,13 @@ export default function ReferringDoctorFormPage() {
           toast({ title: "Error", description: "Referring doctor profile not found.", variant: "destructive" });
           router.push('/referring-doctors');
         }
-      }
-    }
-    setFormIsLoading(false);
+    }).catch(error => {
+      console.error("Error loading referring doctor:", error);
+      toast({ title: "Error", description: "Could not load referring doctor.", variant: "destructive" });
+    }).finally(() => setFormIsLoading(false));
   }, [isEditMode, doctorIdToEdit, router, toast, currentUser, authIsLoading]);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     let hasError = false;
     if (!name.trim()) { toast({ title: "Validation Error", description: "Name is required.", variant: "destructive" }); hasError = true; }
     if (!hospitalClinicName.trim()) { toast({ title: "Validation Error", description: "Hospital/Clinic Name is required.", variant: "destructive" }); hasError = true; }
@@ -108,28 +108,18 @@ export default function ReferringDoctorFormPage() {
     };
 
     try {
-      const storedData = localStorage.getItem(LOCAL_STORAGE_KEY);
-      let doctors: ReferringDoctor[] = storedData ? JSON.parse(storedData) : [];
-
       if (isEditMode && currentDoctorId !== null) {
-        doctors = doctors.map(doc => doc.id === currentDoctorId ? { ...doctorData, id: currentDoctorId } : doc);
+        await referringDoctorsRepo.update(currentDoctorId, doctorData);
         toast({ title: "Success", description: "Referring doctor profile updated." });
       } else {
-        const nextIdStr = localStorage.getItem(ID_COUNTER_KEY) || '1';
-        let nextId = parseInt(nextIdStr, 10);
-        const newDoctor: ReferringDoctor = { ...doctorData, id: nextId };
-        doctors.push(newDoctor);
-        localStorage.setItem(ID_COUNTER_KEY, (nextId + 1).toString());
+        await referringDoctorsRepo.create(doctorData);
         toast({ title: "Success", description: "New referring doctor profile added." });
       }
-
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(doctors));
       router.push('/referring-doctors');
-
     } catch (e) {
-      console.error("Failed to save referring doctor to localStorage", e);
+      console.error("Failed to save referring doctor", e);
       toast({
-        title: "Storage Error",
+        title: "Save Error",
         description: "Could not save referring doctor data.",
         variant: "destructive",
       });

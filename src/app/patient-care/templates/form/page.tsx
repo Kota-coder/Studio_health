@@ -13,14 +13,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { TreatmentTemplate, TreatmentTemplateField, TreatmentTemplateFieldOption } from '@/config/treatmentTemplates';
 import { ArrowLeft, Save, PlusCircle, Trash2, GripVertical, FileText } from 'lucide-react';
+import { treatmentTemplates as templatesRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 
-const USER_TEMPLATES_STORAGE_KEY = 'userDefinedTreatmentTemplates';
-const TEMPLATE_ID_COUNTER_KEY = 'nextTreatmentTemplateId';
 
 const FIELD_TYPES: TreatmentTemplateField['fieldType'][] = ["text", "textarea", "number", "select"];
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse"];
+const ALLOWED_ROLES: StaffRole[] = ["Super Admin", "Admin", "Doctor", "Nurse"];
 
 // Helper to generate unique IDs for fields
 const generateFieldId = () => `field_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
@@ -55,11 +54,13 @@ export default function TreatmentTemplateFormPage() {
         return;
     }
     setFormIsLoading(true);
-    if (isEditMode && templateIdToEdit) {
-      const storedTemplates = localStorage.getItem(USER_TEMPLATES_STORAGE_KEY);
-      if (storedTemplates) {
-        const templates: TreatmentTemplate[] = JSON.parse(storedTemplates);
-        const templateToEdit = templates.find(t => t.id === templateIdToEdit);
+    if (!(isEditMode && templateIdToEdit)) {
+        // Initialize with one empty field for new templates
+        setFields([{ fieldId: generateFieldId(), label: "", fieldType: "text", required: false, options: [] }]);
+        setFormIsLoading(false);
+        return;
+    }
+    templatesRepo.get(templateIdToEdit).then(templateToEdit => {
         if (templateToEdit) {
           setCurrentTemplateId(templateToEdit.id);
           setTemplateName(templateToEdit.name);
@@ -69,12 +70,10 @@ export default function TreatmentTemplateFormPage() {
           toast({ title: "Error", description: "Template not found.", variant: "destructive" });
           router.push('/patient-care');
         }
-      }
-    } else {
-        // Initialize with one empty field for new templates
-        setFields([{ fieldId: generateFieldId(), label: "", fieldType: "text", required: false, options: [] }]);
-    }
-    setFormIsLoading(false);
+    }).catch(error => {
+      console.error("Error loading template:", error);
+      toast({ title: "Error", description: "Could not load template.", variant: "destructive" });
+    }).finally(() => setFormIsLoading(false));
   }, [isEditMode, templateIdToEdit, router, toast, currentUser, authIsLoading]);
 
   const handleAddField = () => {
@@ -147,7 +146,7 @@ export default function TreatmentTemplateFormPage() {
   };
 
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!templateName.trim()) {
       toast({ title: "Validation Error", description: "Template Name is required.", variant: "destructive" });
       return;
@@ -173,34 +172,19 @@ export default function TreatmentTemplateFormPage() {
     };
 
     try {
-      const storedTemplates = localStorage.getItem(USER_TEMPLATES_STORAGE_KEY);
-      let templates: TreatmentTemplate[] = storedTemplates ? JSON.parse(storedTemplates) : [];
-      
       if (isEditMode && currentTemplateId) {
-        templates = templates.map(t => t.id === currentTemplateId ? { ...templateData, id: currentTemplateId } : t);
+        await templatesRepo.update(currentTemplateId, templateData);
         toast({ title: "Success", description: "Treatment template updated." });
       } else {
-        const nextIdStr = localStorage.getItem(TEMPLATE_ID_COUNTER_KEY) || 'user_tpl_1';
-        let nextIdNum = 1;
-        if (nextIdStr.startsWith('user_tpl_')) {
-            try { nextIdNum = parseInt(nextIdStr.split('_')[2], 10) +1; } catch { /* keep 1 */ }
-        }
-        const newTemplateId = `user_tpl_${nextIdNum}`;
-        
-        const newTemplate: TreatmentTemplate = { ...templateData, id: newTemplateId };
-        templates.push(newTemplate);
-        localStorage.setItem(TEMPLATE_ID_COUNTER_KEY, `user_tpl_${nextIdNum}`);
+        await templatesRepo.create(templateData);
         toast({ title: "Success", description: "New treatment template created." });
       }
-      
-      localStorage.setItem(USER_TEMPLATES_STORAGE_KEY, JSON.stringify(templates));
       router.push('/patient-care');
-
     } catch (e) {
-      console.error("Failed to save template to localStorage", e);
+      console.error("Failed to save template", e);
       toast({
-        title: "Storage Error",
-        description: "Could not save template data. LocalStorage might be full or disabled.",
+        title: "Save Error",
+        description: "Could not save template data. Please check your connection and try again.",
         variant: "destructive",
       });
     }

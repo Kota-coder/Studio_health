@@ -15,9 +15,14 @@ import { Camera, Paperclip, Save, ChevronRight, UserCircle, ArrowLeft } from 'lu
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import Datepicker from "@/components/ui/datepicker";
 import { format, parse, isValid } from 'date-fns';
-import type { Patient, PatientCondition, AuditLogEntry } from '@/types/patient';
-import { StaffMember } from '@/types/staff';
+import type { Patient, PatientCondition } from '@/types/patient';
 import { useAuth } from '@/context/AuthContext';
+import { Checkbox } from "@/components/ui/checkbox";
+import { StoredImage } from '@/components/stored-image';
+import { patients as patientsRepo, type PatientFields } from '@/lib/data';
+import { compressImageFile, captureVideoFrame } from '@/lib/images';
+import { uploadIfNew } from '@/lib/storage';
+import { isAadhaarCard, maskAadhaarNumber } from '@/lib/aadhaar';
 
 const ID_CARD_TYPES = [
   "Aadhar Card",
@@ -46,29 +51,9 @@ const isValidMobileNumber = (number: string) => {
   return mobileRegex.test(number);
 };
 
-// Helper function to add audit log entries
-function addAuditLogEntry(
-  patientToUpdate: Patient,
-  actionType: string,
-  changeDetails: string,
-  currentUser: StaffMember | null
-): Patient {
-  if (!currentUser) return patientToUpdate;
-
-  const newLogEntry: AuditLogEntry = {
-    id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-    timestamp: new Date().toISOString(),
-    staffId: currentUser.id,
-    staffName: currentUser.name,
-    actionType,
-    changeDetails,
-  };
-
-  return {
-    ...patientToUpdate,
-    auditLog: [...(patientToUpdate.auditLog || []), newLogEntry],
-  };
-}
+// Bump when the consent wording below changes, so records show which text was agreed to.
+const CONSENT_VERSION = "2026-10-v1";
+const CONSENT_TEXT = "The patient (or their guardian) consents to the clinic collecting and using their personal and health information for treatment, billing and follow-up, as required under the Digital Personal Data Protection Act, 2023. They can ask to view, correct or delete their data at any time.";
 
 export default function PatientIntake() {
   const router = useRouter();
@@ -79,8 +64,11 @@ export default function PatientIntake() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingPatientId, setEditingPatientId] = useState<string | null>(null);
 
+  // Either a saved storage path or a new compressed data URL awaiting upload.
   const [idCardImageSrc, setIdCardImageSrc] = useState<string | null>(null);
   const [patientPhotoSrc, setPatientPhotoSrc] = useState<string | null>(null);
+  const [consentGiven, setConsentGiven] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [idCardType, setIdCardType] = useState<string>("");
   const [firstName, setFirstName] = useState<string>("");
   const [lastName, setLastName] = useState<string>("");
@@ -97,8 +85,7 @@ export default function PatientIntake() {
   const [gender, setGender] = useState<string>("");
   const [dateOfBirth, setDateOfBirth] = useState<Date | null>(null);
   const [dateOfBirthInput, setDateOfBirthInput] = useState<string>("");
-  const [patientNumber, setPatientNumber] = useState<number>(1);
-  const [displayPatientId, setDisplayPatientId] = useState<string>("001");
+  const [displayPatientId, setDisplayPatientId] = useState<string>("Assigned when saved");
   const [condition, setCondition] = useState<PatientCondition>("Unassigned");
   const [emailError, setEmailError] = useState<string | null>(null);
   const [mobileError, setMobileError] = useState<string | null>(null);
@@ -116,19 +103,7 @@ export default function PatientIntake() {
       setIsEditMode(true);
       const numericIdToEdit = parseInt(patientIdToEditString, 10);
       setEditingPatientId(numericIdToEdit.toString());
-      const storedPatients = localStorage.getItem('patients');
-      if (storedPatients) {
-        let rawPatients = JSON.parse(storedPatients);
-        const patients: Patient[] = rawPatients.map((p: any) => ({
-            ...p,
-            id: parseInt(p.id, 10),
-            careNotes: Array.isArray(p.careNotes) ? p.careNotes : [],
-            assignedStaffIds: Array.isArray(p.assignedStaffIds) ? p.assignedStaffIds : [],
-            tests: Array.isArray(p.tests) ? p.tests : [],
-            auditLog: Array.isArray(p.auditLog) ? p.auditLog : [],
-        }));
-
-        const patientToEdit = patients.find(p => p.id === numericIdToEdit);
+      patientsRepo.get(numericIdToEdit).then(patientToEdit => {
         if (patientToEdit) {
           setFirstName(patientToEdit.firstName);
           setLastName(patientToEdit.lastName);
@@ -149,27 +124,27 @@ export default function PatientIntake() {
           setEmergencyContactName(patientToEdit.emergencyContactName);
           setEmergencyContactNumber(patientToEdit.emergencyContactNumber);
           setCondition(patientToEdit.condition || "Unassigned");
-          setIdCardImageSrc(patientToEdit.imageSrc || null);
-          setPatientPhotoSrc(patientToEdit.patientPhotoDataUrl || null);
+          setIdCardImageSrc(patientToEdit.idCardImagePath || null);
+          setPatientPhotoSrc(patientToEdit.patientPhotoPath || null);
           setIdCardType(patientToEdit.idCardType || "");
+          setConsentGiven(!!patientToEdit.consentGivenAt);
           setDisplayPatientId(patientToEdit.id.toString().padStart(3, '0'));
         } else {
           toast({ title: "Error", description: "Patient to edit not found.", variant: "destructive" });
           router.push('/');
         }
-      }
+      }).catch(error => {
+        console.error("Error loading patient:", error);
+        toast({ title: "Error", description: "Could not load patient.", variant: "destructive" });
+      });
     } else {
-      const storedPatientNumber = localStorage.getItem('nextPatientNumber');
-      const nextNum = storedPatientNumber ? parseInt(storedPatientNumber, 10) : 1;
-      setPatientNumber(nextNum);
-      setDisplayPatientId(String(nextNum).padStart(3, '0'));
       setIsEditMode(false);
       setEditingPatientId(null);
-      resetForm(nextNum);
+      resetForm();
     }
   }, [searchParams, router, toast]);
 
-  const resetForm = (nextPatientNum?: number) => {
+  const resetForm = () => {
     setIdCardImageSrc(null);
     setPatientPhotoSrc(null);
     setIdCardType("");
@@ -189,11 +164,10 @@ export default function PatientIntake() {
     setEmailError(null);
     setMobileError(null);
     setEmergencyContactMobileError(null);
+    setConsentGiven(false);
 
     if (!isEditMode) {
-        const numToSet = nextPatientNum || (localStorage.getItem('nextPatientNumber') ? parseInt(localStorage.getItem('nextPatientNumber')!, 10) : 1);
-        setPatientNumber(numToSet);
-        setDisplayPatientId(String(numToSet).padStart(3, '0'));
+        setDisplayPatientId("Assigned when saved");
     } else if (editingPatientId) {
         setDisplayPatientId(editingPatientId.toString().padStart(3,'0'));
     }
@@ -238,11 +212,7 @@ export default function PatientIntake() {
     }
 
     if (videoRef.current) {
-      const canvas = document.createElement('canvas');
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
-      canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL('image/png');
+      const dataUrl = captureVideoFrame(videoRef.current);
       setIdCardImageSrc(dataUrl);
       setDetailsExtracted(false);
     }
@@ -259,11 +229,7 @@ export default function PatientIntake() {
     }
 
     if (videoRef.current) {
-      const canvas = document.createElement('canvas');
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
-      canvas.getContext('2d')?.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL('image/png');
+      const dataUrl = captureVideoFrame(videoRef.current);
       setPatientPhotoSrc(dataUrl);
        toast({ title: "Patient Photo Captured", description: "Photo captured successfully." });
     }
@@ -276,19 +242,17 @@ export default function PatientIntake() {
     input.onchange = async (event: any) => {
       const file = event.target.files?.[0];
       if (file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const result = e.target?.result;
-          if (typeof result === 'string') {
-            setIdCardImageSrc(result);
-            setDetailsExtracted(false);
-          }
-        };
-        reader.readAsDataURL(file);
+        try {
+          setIdCardImageSrc(await compressImageFile(file));
+          setDetailsExtracted(false);
+        } catch (error) {
+          console.error("Error reading ID image:", error);
+          toast({ title: "Invalid Image", description: "Could not read this image file.", variant: "destructive" });
+        }
       }
     };
     input.click();
-  }, []);
+  }, [toast]);
 
   const handleExtractDetails = async () => {
     if (!idCardImageSrc || !idCardType) {
@@ -297,6 +261,11 @@ export default function PatientIntake() {
         description: "Please capture/upload an ID card image and select ID card type.",
         variant: "destructive",
       });
+      return;
+    }
+
+    if (!idCardImageSrc.startsWith('data:')) {
+      toast({ title: "Scan Again", description: "Capture or upload the ID card again to extract details.", variant: "destructive" });
       return;
     }
 
@@ -311,7 +280,8 @@ export default function PatientIntake() {
         setFirstName(result.identityData.name.split(' ')[0] || "");
         setLastName(result.identityData.name.split(' ').slice(1).join(' ') || "");
         setAddress(result.identityData.address || "");
-        setIdNumber(result.identityData.idNumber || "");
+        const extractedIdNumber = result.identityData.idNumber || "";
+        setIdNumber(isAadhaarCard(idCardType) ? maskAadhaarNumber(extractedIdNumber) : extractedIdNumber);
 
         if (result.identityData.dateOfBirth) {
             setDateOfBirthInput(result.identityData.dateOfBirth);
@@ -375,11 +345,15 @@ export default function PatientIntake() {
         });
         return;
     }
+    if (isAadhaarCard(idCardType)) {
+        toast({ title: "Not Allowed", description: "Aadhaar card copies must not be stored. Only the masked number is kept.", variant: "destructive" });
+        return;
+    }
     saveIdCardImageToFile(idCardImageSrc, idCardType, firstName || "Patient_IDScan");
   };
 
   const saveIdCardImageToFile = (currentImageSrc: string, currentIdCardType: string, currentFirstName: string) => {
-    const filename = `${currentFirstName.replace(/ /g, '_')}_${currentIdCardType.replace(/ /g, '_')}_${Date.now()}.png`;
+    const filename = `${currentFirstName.replace(/ /g, '_')}_${currentIdCardType.replace(/ /g, '_')}_${Date.now()}.jpg`;
 
     const link = document.createElement('a');
     link.href = currentImageSrc;
@@ -394,7 +368,10 @@ export default function PatientIntake() {
     });
   };
 
-  const validateAndCreatePatientObject = (): Omit<Patient, 'id' | 'careNotes' | 'assignedStaffIds' | 'admissionDate' | 'referredDoctorId' | 'reasonForVisit' | 'initialObservationsText' | 'initialObservationAttachmentDataUrl' | 'admissionCondition' | 'tests' | 'auditLog'> & { id?: number } | null => {
+  // Basic details from the form; images are uploaded separately on save.
+  type IntakeFields = Pick<Patient, 'firstName' | 'lastName' | 'gender' | 'dateOfBirth' | 'mobileNumber' | 'emailAddress' | 'address' | 'idNumber' | 'emergencyContactName' | 'emergencyContactNumber' | 'condition' | 'idCardType'>;
+
+  const validateAndCreatePatientObject = (): IntakeFields | null => {
     let hasError = false;
     if (!firstName) { toast({ title: "Validation Error", description: "First Name is required.", variant: "destructive" }); hasError = true; }
     if (!lastName) { toast({ title: "Validation Error", description: "Last Name is required.", variant: "destructive" }); hasError = true; }
@@ -430,6 +407,7 @@ export default function PatientIntake() {
         setEmailError(null);
     }
     if (!idNumber) { toast({ title: "Validation Error", description: "ID Number is required.", variant: "destructive" }); hasError = true; }
+    if (!isEditMode && !consentGiven) { toast({ title: "Consent Required", description: "Record the patient's consent before saving.", variant: "destructive" }); hasError = true; }
     if (!emergencyContactName) { toast({ title: "Validation Error", description: "Emergency Contact Name is required.", variant: "destructive" }); hasError = true; }
     if (!isValidMobileNumber(emergencyContactNumber)) {
         setEmergencyContactMobileError("Emergency contact mobile must be 10 digits."); hasError = true;
@@ -454,176 +432,86 @@ export default function PatientIntake() {
       mobileNumber,
       emailAddress: emailAddress || "",
       address: address || "",
-      idNumber,
+      // Never keep a full Aadhaar number (UIDAI); only the last four digits.
+      idNumber: isAadhaarCard(idCardType) ? maskAadhaarNumber(idNumber) : idNumber,
       emergencyContactName,
       emergencyContactNumber,
       condition: condition,
-      imageSrc: idCardImageSrc,
-      patientPhotoDataUrl: patientPhotoSrc,
       idCardType: idCardType,
     };
   };
 
-  const handleSavePatient = () => {
+  const savePatient = async (proceedToAdmission: boolean) => {
     const patientData = validateAndCreatePatientObject();
     if (!patientData || !currentUser) return;
 
+    setIsSaving(true);
     try {
-      const existingPatientsJSON = localStorage.getItem('patients');
-      let patients: Patient[] = existingPatientsJSON ? JSON.parse(existingPatientsJSON) : [];
-
       if (isEditMode && editingPatientId) {
         const patientIdToUpdate = parseInt(editingPatientId, 10);
-        const patientIndex = patients.findIndex(p => p.id === patientIdToUpdate);
-        if (patientIndex > -1) {
-          let existingPatient = patients[patientIndex];
-          existingPatient = {
-            ...existingPatient,
-            ...patientData,
-            id: patientIdToUpdate
-          };
-          existingPatient = addAuditLogEntry(existingPatient, "Patient Details Updated", "Patient basic details updated.", currentUser);
-          patients[patientIndex] = existingPatient;
+        const folder = `patients/${patientIdToUpdate}`;
+        await patientsRepo.update(patientIdToUpdate, {
+          ...patientData,
+          // Aadhaar card images are never stored.
+          idCardImagePath: isAadhaarCard(idCardType) ? null : await uploadIfNew(idCardImageSrc, `${folder}/id-card`),
+          patientPhotoPath: await uploadIfNew(patientPhotoSrc, `${folder}/photo`),
+        }, proceedToAdmission
+          ? { actionType: "Patient Details Updated & Proceeded to Admission", details: `Patient ${patientData.firstName} ${patientData.lastName} basic details updated, proceeding to admission.` }
+          : { actionType: "Patient Details Updated", details: "Patient basic details updated." });
 
-          localStorage.setItem('patients', JSON.stringify(patients));
-          toast({
-            title: "Success",
-            description: `Patient ${patientData.firstName} ${patientData.lastName} (ID: ${patientIdToUpdate.toString().padStart(3,'0')}) updated.`,
-          });
-          router.push(`/patients/${patientIdToUpdate.toString().padStart(3,'0')}`);
+        const displayId = patientIdToUpdate.toString().padStart(3,'0');
+        if (proceedToAdmission) {
+          toast({ title: "Patient Updated", description: `Basic details for ${patientData.firstName} (ID: ${displayId}) updated. Proceeding to admission notes.` });
+          router.push(`/patients/${displayId}/admission`);
         } else {
-          toast({ title: "Error", description: "Could not find patient to update.", variant: "destructive"});
+          toast({ title: "Success", description: `Patient ${patientData.firstName} ${patientData.lastName} (ID: ${displayId}) updated.` });
+          router.push(`/patients/${displayId}`);
         }
       } else {
-        const currentPatientId = patientNumber;
-        let newPatient: Patient = {
+        const newPatientFields: PatientFields = {
           ...patientData,
-          id: currentPatientId,
-          careNotes: [],
           assignedStaffIds: [],
-          tests: [],
-          auditLog: [],
-          admissionDate: undefined,
-          referredDoctorId: undefined,
-          reasonForVisit: undefined,
-          initialObservationsText: undefined,
-          initialObservationAttachmentDataUrl: undefined,
           admissionCondition: "",
+          consentGivenAt: new Date().toISOString(),
+          consentVersion: CONSENT_VERSION,
+          consentRecordedByStaffId: currentUser.id,
         };
-        newPatient = addAuditLogEntry(newPatient, "Patient Registered", `New patient ${newPatient.firstName} ${newPatient.lastName} registered.`, currentUser);
-        patients.push(newPatient);
-        localStorage.setItem('patients', JSON.stringify(patients));
-        toast({
-            title: "Success",
-            description: `Patient ${newPatient.firstName} ${newPatient.lastName} (ID: ${displayPatientId}) saved.`,
-        });
-        const nextNumForStorage = currentPatientId + 1;
-        localStorage.setItem('nextPatientNumber', nextNumForStorage.toString());
-        resetForm(nextNumForStorage);
-        router.push('/');
+        const newPatient = await patientsRepo.create(newPatientFields, proceedToAdmission
+          ? { actionType: "Patient Registered & Proceeded to Admission", details: `Patient ${patientData.firstName} ${patientData.lastName} basic details saved, proceeding to admission.` }
+          : { actionType: "Patient Registered", details: `New patient ${patientData.firstName} ${patientData.lastName} registered.` });
+
+        // Images are filed under the patient's ID, which only exists after the insert.
+        const folder = `patients/${newPatient.id}`;
+        const idCardImagePath = isAadhaarCard(idCardType) ? null : await uploadIfNew(idCardImageSrc, `${folder}/id-card`);
+        const patientPhotoPath = await uploadIfNew(patientPhotoSrc, `${folder}/photo`);
+        if (idCardImagePath || patientPhotoPath) {
+          await patientsRepo.update(newPatient.id, { idCardImagePath, patientPhotoPath }, { actionType: "Images Added", details: "ID card and/or patient photo saved." });
+        }
+
+        const displayId = newPatient.id.toString().padStart(3,'0');
+        resetForm();
+        if (proceedToAdmission) {
+          toast({ title: "Patient Saved", description: `Basic details for ${patientData.firstName} (ID: ${displayId}) saved. Proceeding to admission notes.` });
+          router.push(`/patients/${displayId}/admission`);
+        } else {
+          toast({ title: "Success", description: `Patient ${patientData.firstName} ${patientData.lastName} (ID: ${displayId}) saved.` });
+          router.push('/');
+        }
       }
     } catch (e: any) {
-      if (e.name === 'QuotaExceededError') {
-        toast({
-          title: "Storage Full",
-          description: "Cannot save patient data. Local storage is full, likely due to many image attachments. Please remove some images or contact support.",
-          variant: "destructive",
-        });
-      } else {
-        console.error("Failed to save patient to localStorage", e);
-        toast({
-          title: "Storage Error",
-          description: "Could not save patient data. An unexpected error occurred.",
-          variant: "destructive",
-        });
-      }
+      console.error("Failed to save patient", e);
+      toast({
+        title: "Save Error",
+        description: e?.message || "Could not save patient data. An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleSaveAndProceed = () => {
-    const patientData = validateAndCreatePatientObject();
-    if (!patientData || !currentUser) return;
-
-    try {
-      const existingPatientsJSON = localStorage.getItem('patients');
-      let patients: Patient[] = existingPatientsJSON ? JSON.parse(existingPatientsJSON) : [];
-      let patientIdToProceedWithNumber: number;
-      let actionType = "Patient Registered & Proceeded to Admission";
-      let actionDetails = `Patient ${patientData.firstName} ${patientData.lastName} basic details saved, proceeding to admission.`;
-
-      if (isEditMode && editingPatientId) {
-         const patientIdToUpdate = parseInt(editingPatientId, 10);
-         const patientIndex = patients.findIndex(p => p.id === patientIdToUpdate);
-        if (patientIndex > -1) {
-          let existingPatient = patients[patientIndex];
-          existingPatient = {
-            ...existingPatient,
-            ...patientData,
-            id: patientIdToUpdate
-          };
-          actionType = "Patient Details Updated & Proceeded to Admission";
-          actionDetails = `Patient ${patientData.firstName} ${patientData.lastName} basic details updated, proceeding to admission.`;
-          existingPatient = addAuditLogEntry(existingPatient, actionType, actionDetails, currentUser);
-          patients[patientIndex] = existingPatient;
-
-          patientIdToProceedWithNumber = patientIdToUpdate;
-          localStorage.setItem('patients', JSON.stringify(patients));
-          toast({
-              title: "Patient Updated",
-              description: `Basic details for ${patientData.firstName} (ID: ${patientIdToUpdate.toString().padStart(3,'0')}) updated. Proceeding to admission notes.`,
-          });
-        } else {
-           toast({ title: "Error", description: "Could not find patient to update.", variant: "destructive"});
-           return;
-        }
-      } else {
-        const currentPatientId = patientNumber;
-        let newPatient: Patient = {
-          ...patientData,
-          id: currentPatientId,
-          careNotes: [],
-          assignedStaffIds: [],
-          tests: [],
-          auditLog: [],
-          admissionDate: undefined,
-          referredDoctorId: undefined,
-          reasonForVisit: undefined,
-          initialObservationsText: undefined,
-          initialObservationAttachmentDataUrl: undefined,
-          admissionCondition: "",
-        };
-        newPatient = addAuditLogEntry(newPatient, actionType, actionDetails, currentUser);
-        patients.push(newPatient);
-        patientIdToProceedWithNumber = newPatient.id;
-        localStorage.setItem('patients', JSON.stringify(patients));
-        toast({
-            title: "Patient Saved",
-            description: `Basic details for ${newPatient.firstName} (ID: ${patientIdToProceedWithNumber.toString().padStart(3,'0')}) saved. Proceeding to admission notes.`,
-        });
-        const nextNumForStorage = currentPatientId + 1;
-        localStorage.setItem('nextPatientNumber', nextNumForStorage.toString());
-        resetForm(nextNumForStorage);
-      }
-
-      router.push(`/patients/${patientIdToProceedWithNumber.toString().padStart(3,'0')}/admission`);
-
-    } catch (e: any) {
-      if (e.name === 'QuotaExceededError') {
-        toast({
-          title: "Storage Full",
-          description: "Cannot save patient data. Local storage is full, likely due to many image attachments. Please remove some images or contact support.",
-          variant: "destructive",
-        });
-      } else {
-        console.error("Failed to save patient to localStorage", e);
-        toast({
-          title: "Storage Error",
-          description: "Could not save patient data. An unexpected error occurred.",
-          variant: "destructive",
-        });
-      }
-    }
-  };
+  const handleSavePatient = () => savePatient(false);
+  const handleSaveAndProceed = () => savePatient(true);
 
   const handleDateInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -675,7 +563,7 @@ export default function PatientIntake() {
         <CardContent className="grid gap-4 p-0">
 
           <div>
-              <Label htmlFor="patientNumber">{isEditMode ? "Patient ID" : "Next Patient Number"}</Label>
+              <Label htmlFor="patientNumber">Patient ID</Label>
               <Input type="text" id="patientNumber" value={displayPatientId} readOnly className="bg-muted" />
           </div>
 
@@ -696,7 +584,7 @@ export default function PatientIntake() {
             {patientPhotoSrc && (
                 <div className="border rounded-md p-2 text-center flex-shrink-0">
                 <Label>Patient Photo:</Label>
-                <img src={patientPhotoSrc} alt="Patient Photo" className="rounded-md w-24 h-24 object-cover mx-auto mt-1" data-ai-hint="person portrait" />
+                <StoredImage path={patientPhotoSrc} alt="Patient Photo" className="rounded-md w-24 h-24 object-cover mx-auto mt-1" data-ai-hint="person portrait" />
                 </div>
             )}
             <Button variant="outline" onClick={capturePatientPhoto} className="w-full">
@@ -720,8 +608,17 @@ export default function PatientIntake() {
           {idCardImageSrc && (
             <div className="relative border p-2 rounded-md">
               <Label>ID Card Image Preview:</Label>
-              <img src={idCardImageSrc} alt="Captured ID Card" className="rounded-md w-full h-auto object-cover max-h-60 mt-1" data-ai-hint="identity card" />
+              <StoredImage path={idCardImageSrc} alt="Captured ID Card" className="rounded-md w-full h-auto object-cover max-h-60 mt-1" data-ai-hint="identity card" />
             </div>
+          )}
+
+          {isAadhaarCard(idCardType) && (
+            <Alert variant="default">
+              <AlertTitle>Aadhaar privacy</AlertTitle>
+              <AlertDescription>
+                The Aadhaar card image is used only to read the details and is not saved. Only the last 4 digits of the Aadhaar number are stored.
+              </AlertDescription>
+            </Alert>
           )}
 
           <Select onValueChange={setIdCardType} value={idCardType} required>
@@ -741,7 +638,7 @@ export default function PatientIntake() {
             Extract Details from ID Image
           </Button>
 
-          {detailsExtracted && idCardImageSrc && (
+          {detailsExtracted && idCardImageSrc && !isAadhaarCard(idCardType) && (
               <Button onClick={handleSaveIdCardImage} className="w-full bg-blue-500 text-white hover:bg-blue-600">
                 Download Scanned ID Image
               </Button>
@@ -839,7 +736,8 @@ export default function PatientIntake() {
 
           <div>
             <Label htmlFor="idNumber">ID Number (from card) *</Label>
-            <Input type="text" id="idNumber" value={idNumber} onChange={(e) => setIdNumber(e.target.value)} required />
+            <Input type="text" id="idNumber" value={idNumber} onChange={(e) => setIdNumber(e.target.value)} onBlur={() => { if (isAadhaarCard(idCardType)) setIdNumber(maskAadhaarNumber(idNumber)); }} required />
+            {isAadhaarCard(idCardType) && <p className="text-xs text-muted-foreground mt-1">Saved masked as XXXX XXXX 1234.</p>}
           </div>
 
           <div>
@@ -886,11 +784,20 @@ export default function PatientIntake() {
             </div>
           </Card>
 
-           <Button onClick={handleSavePatient} className="w-full bg-primary text-primary-foreground hover:bg-primary/90 text-lg py-3">
+          {!isEditMode && (
+            <div className="flex items-start space-x-3 rounded-md border p-4">
+              <Checkbox id="consent" checked={consentGiven} onCheckedChange={(checked) => setConsentGiven(checked === true)} />
+              <Label htmlFor="consent" className="text-sm font-normal leading-snug">
+                {CONSENT_TEXT} *
+              </Label>
+            </div>
+          )}
+
+           <Button onClick={handleSavePatient} disabled={isSaving} className="w-full bg-primary text-primary-foreground hover:bg-primary/90 text-lg py-3">
                 <Save className="mr-2 h-5 w-5" /> {isEditMode ? "Update Patient Record" : "Save Patient Record"}
             </Button>
 
-            <Button onClick={handleSaveAndProceed} variant="default" className="w-full bg-accent text-accent-foreground hover:bg-accent/90 text-lg py-3">
+            <Button onClick={handleSaveAndProceed} disabled={isSaving} variant="default" className="w-full bg-accent text-accent-foreground hover:bg-accent/90 text-lg py-3">
                  {isEditMode ? "Update & View Admission Notes" : "Save & Add Admission Notes"} <ChevronRight className="ml-2 h-5 w-5" />
             </Button>
         </CardContent>

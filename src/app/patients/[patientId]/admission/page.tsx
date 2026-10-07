@@ -14,6 +14,10 @@ import { Patient, PatientAdmissionCondition, AuditLogEntry } from '@/types/patie
 import { ReferringDoctor } from '@/types/referringDoctor'; // Updated to use ReferringDoctor
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Save, Paperclip, UploadCloud, UserPlus } from 'lucide-react';
+import { patients as patientsRepo, referringDoctors as referringDoctorsRepo } from '@/lib/data';
+import { compressImageFile } from '@/lib/images';
+import { uploadIfNew } from '@/lib/storage';
+import { StoredImage } from '@/components/stored-image';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffMember } from '@/types/staff';
 
@@ -38,31 +42,6 @@ const PATIENT_ADMISSION_CONDITIONS: PatientAdmissionCondition[] = [
   "Critical",
   "Undetermined"
 ];
-
-// Helper function to add audit log entries
-function addAuditLogEntry(
-  patientToUpdate: Patient,
-  actionType: string,
-  changeDetails: string,
-  currentUser: StaffMember | null
-): Patient {
-  if (!currentUser) return patientToUpdate;
-
-  const newLogEntry: AuditLogEntry = {
-    id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-    timestamp: new Date().toISOString(),
-    staffId: currentUser.id,
-    staffName: currentUser.name,
-    actionType,
-    changeDetails,
-  };
-
-  return {
-    ...patientToUpdate,
-    auditLog: [...(patientToUpdate.auditLog || []), newLogEntry],
-  };
-}
-
 
 export default function AdmissionNotesPage() {
   const params = useParams();
@@ -100,56 +79,42 @@ export default function AdmissionNotesPage() {
       return;
     }
     setIsLoading(true);
-    try {
-      const storedPatients = localStorage.getItem('patients');
-      const storedExternalReferringDoctors = localStorage.getItem('referringDoctorsData'); // Use the correct key
-
-      if (storedPatients) {
-        const patientsArray: Patient[] = JSON.parse(storedPatients).map((p:any) => ({
-          ...p,
-          auditLog: Array.isArray(p.auditLog) ? p.auditLog : []
-        }));
-        const foundPatient = patientsArray.find(p => p.id === patientId);
+    Promise.all([patientsRepo.get(patientId), referringDoctorsRepo.list()])
+      .then(([foundPatient, doctors]) => {
+        setReferringDoctorsList(doctors);
         if (foundPatient) {
           setPatient(foundPatient);
           setSelectedReferredDoctorId(foundPatient.referredDoctorId?.toString() || "");
           setReasonForVisit(foundPatient.reasonForVisit || "");
           setAdmissionCondition(foundPatient.admissionCondition || "");
           setInitialObservationsText(foundPatient.initialObservationsText || "");
-          setAttachmentPreview(foundPatient.initialObservationAttachmentDataUrl || null);
+          setAttachmentPreview(foundPatient.initialObservationAttachmentPath || null);
           setIsInitialLoad(!foundPatient.admissionDate);
         } else {
           toast({ title: "Error", description: "Patient not found.", variant: "destructive" });
           router.push('/dashboard');
         }
-      } else {
-        toast({ title: "Error", description: "No patient data found.", variant: "destructive" });
-        router.push('/dashboard');
-      }
-
-      if (storedExternalReferringDoctors) {
-        const doctors: ReferringDoctor[] = JSON.parse(storedExternalReferringDoctors);
-        setReferringDoctorsList(doctors);
-      }
-    } catch (error) {
-      console.error("Error loading data from localStorage:", error);
-      toast({ title: "Error", description: "Could not load data.", variant: "destructive" });
-    }
-    setIsLoading(false);
+      })
+      .catch(error => {
+        console.error("Error loading admission data:", error);
+        toast({ title: "Error", description: "Could not load data.", variant: "destructive" });
+      })
+      .finally(() => setIsLoading(false));
   }, [patientId, router, toast, currentUser]);
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      setAttachmentFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setAttachmentPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+      try {
+        setAttachmentPreview(await compressImageFile(file));
+        setAttachmentFile(file);
+      } catch (error) {
+        console.error("Error reading attachment:", error);
+        toast({ title: "Invalid Image", description: "Could not read this image file.", variant: "destructive" });
+      }
     } else {
       setAttachmentFile(null);
-      setAttachmentPreview(patient?.initialObservationAttachmentDataUrl || null);
+      setAttachmentPreview(patient?.initialObservationAttachmentPath || null);
     }
   };
 
@@ -167,54 +132,31 @@ export default function AdmissionNotesPage() {
       return;
     }
 
-    let attachmentDataUrl = patient.initialObservationAttachmentDataUrl;
-    if (attachmentFile) {
-      attachmentDataUrl = attachmentPreview;
-    }
-
-    let updatedPatient: Patient = {
-      ...patient,
-      admissionDate: patient.admissionDate || new Date().toISOString(),
-      referredDoctorId: selectedReferredDoctorId ? parseInt(selectedReferredDoctorId, 10) : undefined,
-      reasonForVisit: reasonForVisit.trim(),
-      admissionCondition: admissionCondition,
-      initialObservationsText: initialObservationsText.trim(),
-      initialObservationAttachmentDataUrl: attachmentDataUrl,
-    };
-
     const logActionType = isInitialLoad ? "Admission Details Recorded" : "Admission Details Updated";
     const logChangeDetails = isInitialLoad
-      ? `Initial admission details recorded. Reason: ${updatedPatient.reasonForVisit}`
+      ? `Initial admission details recorded. Reason: ${reasonForVisit.trim()}`
       : "Patient admission details updated.";
 
-    updatedPatient = addAuditLogEntry(updatedPatient, logActionType, logChangeDetails, currentUser);
-
-
     try {
-      const storedPatients = localStorage.getItem('patients');
-      let patientsArray: Patient[] = storedPatients ? JSON.parse(storedPatients).map((p:any) => ({...p, auditLog: Array.isArray(p.auditLog) ? p.auditLog : []})) : [];
-      const patientIndex = patientsArray.findIndex(p => p.id === patientId);
+      const attachmentPath = attachmentFile
+        ? await uploadIfNew(attachmentPreview, `patients/${patient.id}/admission`)
+        : patient.initialObservationAttachmentPath ?? null;
 
-      if (patientIndex > -1) {
-        patientsArray[patientIndex] = updatedPatient;
-        localStorage.setItem('patients', JSON.stringify(patientsArray));
-        setPatient(updatedPatient);
-        toast({ title: "Success", description: "Admission details saved." });
-        router.push(`/patients/${patientId}`);
-      } else {
-        toast({ title: "Error", description: "Failed to find patient to update.", variant: "destructive" });
-      }
+      const changes = {
+        admissionDate: patient.admissionDate || new Date().toISOString(),
+        referredDoctorId: selectedReferredDoctorId ? parseInt(selectedReferredDoctorId, 10) : null,
+        reasonForVisit: reasonForVisit.trim(),
+        admissionCondition: admissionCondition,
+        initialObservationsText: initialObservationsText.trim(),
+        initialObservationAttachmentPath: attachmentPath,
+      };
+      await patientsRepo.update(patient.id, changes, { actionType: logActionType, details: logChangeDetails });
+      setPatient({ ...patient, ...changes });
+      toast({ title: "Success", description: "Admission details saved." });
+      router.push(`/patients/${patientId}`);
     } catch (e: any) {
-      if (e.name === 'QuotaExceededError') {
-        toast({
-          title: "Storage Full",
-          description: "Cannot save admission details. Local storage is full, likely due to image attachments. Please remove some images or contact support.",
-          variant: "destructive",
-        });
-      } else {
-        console.error("Error saving admission details:", e);
-        toast({ title: "Storage Error", description: "Could not save admission details.", variant: "destructive" });
-      }
+      console.error("Error saving admission details:", e);
+      toast({ title: "Save Error", description: e?.message || "Could not save admission details.", variant: "destructive" });
     }
   };
 
@@ -322,6 +264,7 @@ export default function AdmissionNotesPage() {
                 <Input
                 id="initialObservationAttachment"
                 type="file"
+                accept="image/*"
                 onChange={handleFileChange}
                 className="hidden"
                 />
@@ -335,14 +278,7 @@ export default function AdmissionNotesPage() {
             {attachmentPreview && (
               <div className="mt-3 border rounded-md p-2 inline-block">
                 <p className="text-xs text-muted-foreground mb-1">Attachment Preview:</p>
-                {attachmentPreview.startsWith('data:image') ? (
-                     <img src={attachmentPreview} alt="Observation Attachment Preview" className="max-w-xs max-h-48 rounded-md object-contain" data-ai-hint="medical document"/>
-                ): (
-                    <div className="flex items-center gap-2 p-2 bg-muted rounded-md">
-                        <Paperclip className="h-5 w-5 text-muted-foreground"/>
-                        <span className="text-sm text-muted-foreground">Non-image file attached.</span>
-                    </div>
-                )}
+                <StoredImage path={attachmentPreview} alt="Observation Attachment Preview" className="max-w-xs max-h-48 rounded-md object-contain" data-ai-hint="medical document"/>
               </div>
             )}
           </div>

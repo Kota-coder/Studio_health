@@ -14,7 +14,10 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import type { Patient } from '@/types/patient'; // Ensure correct path
 import type { Bill, BillItem, PaymentMethod, PaymentStatus, BillType, AuditLogEntry } from '@/types/billing'; // Ensure correct path
-import type { StaffMember } from '@/types/staff'; // Ensure correct path
+import { bills as billsRepo, patients as patientsRepo, testCatalog as testCatalogRepo, type BillFields } from '@/lib/data';
+import { compressImageFile, captureVideoFrame } from '@/lib/images';
+import { uploadIfNew, deleteImage } from '@/lib/storage';
+import { StoredImage } from '@/components/stored-image';
 import { Save, CreditCard, ArrowLeft, Pill, Stethoscope, FlaskConical, X, Trash2, PlusCircle, History, Camera as CameraIcon, UploadCloud, DollarSign } from 'lucide-react';
 import { format, parse, isValid, parseISO } from 'date-fns';
 import { useAuth } from '@/context/AuthContext'; // Ensure correct path
@@ -37,29 +40,6 @@ const BILL_TYPES: { value: BillType; label: string; icon: React.ElementType }[] 
 ];
 
 // Helper function to add audit log entries for Bills
-function addBillAuditLogEntry(
-  billToUpdate: Bill,
-  actionType: string,
-  changeDetails: string,
-  currentUser: StaffMember | null
-): Bill {
-  if (!currentUser) return billToUpdate;
-
-  const newLogEntry: AuditLogEntry = {
-    id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-    timestamp: new Date().toISOString(),
-    staffId: currentUser.id,
-    staffName: currentUser.name,
-    actionType,
-    changeDetails,
-  };
-
-  return {
-    ...billToUpdate,
-    auditLog: [...(billToUpdate.auditLog || []), newLogEntry],
-  };
-}
-
 export default function BillingForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -90,7 +70,9 @@ export default function BillingForm() {
   const [formIsLoading, setFormIsLoading] = useState(true);
   const [currentBillAuditLog, setCurrentBillAuditLog] = useState<AuditLogEntry[]>([]);
 
+  // Either the saved storage path or a new (compressed) data URL awaiting upload.
   const [billAttachmentPreview, setBillAttachmentPreview] = useState<string | null>(null);
+  const [savedBill, setSavedBill] = useState<Bill | null>(null);
   const billAttachmentInputRef = useRef<HTMLInputElement>(null);
   const [isCameraDialogOpenForBill, setIsCameraDialogOpenForBill] = useState(false);
   const dialogVideoRefBill = useRef<HTMLVideoElement>(null);
@@ -99,10 +81,9 @@ export default function BillingForm() {
 
   // Load test catalog
   useEffect(() => {
-    const storedTestCatalog = localStorage.getItem('medicalTestCatalog');
-    if (storedTestCatalog) {
-      setTestCatalog(JSON.parse(storedTestCatalog));
-    }
+    testCatalogRepo.list()
+      .then(setTestCatalog)
+      .catch(error => console.error("Error loading test catalog:", error));
   }, []);
 
   useEffect(() => {
@@ -117,18 +98,12 @@ export default function BillingForm() {
         return;
     }
     setFormIsLoading(true);
-    const storedPatients = localStorage.getItem('patients');
-    if (storedPatients) {
-      let rawPatients = JSON.parse(storedPatients);
-      const sanitizedPatients: Patient[] = rawPatients.map((p: any) => ({
-          ...p,
-          id: parseInt(p.id, 10),
-          careNotes: Array.isArray(p.careNotes) ? p.careNotes : [],
-          assignedStaffIds: Array.isArray(p.assignedStaffIds) ? p.assignedStaffIds : [],
-          tests: Array.isArray(p.tests) ? p.tests : [],
-          auditLog: Array.isArray(p.auditLog) ? p.auditLog : [],
-      }));
-      setPatients(sanitizedPatients);
+    const load = async () => {
+    try {
+      setPatients(await patientsRepo.listBasic());
+    } catch (error) {
+      console.error("Error loading patients:", error);
+      toast({ title: "Error", description: "Could not load patients.", variant: "destructive" });
     }
 
     if (patientIdFromQuery && !isEditMode) {
@@ -137,16 +112,15 @@ export default function BillingForm() {
     }
 
     if (isEditMode && billIdToEdit) {
-      const storedBills = localStorage.getItem('bills');
-      if (storedBills) {
-        const bills: Bill[] = JSON.parse(storedBills).map((b: any) => ({
-            ...b,
-            auditLog: Array.isArray(b.auditLog) ? b.auditLog : [],
-            attachmentDataUrl: b.attachmentDataUrl || null,
-        }));
-        const billToEdit = bills.find(b => b.id === billIdToEdit);
+      let billToEdit: Bill | null = null;
+      try {
+        billToEdit = await billsRepo.get(billIdToEdit);
+      } catch (error) {
+        console.error("Error loading bill:", error);
+      }
         if (billToEdit) {
           setCurrentBillId(billToEdit.id);
+          setSavedBill(billToEdit);
           setBillType(billToEdit.billType || "Treatment");
           setIsBillTypeSelected(true);
           setSelectedPatientId(billToEdit.patientId.toString());
@@ -159,7 +133,7 @@ export default function BillingForm() {
               originalUnitPrice: item.originalUnitPrice !== undefined ? item.originalUnitPrice : item.unitPrice
             })));
           setCurrentBillAuditLog(billToEdit.auditLog || []);
-          setBillAttachmentPreview(billToEdit.attachmentDataUrl || null);
+          setBillAttachmentPreview(billToEdit.attachmentPath || null);
 
 
           try {
@@ -204,7 +178,6 @@ export default function BillingForm() {
           toast({ title: "Error", description: "Bill not found.", variant: "destructive" });
           router.push('/billing');
         }
-      }
     } else {
         setIsBillTypeSelected(false);
         setCurrentBillAuditLog([]);
@@ -213,6 +186,8 @@ export default function BillingForm() {
         setPaymentDateInput("");
     }
     setFormIsLoading(false);
+    };
+    load();
   }, [isEditMode, billIdToEdit, patientIdFromQuery, router, toast, currentUser]);
 
 
@@ -336,22 +311,18 @@ export default function BillingForm() {
     return billItems.reduce((sum, item) => sum + item.total, 0);
   }, [billItems]);
 
-  const handleBillFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBillFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-        if (file.size > 2 * 1024 * 1024) { // 2MB limit
-            toast({ title: "File Too Large", description: "Attachment size should not exceed 2MB.", variant: "destructive" });
-            setBillAttachmentPreview(isEditMode && currentBillId ? (localStorage.getItem('bills') ? JSON.parse(localStorage.getItem('bills')!).find((b:Bill) => b.id === currentBillId)?.attachmentDataUrl : null) : null);
-            if(event.target) event.target.value = "";
-            return;
-        }
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            setBillAttachmentPreview(reader.result as string);
-        };
-        reader.readAsDataURL(file);
-    } else {
-        setBillAttachmentPreview(isEditMode && currentBillId ? (localStorage.getItem('bills') ? JSON.parse(localStorage.getItem('bills')!).find((b:Bill) => b.id === currentBillId)?.attachmentDataUrl : null) : null);
+    if (!file) {
+        setBillAttachmentPreview(savedBill?.attachmentPath || null);
+        return;
+    }
+    try {
+        setBillAttachmentPreview(await compressImageFile(file));
+    } catch (error) {
+        console.error("Error reading attachment:", error);
+        toast({ title: "Invalid Image", description: "Could not read this image file.", variant: "destructive" });
+        if (event.target) event.target.value = "";
     }
   };
 
@@ -390,18 +361,8 @@ export default function BillingForm() {
 
   const captureFromDialogCameraBill = () => {
     if (dialogVideoRefBill.current) {
-        const canvas = document.createElement('canvas');
-        canvas.width = dialogVideoRefBill.current.videoWidth;
-        canvas.height = dialogVideoRefBill.current.videoHeight;
-        canvas.getContext('2d')?.drawImage(dialogVideoRefBill.current, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/png');
-
-        if (dataUrl.length > 2 * 1024 * 1024) { // Check size again
-             toast({ title: "Image Too Large", description: "Captured image exceeds 2MB limit. Try again or upload a smaller file.", variant: "destructive" });
-        } else {
-            setBillAttachmentPreview(dataUrl);
-            toast({ title: "Image Captured", description: "Image captured successfully." });
-        }
+        setBillAttachmentPreview(captureVideoFrame(dialogVideoRefBill.current));
+        toast({ title: "Image Captured", description: "Image captured successfully." });
 
         // Stop camera stream
         if (dialogVideoRefBill.current.srcObject) {
@@ -485,7 +446,7 @@ export default function BillingForm() {
         return;
     }
 
-    const billData: Omit<Bill, 'id' | 'createdAt' | 'auditLog' | 'attachmentDataUrl'> & { attachmentDataUrl?: string | null } = {
+    const billData: BillFields = {
       patientId: parseInt(selectedPatientId, 10),
       patientName: `${patient.firstName} ${patient.lastName}`,
       billDate: finalBillDateString,
@@ -498,65 +459,39 @@ export default function BillingForm() {
       paymentStatus,
       paymentDate: finalPaymentDateString,
       notes: notes.trim(),
-      attachmentDataUrl: billAttachmentPreview,
+      attachmentPath: savedBill?.attachmentPath ?? null,
     };
 
     try {
-      const billsJSON = localStorage.getItem('bills');
-      let allBills: Bill[] = billsJSON ? JSON.parse(billsJSON).map((b: any) => ({...b, auditLog: Array.isArray(b.auditLog) ? b.auditLog : [], attachmentDataUrl: b.attachmentDataUrl || null})) : [];
-      let auditActionType = "";
-      let auditDetails = "";
+      billData.attachmentPath = await uploadIfNew(billAttachmentPreview, `patients/${billData.patientId}/bills`);
 
       if (isEditMode && currentBillId) {
-        let billToUpdate = allBills.find(b => b.id === currentBillId);
-        if (billToUpdate) {
-            let updatedBill = { ...billToUpdate, ...billData, auditLog: billToUpdate.auditLog || [] };
-            auditActionType = "Bill Updated";
-            auditDetails = `Bill ${currentBillId} details updated. Status: ${paymentStatus}.`;
-            if (paymentStatus === "Paid" && billToUpdate.paymentStatus !== "Paid") {
-                auditDetails += ` Marked as Paid on ${finalPaymentDateString}.`;
-            }
-            updatedBill = addBillAuditLogEntry(updatedBill, auditActionType, auditDetails, currentUser);
-            allBills = allBills.map(b => b.id === currentBillId ? updatedBill : b);
-            toast({ title: "Success", description: `Bill ${currentBillId} updated.` });
-        } else {
-             toast({ title: "Error", description: "Could not find bill to update.", variant: "destructive" });
-             return;
-        }
-      } else {
-        const nextBillIdNumberJSON = localStorage.getItem('nextBillIdNumber');
-        let nextBillIdNumber = nextBillIdNumberJSON ? parseInt(nextBillIdNumberJSON, 10) : 1;
-        const newBillId = `BILL-${String(nextBillIdNumber).padStart(3, '0')}`;
-        let newBill: Bill = { ...billData, id: newBillId, createdAt: new Date().toISOString(), auditLog: [] };
-        auditActionType = "Bill Created";
-        auditDetails = `Bill ${newBillId} created with status ${paymentStatus}.`;
-         if (paymentStatus === "Paid") {
+        let auditDetails = `Bill ${currentBillId} details updated. Status: ${paymentStatus}.`;
+        if (paymentStatus === "Paid" && savedBill?.paymentStatus !== "Paid") {
             auditDetails += ` Marked as Paid on ${finalPaymentDateString}.`;
         }
-        newBill = addBillAuditLogEntry(newBill, auditActionType, auditDetails, currentUser);
-        allBills.push(newBill);
-        localStorage.setItem('nextBillIdNumber', (nextBillIdNumber + 1).toString());
-        toast({ title: "Success", description: `New bill ${newBillId} created.` });
-      }
-
-      localStorage.setItem('bills', JSON.stringify(allBills));
-      router.push('/billing');
-
-    } catch (e: any) {
-      console.error("Failed to save bill to localStorage", e);
-      if (e.name === 'QuotaExceededError') {
-        toast({
-          title: "Storage Full",
-          description: "Cannot save bill data. Local storage is full, likely due to image attachments.",
-          variant: "destructive",
-        });
+        await billsRepo.update(currentBillId, billData, { actionType: "Bill Updated", details: auditDetails });
+        if (savedBill?.attachmentPath && savedBill.attachmentPath !== billData.attachmentPath) {
+          await deleteImage(savedBill.attachmentPath);
+        }
+        toast({ title: "Success", description: `Bill ${currentBillId} updated.` });
       } else {
-        toast({
-            title: "Storage Error",
-            description: "Could not save bill data. An unexpected error occurred.",
-            variant: "destructive",
-        });
+        let auditDetails = `Bill created with status ${paymentStatus}.`;
+        if (paymentStatus === "Paid") {
+            auditDetails += ` Marked as Paid on ${finalPaymentDateString}.`;
+        }
+        const newBill = await billsRepo.create(billData, auditDetails);
+        toast({ title: "Success", description: `New bill ${newBill.id} created.` });
       }
+
+      router.push('/billing');
+    } catch (e: any) {
+      console.error("Failed to save bill", e);
+      toast({
+          title: "Save Error",
+          description: e?.message || "Could not save bill data. An unexpected error occurred.",
+          variant: "destructive",
+      });
     }
   };
 
@@ -839,7 +774,7 @@ export default function BillingForm() {
                 <div className="flex items-center space-x-4">
                   {billAttachmentPreview ? (
                     <div className="relative">
-                      <img src={billAttachmentPreview} alt="Bill Attachment" className="max-w-[200px] max-h-[200px] rounded-md object-cover" />
+                      <StoredImage path={billAttachmentPreview} alt="Bill Attachment" className="max-w-[200px] max-h-[200px] rounded-md object-cover" />
                       <Button variant="ghost" size="icon" className="absolute top-0 right-0" onClick={clearBillAttachment}>
                         <X className="h-4 w-4" />
                       </Button>

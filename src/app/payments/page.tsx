@@ -11,14 +11,13 @@ import { Payment } from '@/types/payment';
 import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Eye, Receipt, ArrowLeft, Download } from 'lucide-react';
 import { format, parseISO, isValid, parse } from 'date-fns';
+import { patients as patientsRepo, payments as paymentsRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 
 const ALLOWED_ROLES: StaffRole[] = ["Super Admin", "Admin"];
-const PAYMENTS_STORAGE_KEY = 'paymentsData';
-const PATIENTS_STORAGE_KEY = 'patients';
 
 export default function PaymentsOverviewPage() {
   const router = useRouter();
@@ -41,38 +40,18 @@ export default function PaymentsOverviewPage() {
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(true);
-      try {
-        const storedPayments = localStorage.getItem(PAYMENTS_STORAGE_KEY);
-        if (storedPayments) {
-          const parsedPayments: Payment[] = JSON.parse(storedPayments).map((p: any) => ({
-            ...p,
-            auditLog: Array.isArray(p.auditLog) ? p.auditLog : [],
-            purchasedMedications: Array.isArray(p.purchasedMedications) ? p.purchasedMedications : [],
-            purchasedMaterials: Array.isArray(p.purchasedMaterials) ? p.purchasedMaterials : [],
-          }));
-          setPayments(parsedPayments);
-        } else {
+      Promise.all([paymentsRepo.list(), patientsRepo.listBasic()])
+        .then(([paymentList, patientList]) => {
+          setPayments(paymentList);
+          setPatients(patientList);
+        })
+        .catch(error => {
+          console.error("Error loading payments:", error);
+          toast({ title: "Error", description: "Could not load payment data.", variant: "destructive" });
           setPayments([]);
-        }
-
-        // Load patients data to show names in referral payments
-        const storedPatients = localStorage.getItem(PATIENTS_STORAGE_KEY);
-        if (storedPatients) {
-          const parsedPatients = JSON.parse(storedPatients).map((p: any) => ({
-            ...p,
-            id: parseInt(p.id, 10),
-          }));
-          setPatients(parsedPatients);
-        } else {
           setPatients([]);
-        }
-      } catch (error) {
-        console.error("Error loading data from localStorage:", error);
-        toast({ title: "Error", description: "Could not load payment data.", variant: "destructive" });
-        setPayments([]);
-        setPatients([]);
-      }
-      setIsLoading(false);
+        })
+        .finally(() => setIsLoading(false));
     } else if (currentUser && !ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(false);
     } else {
@@ -272,7 +251,7 @@ export default function PaymentsOverviewPage() {
                             {payment.paymentType === "Pharmacy" && payment.purchasedMedications && payment.purchasedMedications.length > 0 && (
                                 <div className="mt-3">
                                     <h4 className="text-sm font-semibold mb-1">Purchased Medications:</h4>
-                                    <Table size="sm" className="bg-background rounded-md">
+                                    <Table className="bg-background rounded-md text-xs">
                                         <TableHeader>
                                             <TableRow>
                                                 <TableHead className="text-xs h-8">Medication</TableHead>
@@ -301,7 +280,7 @@ export default function PaymentsOverviewPage() {
                             {payment.paymentType === "Material" && payment.purchasedMaterials && payment.purchasedMaterials.length > 0 && (
                                 <div className="mt-3">
                                     <h4 className="text-sm font-semibold mb-1">Purchased Materials:</h4>
-                                    <Table size="sm" className="bg-background rounded-md">
+                                    <Table className="bg-background rounded-md text-xs">
                                         <TableHeader>
                                             <TableRow>
                                                 <TableHead className="text-xs h-8">Material</TableHead>

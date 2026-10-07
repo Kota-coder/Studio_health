@@ -31,84 +31,84 @@ const navigationItems: NavigationItem[] = [
     label: 'Patient Dashboard', 
     icon: Users, 
     description: 'View and manage all patients',
-    allowedRoles: ["Admin", "Doctor", "Nurse", "Receptionist"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"]
   },
   { 
     href: '/patient-intake', 
     label: 'Add New Patient', 
     icon: UserPlus, 
     description: 'Register a new patient',
-    allowedRoles: ["Admin", "Doctor", "Nurse", "Receptionist"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"]
   },
   { 
     href: '/billing', 
     label: 'Billing Overview', 
     icon: CreditCard, 
     description: 'View all bills and payments',
-    allowedRoles: ["Admin", "Doctor", "Nurse", "Receptionist"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"]
   },
   { 
     href: '/payments', 
     label: 'Payment Records', 
     icon: DollarSign, 
     description: 'Track payment history',
-    allowedRoles: ["Admin", "Doctor", "Receptionist"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Receptionist"]
   },
   { 
     href: '/financial-dashboard', 
     label: 'Financial Dashboard', 
     icon: AreaChart, 
     description: 'View financial analytics and reports',
-    allowedRoles: ["Admin", "Doctor"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor"]
   },
   { 
     href: '/staff', 
     label: 'Staff Management', 
     icon: Users, 
     description: 'Manage staff members',
-    allowedRoles: ["Admin", "Doctor"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor"]
   },
   { 
     href: '/patient-care', 
     label: 'Care Templates', 
     icon: FileText, 
     description: 'Manage patient care templates',
-    allowedRoles: ["Admin", "Doctor", "Nurse"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse"]
   },
   { 
     href: '/medications', 
     label: 'Medications', 
     icon: Pill, 
     description: 'Manage medication catalog',
-    allowedRoles: ["Admin", "Doctor", "Nurse"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse"]
   },
   { 
     href: '/medical-tests', 
     label: 'Medical Tests', 
     icon: FlaskConical, 
     description: 'Manage test catalog',
-    allowedRoles: ["Admin", "Doctor", "Nurse"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse"]
   },
   { 
     href: '/materials', 
     label: 'Materials', 
     icon: Archive, 
     description: 'Manage medical materials',
-    allowedRoles: ["Admin", "Doctor", "Nurse"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse"]
   },
   { 
     href: '/vendors', 
     label: 'Vendors', 
     icon: Truck, 
     description: 'Manage material vendors',
-    allowedRoles: ["Admin", "Doctor", "Nurse"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse"]
   },
   { 
     href: '/referring-doctors', 
     label: 'Referring Doctors', 
     icon: HeartHandshake, 
     description: 'Manage referring doctors',
-    allowedRoles: ["Admin", "Doctor", "Nurse", "Receptionist"]
+    allowedRoles: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"]
   },
 ];
 

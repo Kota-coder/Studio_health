@@ -10,12 +10,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Material } from '@/types/material';
 import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Edit3, Archive, ArrowLeft, Upload } from 'lucide-react';
+import { materials as materialsRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 
-const MATERIALS_STORAGE_KEY = 'materialsData';
-const MATERIAL_ID_COUNTER_KEY = 'nextMaterialId';
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse"];
+const ALLOWED_ROLES: StaffRole[] = ["Super Admin", "Admin", "Doctor", "Nurse"];
 
 export default function MaterialsPage() {
   const router = useRouter();
@@ -38,19 +37,13 @@ export default function MaterialsPage() {
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(true);
-      try {
-        const storedMaterials = localStorage.getItem(MATERIALS_STORAGE_KEY);
-        if (storedMaterials) {
-          setMaterials(JSON.parse(storedMaterials));
-        }
-        if (!localStorage.getItem(MATERIAL_ID_COUNTER_KEY)) {
-            localStorage.setItem(MATERIAL_ID_COUNTER_KEY, 'mat_1');
-        }
-      } catch (error) {
-        console.error("Error loading materials from localStorage:", error);
-        toast({ title: "Error", description: "Could not load material data.", variant: "destructive" });
-      }
-      setIsLoading(false);
+      materialsRepo.list()
+        .then(setMaterials)
+        .catch(error => {
+          console.error("Error loading materials:", error);
+          toast({ title: "Error", description: "Could not load material data.", variant: "destructive" });
+        })
+        .finally(() => setIsLoading(false));
     } else if (currentUser && !ALLOWED_ROLES.includes(currentUser.role)){
         setIsLoading(false);
     } else {
@@ -89,7 +82,7 @@ export default function MaterialsPage() {
     }
   };
 
-  const processCSV = (csvText: string) => {
+  const processCSV = async (csvText: string) => {
     const rows = csvText.split(/\r\n|\n/).filter(row => row.trim() !== '');
     if (rows.length < 2) {
       toast({ title: "CSV Error", description: "CSV file must contain a header row and at least one data row.", variant: "destructive" });
@@ -112,12 +105,7 @@ export default function MaterialsPage() {
     const associatedTreatmentTemplateNameIndex = header.indexOf('associatedtreatmenttemplatename');
     const notesIndex = header.indexOf('notes');
 
-    let currentMaterials = [...materials];
-    let nextIdStr = localStorage.getItem(MATERIAL_ID_COUNTER_KEY) || 'mat_1';
-    let nextIdNum = 1;
-    if (nextIdStr.startsWith('mat_')) {
-        try { nextIdNum = parseInt(nextIdStr.split('_')[1], 10); } catch { /* keep 1 */ }
-    }
+    const newMaterials: Omit<Material, 'id'>[] = [];
 
     let importedCount = 0;
     let failedCount = 0;
@@ -145,8 +133,7 @@ export default function MaterialsPage() {
         }
       }
 
-      const newMaterial: Material = {
-        id: `mat_${nextIdNum++}`,
+      const newMaterial: Omit<Material, 'id'> = {
         name,
         category,
         unitOfMeasure,
@@ -154,15 +141,14 @@ export default function MaterialsPage() {
         associatedTreatmentTemplateName,
         notes,
       };
-      currentMaterials.push(newMaterial);
+      newMaterials.push(newMaterial);
       importedCount++;
     }
 
     if (importedCount > 0) {
       try {
-          localStorage.setItem(MATERIALS_STORAGE_KEY, JSON.stringify(currentMaterials));
-          localStorage.setItem(MATERIAL_ID_COUNTER_KEY, `mat_${nextIdNum}`);
-          setMaterials(currentMaterials);
+          await materialsRepo.createMany(newMaterials);
+          setMaterials(await materialsRepo.list());
           toast({ title: "Import Successful", description: `${importedCount} materials imported. ${failedCount > 0 ? `${failedCount} rows failed.` : ''}` });
       } catch (e) {
           console.error("Error saving imported materials:", e);

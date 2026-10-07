@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Eye, CreditCard, ArrowLeft, Pill, Stethoscope, Download, Trash2 } from 'lucide-react';
 import { format, parseISO, isValid, parse } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
+import { bills as billsRepo } from '@/lib/data';
 import { cn } from "@/lib/utils";
 import { Breadcrumb } from '@/components/breadcrumb';
 
@@ -40,25 +41,14 @@ export default function BillingOverviewPage() {
   useEffect(() => {
     if (currentUser) {
       setIsLoading(true);
-      if (typeof window !== 'undefined') {
-        try {
-          const storedBills = localStorage.getItem('bills');
-          if (storedBills) {
-            const parsedBills = JSON.parse(storedBills).map((b:any) => ({
-                ...b,
-                auditLog: Array.isArray(b.auditLog) ? b.auditLog : []
-            }));
-            setBills(parsedBills);
-          } else {
-            setBills([]);
-          }
-        } catch (error) {
-          console.error("Error loading bills from localStorage:", error);
+      billsRepo.list()
+        .then(setBills)
+        .catch(error => {
+          console.error("Error loading bills:", error);
           toast({ title: "Error", description: "Could not load billing data.", variant: "destructive" });
           setBills([]);
-        }
-      }
-      setIsLoading(false);
+        })
+        .finally(() => setIsLoading(false));
     } else {
         setBills([]);
         setIsLoading(false);
@@ -336,13 +326,13 @@ export default function BillingOverviewPage() {
                           variant="ghost" 
                           size="sm" 
                           className="text-destructive hover:bg-destructive/10"
-                          onClick={() => {
-                            const storedBills = localStorage.getItem('bills');
-                            if (storedBills) {
-                              const updatedBills = JSON.parse(storedBills).filter((b: Bill) => b.id !== bill.id);
-                              localStorage.setItem('bills', JSON.stringify(updatedBills));
-                              setBills(updatedBills);
+                          onClick={async () => {
+                            try {
+                              await billsRepo.remove(bill.id);
+                              setBills(prev => prev.filter(b => b.id !== bill.id));
                               toast({ title: "Success", description: `Bill ${bill.id} has been deleted.` });
+                            } catch (error: any) {
+                              toast({ title: "Error", description: error?.message || "Could not delete bill.", variant: "destructive" });
                             }
                           }}
                           aria-label={`Delete ${bill.id}`}

@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Payment, PaymentType, PaymentMethodSpent, PurchasedMedicationItem, PurchasedMaterialItem } from '@/types/payment';
 import { ReferringDoctor } from '@/types/referringDoctor';
 import { StaffMember } from '@/types/staff';
+import { materials as materialsRepo, medications as medicationsRepo, patients as patientsRepo, payments as paymentsRepo, referringDoctors as referringDoctorsRepo, staff as staffRepo, vendors as vendorsRepo, type PaymentFields } from '@/lib/data';
 import type { StaffRole as AppStaffRole } from '@/types/staff';
 import { AuditLogEntry, Patient } from '@/types/patient'; 
 import { Medication } from '@/types/medication';
@@ -28,42 +29,11 @@ import Datepicker from "@/components/ui/datepicker";
 
 
 const ALLOWED_ROLES: AppStaffRole[] = ["Super Admin", "Admin"];
-const PAYMENTS_STORAGE_KEY = 'paymentsData';
-const NEXT_PAYMENT_ID_KEY = 'nextPaymentIdNumber';
-const REFERRING_DOCTORS_STORAGE_KEY = 'referringDoctorsData';
-const STAFF_MEMBERS_STORAGE_KEY = 'staffMembers';
-const PATIENTS_STORAGE_KEY = 'patients'; 
-const MEDICATIONS_STORAGE_KEY = 'medicationsData';
-const VENDORS_STORAGE_KEY = 'materialVendorsData';
-const MATERIALS_STORAGE_KEY = 'materialsData'; // Key for materials catalog
 
 
 const PAYMENT_TYPES: PaymentType[] = ["Referral/CC", "Material", "Pharmacy", "Salary", "Other"];
 const PAYMENT_METHODS_SPENT: PaymentMethodSpent[] = ["Cash", "Cheque", "Bank Transfer", "UPI", "Card", "Other"];
 
-
-function addPaymentAuditLogEntry(
-  paymentToUpdate: Payment,
-  actionType: string,
-  changeDetails: string,
-  currentUser: StaffMember | null
-): Payment {
-  if (!currentUser) return paymentToUpdate;
-
-  const newLogEntry: AuditLogEntry = {
-    id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-    timestamp: new Date().toISOString(),
-    staffId: currentUser.id,
-    staffName: currentUser.name,
-    actionType,
-    changeDetails,
-  };
-
-  return {
-    ...paymentToUpdate,
-    auditLog: [...(paymentToUpdate.auditLog || []), newLogEntry],
-  };
-}
 
 export default function PaymentFormPage() {
   const router = useRouter();
@@ -105,6 +75,8 @@ export default function PaymentFormPage() {
   const [currentPaymentAuditLog, setCurrentPaymentAuditLog] = useState<AuditLogEntry[]>([]);
   const [formIsLoading, setFormIsLoading] = useState(true);
   const [currentPaymentIdState, setCurrentPaymentIdState] = useState<string | null>(null);
+  const [allPatientsData, setAllPatientsData] = useState<Patient[]>([]);
+  const [allPaymentsData, setAllPaymentsData] = useState<Payment[]>([]);
 
   const filterUnpaidReferringDoctorsWithPatients = (allDoctors: ReferringDoctor[], allPayments: Payment[], allPatients: Patient[], currentPaymentId?: string | null) => {
     try {
@@ -179,64 +151,41 @@ export default function PaymentFormPage() {
         return;
     }
     setFormIsLoading(true);
+    const load = async () => {
     try {
-      const storedRefDoctors = localStorage.getItem(REFERRING_DOCTORS_STORAGE_KEY);
-      const allReferringDoctors = storedRefDoctors ? JSON.parse(storedRefDoctors) : [];
+      const [allReferringDoctors, allPatients, allPayments, staffList, medicationList, materialList, vendorList] = await Promise.all([
+        referringDoctorsRepo.list(),
+        patientsRepo.listBasic(),
+        paymentsRepo.list(),
+        staffRepo.list(),
+        medicationsRepo.list(),
+        materialsRepo.list(),
+        vendorsRepo.list(),
+      ]);
       setReferringDoctorsList(allReferringDoctors);
-
-      // Load patients data
-      const storedPatients = localStorage.getItem(PATIENTS_STORAGE_KEY);
-      const allPatients: Patient[] = storedPatients ? JSON.parse(storedPatients).map((p: any) => ({
-        ...p,
-        id: parseInt(p.id, 10),
-        careNotes: Array.isArray(p.careNotes) ? p.careNotes : [],
-        assignedStaffIds: Array.isArray(p.assignedStaffIds) ? p.assignedStaffIds : [],
-        tests: Array.isArray(p.tests) ? p.tests : [],
-        auditLog: Array.isArray(p.auditLog) ? p.auditLog : [],
-      })) : [];
-
-      // Load existing payments to filter out paid doctors
-      const storedPayments = localStorage.getItem(PAYMENTS_STORAGE_KEY);
-      const allPayments: Payment[] = storedPayments ? JSON.parse(storedPayments).map((p: any) => ({
-        ...p,
-        auditLog: Array.isArray(p.auditLog) ? p.auditLog : [],
-        associatedPatientIds: Array.isArray(p.associatedPatientIds) ? p.associatedPatientIds : [],
-        purchasedMedications: Array.isArray(p.purchasedMedications) ? p.purchasedMedications : [],
-        purchasedMaterials: Array.isArray(p.purchasedMaterials) ? p.purchasedMaterials : [],
-      })) : [];
+      setAllPatientsData(allPatients);
+      setAllPaymentsData(allPayments);
 
       // Filter unpaid referring doctors who have referred patients
       const unpaidDoctorsWithPatients = filterUnpaidReferringDoctorsWithPatients(allReferringDoctors, allPayments, allPatients, isEditMode ? paymentIdToEdit : null);
       setUnpaidReferringDoctorsList(unpaidDoctorsWithPatients);
 
-      const storedStaff = localStorage.getItem(STAFF_MEMBERS_STORAGE_KEY);
-      if (storedStaff) setStaffMembersList(JSON.parse(storedStaff));
-
-      const storedMedications = localStorage.getItem(MEDICATIONS_STORAGE_KEY);
-      if (storedMedications) setAvailableMedications(JSON.parse(storedMedications));
-
-      const storedMaterials = localStorage.getItem(MATERIALS_STORAGE_KEY); // Load materials catalog
-      if (storedMaterials) setAvailableMaterials(JSON.parse(storedMaterials));
-
-      const storedVendors = localStorage.getItem(VENDORS_STORAGE_KEY);
-      if (storedVendors) setAvailableVendors(JSON.parse(storedVendors));
-
+      setStaffMembersList(staffList);
+      setAvailableMedications(medicationList);
+      setAvailableMaterials(materialList);
+      setAvailableVendors(vendorList);
     } catch (e) {
       console.error("Error loading payee/medication/material lists:", e);
       toast({ title: "Error", description: "Could not load related data lists.", variant: "destructive" });
     }
 
     if (isEditMode && paymentIdToEdit) {
-      const storedPayments = localStorage.getItem(PAYMENTS_STORAGE_KEY);
-      if (storedPayments) {
-        const payments: Payment[] = JSON.parse(storedPayments).map((p: any) => ({
-            ...p, 
-            auditLog: Array.isArray(p.auditLog) ? p.auditLog : [],
-            associatedPatientIds: Array.isArray(p.associatedPatientIds) ? p.associatedPatientIds : [],
-            purchasedMedications: Array.isArray(p.purchasedMedications) ? p.purchasedMedications : [],
-            purchasedMaterials: Array.isArray(p.purchasedMaterials) ? p.purchasedMaterials : [], // Load purchased materials
-        }));
-        const paymentToEdit = payments.find(p => p.id === paymentIdToEdit);
+        let paymentToEdit: Payment | null = null;
+        try {
+          paymentToEdit = await paymentsRepo.get(paymentIdToEdit);
+        } catch (e) {
+          console.error("Error loading payment:", e);
+        }
         if (paymentToEdit) {
           setCurrentPaymentIdState(paymentToEdit.id);
           try {
@@ -258,24 +207,18 @@ export default function PaymentFormPage() {
           setCurrentPaymentAuditLog(paymentToEdit.auditLog || []);
           setSelectedPatientIdsForPayment(paymentToEdit.associatedPatientIds || []);
 
-
+          // Referred patients for a Referral/CC payee load via the payeeId effect below.
           if (paymentToEdit.payeeType === "ReferringDoctor" || paymentToEdit.payeeType === "StaffMember") {
             setPayeeId(String(paymentToEdit.payeeId) || "");
-             if(paymentToEdit.payeeType === "ReferringDoctor" && paymentToEdit.payeeId){
-                fetchReferredPatients(String(paymentToEdit.payeeId));
-            }
           } else if (paymentToEdit.payeeType === "Vendor" && paymentToEdit.payeeId){
             setSelectedVendorId(String(paymentToEdit.payeeId));
           } else if (paymentToEdit.payeeName) { // For "Other" type
             setPayeeNameInput(paymentToEdit.payeeName);
           }
-
-
         } else {
           toast({ title: "Error", description: "Payment record not found.", variant: "destructive" });
           router.push('/payments');
         }
-      }
     } else {
         setCurrentPaymentAuditLog([]);
         setSelectedPatientIdsForPayment([]);
@@ -283,36 +226,17 @@ export default function PaymentFormPage() {
         setCurrentPurchasedMaterials([]); // Reset purchased materials for new form
     }
     setFormIsLoading(false);
+    };
+    load();
   }, [isEditMode, paymentIdToEdit, router, toast, currentUser, authIsLoading]);
 
 
   const fetchReferredPatients = (doctorId: string) => {
     try {
-      const storedPatients = localStorage.getItem(PATIENTS_STORAGE_KEY);
-      if (!storedPatients) {
-        setReferredPatientsList([]);
-        return;
-      }
-
-      const allPatients: Patient[] = JSON.parse(storedPatients).map((p: any) => ({
-        ...p,
-        id: parseInt(p.id, 10), 
-        careNotes: Array.isArray(p.careNotes) ? p.careNotes : [],
-        assignedStaffIds: Array.isArray(p.assignedStaffIds) ? p.assignedStaffIds : [],
-        tests: Array.isArray(p.tests) ? p.tests : [],
-        auditLog: Array.isArray(p.auditLog) ? p.auditLog : [],
-      }));
-      
+      const allPatients = allPatientsData;
       // Get all patient IDs that have been paid for (excluding current payment if editing)
-      const storedPayments = localStorage.getItem(PAYMENTS_STORAGE_KEY);
-      const allPayments: Payment[] = storedPayments ? JSON.parse(storedPayments).map((p: any) => ({
-        ...p,
-        auditLog: Array.isArray(p.auditLog) ? p.auditLog : [],
-        associatedPatientIds: Array.isArray(p.associatedPatientIds) ? p.associatedPatientIds : [],
-        purchasedMedications: Array.isArray(p.purchasedMedications) ? p.purchasedMedications : [],
-        purchasedMaterials: Array.isArray(p.purchasedMaterials) ? p.purchasedMaterials : [],
-      })) : [];
-      
+      const allPayments = allPaymentsData;
+
       const numericDoctorId = parseInt(doctorId, 10);
       if (isNaN(numericDoctorId)) {
         setReferredPatientsList([]);
@@ -362,7 +286,7 @@ export default function PaymentFormPage() {
           setSelectedPatientIdsForPayment([]);
       }
     }
-  }, [paymentType, payeeId]);
+  }, [paymentType, payeeId, allPatientsData, allPaymentsData]);
 
   useEffect(() => {
     if (paymentType === "Pharmacy" && currentPurchasedMedications.length > 0) {
@@ -579,7 +503,7 @@ export default function PaymentFormPage() {
     }
 
 
-    const paymentData: Omit<Payment, 'id' | 'createdAt' | 'auditLog' | 'recordedByStaffId' | 'recordedByStaffName'> = {
+    const paymentData: Omit<PaymentFields, 'recordedByStaffId' | 'recordedByStaffName'> = {
       paymentDate: finalPaymentDateString,
       paymentType,
       payeeId: resolvedPayeeId,
@@ -599,78 +523,38 @@ export default function PaymentFormPage() {
       purchasedMaterials: paymentType === "Material" ? currentPurchasedMaterials : undefined,
     };
 
+    let auditDetails = "";
+    if(paymentType === "Referral/CC" && selectedPatientIdsForPayment.length > 0) {
+        auditDetails += ` Associated patients count: ${selectedPatientIdsForPayment.length}.`;
+    }
+    if(paymentType === "Pharmacy" && currentPurchasedMedications.length > 0) {
+        auditDetails += ` Pharmacy items listed: ${currentPurchasedMedications.length}.`;
+    }
+    if(paymentType === "Material" && currentPurchasedMaterials.length > 0) {
+        auditDetails += ` Material items listed: ${currentPurchasedMaterials.length}.`;
+    }
+
     try {
-      const paymentsJSON = localStorage.getItem(PAYMENTS_STORAGE_KEY);
-      let allPayments: Payment[] = paymentsJSON ? JSON.parse(paymentsJSON).map((p: any) => ({...p, auditLog: Array.isArray(p.auditLog) ? p.auditLog : [], associatedPatientIds: Array.isArray(p.associatedPatientIds) ? p.associatedPatientIds : [], purchasedMedications: Array.isArray(p.purchasedMedications) ? p.purchasedMedications : [], purchasedMaterials: Array.isArray(p.purchasedMaterials) ? p.purchasedMaterials : [] })) : [];
-      let auditActionType = "";
-      let auditDetails = "";
-
       if (isEditMode && currentPaymentIdState) {
-        let paymentToUpdate = allPayments.find(p => p.id === currentPaymentIdState);
-        if (paymentToUpdate) {
-            let updatedPayment = { 
-                ...paymentToUpdate, 
-                ...paymentData, 
-                recordedByStaffId: paymentToUpdate.recordedByStaffId, 
-                recordedByStaffName: paymentToUpdate.recordedByStaffName,
-                auditLog: paymentToUpdate.auditLog || [] 
-            };
-            auditActionType = "Payment Updated";
-            auditDetails = `Payment ${currentPaymentIdState} details updated. Amount: ₹${paymentData.amount.toFixed(2)}.`;
-            if(paymentType === "Referral/CC" && selectedPatientIdsForPayment.length > 0) {
-                auditDetails += ` Associated patients count: ${selectedPatientIdsForPayment.length}.`;
-            }
-            if(paymentType === "Pharmacy" && currentPurchasedMedications.length > 0) {
-                auditDetails += ` Pharmacy items listed: ${currentPurchasedMedications.length}.`;
-            }
-             if(paymentType === "Material" && currentPurchasedMaterials.length > 0) {
-                auditDetails += ` Material items listed: ${currentPurchasedMaterials.length}.`;
-            }
-            updatedPayment = addPaymentAuditLogEntry(updatedPayment, auditActionType, auditDetails, currentUser);
-            allPayments = allPayments.map(p => p.id === currentPaymentIdState ? updatedPayment : p);
-            toast({ title: "Success", description: `Payment ${currentPaymentIdState} updated.` });
-        } else {
-             toast({ title: "Error", description: "Could not find payment record to update.", variant: "destructive" });
-             return;
-        }
+        await paymentsRepo.update(currentPaymentIdState, paymentData, {
+          actionType: "Payment Updated",
+          details: `Payment ${currentPaymentIdState} details updated. Amount: ₹${paymentData.amount.toFixed(2)}.${auditDetails}`,
+        });
+        toast({ title: "Success", description: `Payment ${currentPaymentIdState} updated.` });
       } else {
-        const nextIdNumStr = localStorage.getItem(NEXT_PAYMENT_ID_KEY) || '1';
-        let nextIdNum = parseInt(nextIdNumStr, 10);
-        const newPaymentId = `PAY-${String(nextIdNum).padStart(3, '0')}`;
-
-        let newPayment: Payment = { 
-            ...paymentData, 
-            id: newPaymentId, 
-            createdAt: new Date().toISOString(), 
-            recordedByStaffId: currentUser.id,
-            recordedByStaffName: currentUser.name,
-            auditLog: [] 
-        };
-        auditActionType = "Payment Recorded";
-        auditDetails = `New payment ${newPaymentId} recorded for ${resolvedPayeeName || 'N/A'}. Amount: ₹${paymentData.amount.toFixed(2)}.`;
-        if(paymentType === "Referral/CC" && selectedPatientIdsForPayment.length > 0) {
-                auditDetails += ` Associated patients count: ${selectedPatientIdsForPayment.length}.`;
-        }
-        if(paymentType === "Pharmacy" && currentPurchasedMedications.length > 0) {
-            auditDetails += ` Pharmacy items listed: ${currentPurchasedMedications.length}.`;
-        }
-        if(paymentType === "Material" && currentPurchasedMaterials.length > 0) {
-            auditDetails += ` Material items listed: ${currentPurchasedMaterials.length}.`;
-        }
-        newPayment = addPaymentAuditLogEntry(newPayment, auditActionType, auditDetails, currentUser);
-        allPayments.push(newPayment);
-        localStorage.setItem(NEXT_PAYMENT_ID_KEY, (nextIdNum + 1).toString());
-        toast({ title: "Success", description: `New payment ${newPaymentId} recorded.` });
+        const newPayment = await paymentsRepo.create({
+          ...paymentData,
+          recordedByStaffId: currentUser.id,
+          recordedByStaffName: currentUser.name,
+        }, `New payment recorded for ${resolvedPayeeName || 'N/A'}. Amount: ₹${paymentData.amount.toFixed(2)}.${auditDetails}`);
+        toast({ title: "Success", description: `New payment ${newPayment.id} recorded.` });
       }
-
-      localStorage.setItem(PAYMENTS_STORAGE_KEY, JSON.stringify(allPayments));
       router.push('/payments');
-
     } catch (e) {
-      console.error("Failed to save payment to localStorage", e);
+      console.error("Failed to save payment", e);
       toast({
-        title: "Storage Error",
-        description: "Could not save payment data. LocalStorage might be full or disabled.",
+        title: "Save Error",
+        description: "Could not save payment data. Please check your connection and try again.",
         variant: "destructive",
       });
     }
@@ -889,7 +773,7 @@ type="text"
                         <SelectContent>
                           {availableMedications.map(med => (
                             <SelectItem key={med.id} value={med.id}>
-                              {med.name} (List: ₹{(med.listPriceSnapshot || med.listPrice || 0).toFixed(2)})
+                              {med.name} (List: ₹{(med.listPrice || 0).toFixed(2)})
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -956,7 +840,7 @@ type="text"
                         <SelectContent>
                           {availableMaterials.map(mat => (
                             <SelectItem key={mat.id} value={mat.id}>
-                              {mat.name} (List: ₹{(mat.listPriceSnapshot || mat.listPrice || 0).toFixed(2)})
+                              {mat.name} (List: ₹{(mat.listPrice || 0).toFixed(2)})
                             </SelectItem>
                           ))}
                         </SelectContent>

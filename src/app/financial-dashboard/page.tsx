@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 import { ArrowLeft, Download, Calendar, TrendingUp, TrendingDown, DollarSign, CreditCard, Receipt } from 'lucide-react';
 import { format, parseISO, isValid, parse, startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
+import { bills as billsRepo, payments as paymentsRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from "@/lib/utils";
 import Datepicker from '@/components/ui/datepicker';
@@ -51,28 +52,16 @@ export default function FinancialDashboardPage() {
   useEffect(() => {
     if (currentUser) {
       setIsLoading(true);
-      if (typeof window !== 'undefined') {
-        try {
-          const storedBills = localStorage.getItem('bills');
-          const storedPayments = localStorage.getItem('payments');
-
-          if (storedBills) {
-            const parsedBills = JSON.parse(storedBills).map((b: any) => ({
-              ...b,
-              auditLog: Array.isArray(b.auditLog) ? b.auditLog : []
-            }));
-            setBills(parsedBills);
-          }
-
-          if (storedPayments) {
-            setPayments(JSON.parse(storedPayments));
-          }
-        } catch (error) {
+      Promise.all([billsRepo.list(), paymentsRepo.list()])
+        .then(([billList, paymentList]) => {
+          setBills(billList);
+          setPayments(paymentList);
+        })
+        .catch(error => {
           console.error("Error loading financial data:", error);
           toast({ title: "Error", description: "Could not load financial data.", variant: "destructive" });
-        }
-      }
-      setIsLoading(false);
+        })
+        .finally(() => setIsLoading(false));
     }
   }, [toast, currentUser]);
 
@@ -193,8 +182,8 @@ export default function FinancialDashboardPage() {
           bValue = b.amount;
           break;
         case 'patient':
-          aValue = a.patientName.toLowerCase();
-          bValue = b.patientName.toLowerCase();
+          aValue = (a.payeeName || "").toLowerCase();
+          bValue = (b.payeeName || "").toLowerCase();
           break;
         default:
           return 0;
@@ -643,7 +632,7 @@ export default function FinancialDashboardPage() {
                     className="cursor-pointer hover:bg-muted/50" 
                     onClick={() => handlePaymentsSort('patient')}
                   >
-                    Patient {paymentsSortField === 'patient' && (paymentsSortOrder === 'asc' ? '↑' : '↓')}
+                    Payee {paymentsSortField === 'patient' && (paymentsSortOrder === 'asc' ? '↑' : '↓')}
                   </TableHead>
                   <TableHead 
                     className="cursor-pointer hover:bg-muted/50" 
@@ -664,7 +653,7 @@ export default function FinancialDashboardPage() {
                 {sortedPayments.slice(0, 5).map((payment) => (
                   <TableRow key={payment.id}>
                     <TableCell className="font-medium">{payment.id}</TableCell>
-                    <TableCell>{payment.patientName}</TableCell>
+                    <TableCell>{payment.payeeName}</TableCell>
                     <TableCell>
                       {formatDateSafe(payment.paymentDate) ? 
                         format(formatDateSafe(payment.paymentDate)!, 'dd/MM/yyyy') : 

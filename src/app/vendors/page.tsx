@@ -10,12 +10,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Vendor } from '@/types/vendor';
 import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Edit3, Truck, ArrowLeft, Upload } from 'lucide-react';
+import { vendors as vendorsRepo } from '@/lib/data';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 
-const VENDORS_STORAGE_KEY = 'materialVendorsData';
-const VENDOR_ID_COUNTER_KEY = 'nextVendorId';
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse"];
+const ALLOWED_ROLES: StaffRole[] = ["Super Admin", "Admin", "Doctor", "Nurse"];
 
 export default function VendorsPage() {
   const router = useRouter();
@@ -38,19 +37,13 @@ export default function VendorsPage() {
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(true);
-      try {
-        const storedVendors = localStorage.getItem(VENDORS_STORAGE_KEY);
-        if (storedVendors) {
-          setVendors(JSON.parse(storedVendors));
-        }
-        if (!localStorage.getItem(VENDOR_ID_COUNTER_KEY)) {
-            localStorage.setItem(VENDOR_ID_COUNTER_KEY, 'vendor_1');
-        }
-      } catch (error) {
-        console.error("Error loading vendors from localStorage:", error);
-        toast({ title: "Error", description: "Could not load vendor data.", variant: "destructive" });
-      }
-      setIsLoading(false);
+      vendorsRepo.list()
+        .then(setVendors)
+        .catch(error => {
+          console.error("Error loading vendors:", error);
+          toast({ title: "Error", description: "Could not load vendors data.", variant: "destructive" });
+        })
+        .finally(() => setIsLoading(false));
     } else if (currentUser && !ALLOWED_ROLES.includes(currentUser.role)){
         setIsLoading(false);
     } else {
@@ -89,7 +82,7 @@ export default function VendorsPage() {
     }
   };
 
-  const processCSV = (csvText: string) => {
+  const processCSV = async (csvText: string) => {
     const rows = csvText.split(/\r\n|\n/).filter(row => row.trim() !== '');
     if (rows.length < 2) {
       toast({ title: "CSV Error", description: "CSV file must contain a header row and at least one data row.", variant: "destructive" });
@@ -112,12 +105,7 @@ export default function VendorsPage() {
     const addressIndex = header.indexOf('address');
     const notesIndex = header.indexOf('notes');
 
-    let currentVendors = [...vendors];
-    let nextIdStr = localStorage.getItem(VENDOR_ID_COUNTER_KEY) || 'vendor_1';
-    let nextIdNum = 1;
-    if (nextIdStr.startsWith('vendor_')) {
-        try { nextIdNum = parseInt(nextIdStr.split('_')[1], 10); } catch { /* keep 1 */ }
-    }
+    const newItems: Omit<Vendor, 'id'>[] = [];
 
     let importedCount = 0;
     let failedCount = 0;
@@ -128,8 +116,7 @@ export default function VendorsPage() {
       const name = cells[nameIndex];
       if (!name) { console.warn(`Skipping row ${i+1}: Name is missing.`); failedCount++; continue; }
       
-      const newVendor: Vendor = {
-        id: `vendor_${nextIdNum++}`,
+      const newVendor: Omit<Vendor, 'id'> = {
         name,
         contactPerson: contactPersonIndex > -1 ? cells[contactPersonIndex] : undefined,
         phoneNumber: phoneNumberIndex > -1 ? cells[phoneNumberIndex] : undefined,
@@ -137,19 +124,18 @@ export default function VendorsPage() {
         address: addressIndex > -1 ? cells[addressIndex] : undefined,
         notes: notesIndex > -1 ? cells[notesIndex] : undefined,
       };
-      currentVendors.push(newVendor);
+      newItems.push(newVendor);
       importedCount++;
     }
 
     if (importedCount > 0) {
       try {
-          localStorage.setItem(VENDORS_STORAGE_KEY, JSON.stringify(currentVendors));
-          localStorage.setItem(VENDOR_ID_COUNTER_KEY, `vendor_${nextIdNum}`);
-          setVendors(currentVendors);
+          await vendorsRepo.createMany(newItems);
+          setVendors(await vendorsRepo.list());
           toast({ title: "Import Successful", description: `${importedCount} vendors imported. ${failedCount > 0 ? `${failedCount} rows failed.` : ''}` });
       } catch (e) {
           console.error("Error saving imported vendors:", e);
-          toast({ title: "Storage Error", description: "Could not save imported vendors.", variant: "destructive" });
+          toast({ title: "Save Error", description: "Could not save imported vendors.", variant: "destructive" });
       }
     } else if (failedCount > 0) {
         toast({ title: "Import Failed", description: `No vendors imported. ${failedCount} rows had errors. Check console for details.`, variant: "destructive" });

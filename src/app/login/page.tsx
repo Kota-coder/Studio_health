@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from 'react';
@@ -9,14 +8,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { useAuth } from '@/context/AuthContext';
 import { LogIn } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useToast } from '@/hooks/use-toast'; // Import useToast
+import { useToast } from '@/hooks/use-toast';
+import { getSupabase } from '@/lib/supabase/client';
 
 export default function LoginPage() {
-  const [identifier, setIdentifier] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isSendingReset, setIsSendingReset] = useState(false);
   const { login, currentUser, isLoading } = useAuth();
   const router = useRouter();
-  const { toast } = useToast(); // Initialize useToast
+  const { toast } = useToast();
 
   // If user is already logged in, redirect to dashboard
   useEffect(() => {
@@ -25,54 +26,36 @@ export default function LoginPage() {
     }
   }, [isLoading, currentUser, router]);
 
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('error') === 'link_invalid') {
+      toast({ title: "Link Expired", description: "That email link is invalid or has expired.", variant: "destructive" });
+    }
+  }, [toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmedIdentifier = identifier.trim();
-    if (!trimmedIdentifier) {
-        toast({ title: "Input Required", description: "Email or Phone Number is required.", variant: "destructive" });
-        return;
+    if (!email.trim() || !password) {
+      toast({ title: "Input Required", description: "Email and password are required.", variant: "destructive" });
+      return;
     }
+    await login(email, password);
+  };
 
-    // Add default admin if none exists
-    const storedStaff = localStorage.getItem('staffMembers');
-    if (!storedStaff || JSON.parse(storedStaff).length === 0) {
-      const defaultAdmin = {
-        id: "admin-1",
-        name: "Admin User",
-        email: "admin@clinic.com",
-        phoneNumber: "1234567890",
-        role: "Admin",
-        dateJoined: new Date().toISOString()
-      };
-      localStorage.setItem('staffMembers', JSON.stringify([defaultAdmin]));
+  const handleForgotPassword = async () => {
+    if (!email.trim()) {
+      toast({ title: "Email Required", description: "Enter your email address first.", variant: "destructive" });
+      return;
     }
-
-    // Check if staff members exist before attempting login
-    if (typeof window !== 'undefined') {
-        const storedStaff = localStorage.getItem('staffMembers');
-        let staffExists = false;
-        if (storedStaff) {
-            try {
-                const staffArray = JSON.parse(storedStaff);
-                if (Array.isArray(staffArray) && staffArray.length > 0) {
-                    staffExists = true;
-                }
-            } catch (error) {
-                console.error("Error parsing staffMembers from localStorage:", error);
-            }
-        }
-        if (!staffExists) {
-            toast({
-              title: "No Staff Found",
-              description: "There are no staff members registered in the system. Please add staff members first.",
-              variant: "destructive",
-            });
-            return;
-        }
+    setIsSendingReset(true);
+    const { error } = await getSupabase().auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/auth/confirm?next=/set-password`,
+    });
+    setIsSendingReset(false);
+    if (error) {
+      toast({ title: "Could Not Send Email", description: error.message, variant: "destructive" });
+      return;
     }
-
-    await login(trimmedIdentifier);
+    toast({ title: "Check Your Email", description: "If this email belongs to a staff account, a reset link is on its way." });
   };
 
   // Render loading or null if redirecting, to prevent rendering the form unnecessarily
@@ -86,18 +69,19 @@ export default function LoginPage() {
         <CardHeader className="text-center">
           <LogIn className="mx-auto h-10 w-10 text-primary mb-3" />
           <CardTitle className="text-2xl">Staff Login</CardTitle>
-          <CardDescription>Enter your email or phone number to access the portal.</CardDescription>
+          <CardDescription>Sign in with your staff email and password.</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="grid gap-4">
             <div>
-              <Label htmlFor="identifier">Email or Phone Number</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
-                id="identifier"
-                type="text"
-                placeholder="name@example.com or 1234567890"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
+                id="email"
+                type="email"
+                autoComplete="email"
+                placeholder="name@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
               />
             </div>
@@ -106,16 +90,20 @@ export default function LoginPage() {
               <Input
                 id="password"
                 type="password"
+                autoComplete="current-password"
                 placeholder="********"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                required
               />
-               <p className="text-xs text-muted-foreground mt-1">Note: Password field is for UI demonstration only.</p>
             </div>
           </CardContent>
-          <CardFooter>
+          <CardFooter className="flex flex-col gap-2">
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? 'Logging in...' : 'Login'}
+            </Button>
+            <Button type="button" variant="link" size="sm" onClick={handleForgotPassword} disabled={isSendingReset}>
+              {isSendingReset ? 'Sending...' : 'Forgot password?'}
             </Button>
           </CardFooter>
         </form>

@@ -29,6 +29,6 @@ export interface Bill {
   notes?: string;
   createdAt: string; // ISO string for when the bill was created/saved
   auditLog: AuditLogEntry[];
-  attachmentDataUrl?: string | null; // Added for image attachments
+  attachmentPath?: string | null; // Object path in the patient-files storage bucket
   paymentDate?: string; // dd/MM/yyyy format
 }

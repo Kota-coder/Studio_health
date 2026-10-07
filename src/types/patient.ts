@@ -25,7 +25,7 @@ export interface CareNote {
     dosage?: string;
     notes?: string;
   }>;
-  attachmentDataUrl?: string | null; // Added for image attachments
+  attachmentPath?: string | null; // Object path in the patient-files storage bucket
 }
 
 export interface TestFieldData {
@@ -43,7 +43,7 @@ export interface TestEntry {
   performedByStaffId?: number;
   performedByStaffName?: string;
   createdAt: string;
-  attachmentDataUrl?: string | null; // Added for image attachments
+  attachmentPath?: string | null; // Object path in the patient-files storage bucket
 }
 
 export interface Patient {
@@ -58,10 +58,10 @@ export interface Patient {
   idNumber: string;
   emergencyContactName: string;
   emergencyContactNumber: string;
-  imageSrc?: string | null;
   idCardType?: string;
-  patientPhotoKey?: string | null;
-  initialObservationAttachmentKey?: string | null;
+  // Storage object paths (patient-files bucket). Aadhaar card images are never stored.
+  idCardImagePath?: string | null;
+  patientPhotoPath?: string | null;
   condition?: PatientCondition;
   careNotes?: CareNote[];
   assignedStaffIds?: number[];
@@ -70,9 +70,15 @@ export interface Patient {
   referredDoctorId?: number | null;
   reasonForVisit?: string;
   initialObservationsText?: string;
-  initialObservationAttachmentDataUrl?: string | null;
+  initialObservationAttachmentPath?: string | null;
   admissionCondition?: PatientAdmissionCondition;
 
   tests?: TestEntry[];
   auditLog?: AuditLogEntry[];
+
+  // DPDP Act consent record, captured at registration.
+  consentGivenAt?: string;
+  consentVersion?: string;
+  consentRecordedByStaffId?: number;
+  createdAt?: string;
 }
