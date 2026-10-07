@@ -16,7 +16,7 @@ import { Bill, BillItem } from '@/types/billing';
 import { Medication } from '@/types/medication';
 import { useToast } from '@/hooks/use-toast';
 import { format, parse, parseISO, isValid as isValidDate } from 'date-fns';
-import { ArrowLeft, PlusCircle, Users, ChevronsUpDown, Edit, Paperclip, FlaskConical, CalendarDays, UserCircle as UserCircleIcon, CreditCard, Eye, Activity, Edit3Icon, AlertTriangle, Files, ClipboardList, BriefcaseMedical, CheckCircle2, HelpCircle, Info, Phone, Mail, Home, User, UserSquare2, FileText, CheckCircle, AlertCircle, Pill, Trash2, ShoppingCart, ShieldCheck, History, Camera as CameraIcon, UploadCloud, TestTube } from 'lucide-react';
+import { ArrowLeft, PlusCircle, Users, ChevronsUpDown, Edit, Paperclip, FlaskConical, CalendarDays, UserCircle as UserCircleIcon, CreditCard, Eye, Activity, Edit3Icon, AlertTriangle, Files, ClipboardList, BriefcaseMedical, CheckCircle2, HelpCircle, Info, Phone, Mail, Home, User, UserSquare2, FileText, CheckCircle, AlertCircle, Pill, Trash2, ShoppingCart, ShieldCheck, History, Camera as CameraIcon, UploadCloud, TestTube, Download } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -54,6 +54,8 @@ import { bills as billsRepo, medications as medicationsRepo, patients as patient
 import { compressImageFile, captureVideoFrame } from '@/lib/images';
 import { uploadIfNew } from '@/lib/storage';
 import { StoredImage } from '@/components/stored-image';
+import { PATIENT_DATA_REQUESTS_ENABLED } from '@/config/features';
+import { downloadPatientData, erasePatientData } from '@/lib/patient-data';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription as AlertDesc, AlertTitle as AlertTitleComponent } from '@/components/ui/alert';
@@ -87,6 +89,7 @@ export default function PatientDetailPage() {
   const [referralPayments, setReferralPayments] = useState<Payment[]>([]);
   const [isSavingNote, setIsSavingNote] = useState(false);
   const [isSavingTest, setIsSavingTest] = useState(false);
+  const [isHandlingDataRequest, setIsHandlingDataRequest] = useState(false);
 
   const [newNote, setNewNote] = useState<string>("");
   const [newNoteAttachmentPreview, setNewNoteAttachmentPreview] = useState<string | null>(null);
@@ -214,6 +217,32 @@ export default function PatientDetailPage() {
         fetchPatientAndRelatedData();
     }
   }, [fetchPatientAndRelatedData, authIsLoading, currentUser]);
+
+  const handleDownloadPatientData = useCallback(async () => {
+    if (!patient) return;
+    setIsHandlingDataRequest(true);
+    try {
+      await downloadPatientData(patient.id);
+      toast({ title: "Download Ready", description: "Patient data downloaded." });
+    } catch (error: any) {
+      toast({ title: "Error", description: error?.message || "Could not export patient data.", variant: "destructive" });
+    } finally {
+      setIsHandlingDataRequest(false);
+    }
+  }, [patient, toast]);
+
+  const handleErasePatientData = useCallback(async () => {
+    if (!patient) return;
+    setIsHandlingDataRequest(true);
+    try {
+      await erasePatientData(patient.id);
+      toast({ title: "Patient Data Erased", description: "The patient's data has been erased." });
+      router.push('/dashboard');
+    } catch (error: any) {
+      toast({ title: "Error", description: error?.message || "Could not erase patient data.", variant: "destructive" });
+      setIsHandlingDataRequest(false);
+    }
+  }, [patient, toast, router]);
 
   // Re-reads the patient (notes, tests, audit trail) after a change.
   const reloadPatient = useCallback(async (patientId: number) => {
@@ -802,6 +831,34 @@ export default function PatientDetailPage() {
           <Button variant="outline" onClick={() => router.push('/dashboard')}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
           </Button>
+          {PATIENT_DATA_REQUESTS_ENABLED && currentUser?.role === "Super Admin" && (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={handleDownloadPatientData} disabled={isHandlingDataRequest}>
+                <Download className="mr-2 h-4 w-4" /> Download Patient Data
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" disabled={isHandlingDataRequest}>
+                    <Trash2 className="mr-2 h-4 w-4" /> Erase Patient Data
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Erase all data for {patient.firstName} {patient.lastName}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This permanently deletes the patient&apos;s details, care notes, tests, images and history. Bills are kept for the clinic&apos;s accounts but no longer show who they were for. This cannot be undone. Download the patient&apos;s data first if they asked for a copy.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleErasePatientData} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                      Erase Permanently
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          )}
         </div>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
             <div>
