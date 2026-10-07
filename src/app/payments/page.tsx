@@ -11,7 +11,12 @@ import { Payment } from '@/types/payment';
 import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Eye, Receipt, ArrowLeft, Download } from 'lucide-react';
 import { format, parseISO, isValid, parse } from 'date-fns';
-import { patients as patientsRepo, payments as paymentsRepo } from '@/lib/data';
+import { patients as patientsRepo, payments as paymentsRepo, staff as staffRepo } from '@/lib/data';
+import { usePaymentMethods } from '@/hooks/use-payment-methods';
+import { MethodTotals } from '@/components/method-totals';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { StaffMember } from '@/types/staff';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -31,6 +36,13 @@ export default function PaymentsOverviewPage() {
   const [isLoading, setIsLoading] = useState(true);
   // Only payments in the chosen period are downloaded (the list grows every month).
   const [dateFilter, setDateFilter] = useState<DateFilterValue>(DEFAULT_DATE_FILTER);
+  const [filterMethod, setFilterMethod] = useState<string>("All");
+  const [filterType, setFilterType] = useState<string>("All");
+  const [filterProcessedBy, setFilterProcessedBy] = useState<string>("All");
+  const methodOptions = usePaymentMethods();
+  const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  useEffect(() => { staffRepo.list().then(setStaffList).catch(() => setStaffList([])); }, []);
+  const anyFilter = dateFilter.preset !== 'all' || filterMethod !== "All" || filterType !== "All" || filterProcessedBy !== "All";
   const [isFiltering, setIsFiltering] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
@@ -46,7 +58,12 @@ export default function PaymentsOverviewPage() {
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       if (hasLoadedOnce) setIsFiltering(true); else setIsLoading(true);
-      Promise.all([paymentsRepo.list(dateFilterRange(dateFilter)), patientsRepo.listNames()])
+      Promise.all([paymentsRepo.list({
+        ...dateFilterRange(dateFilter),
+        method: filterMethod === "All" ? undefined : filterMethod,
+        type: filterType === "All" ? undefined : filterType,
+        recordedBy: filterProcessedBy === "All" ? undefined : Number(filterProcessedBy),
+      }), patientsRepo.listNames()])
         .then(([paymentList, patientList]) => {
           setPayments(paymentList);
           setPatients(patientList);
@@ -65,7 +82,7 @@ export default function PaymentsOverviewPage() {
       setIsLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- hasLoadedOnce only picks the loading style
-  }, [toast, currentUser, dateFilter]);
+  }, [toast, currentUser, dateFilter, filterMethod, filterType, filterProcessedBy]);
 
   const formatDateSafe = (dateString: string | undefined) => {
     if (!dateString) return 'N/A';
@@ -102,7 +119,7 @@ export default function PaymentsOverviewPage() {
     const headers = [
       "Payment ID", "Payment Date", "Payment Type", "Payee Name", "Payee Type", 
       "Description", "Amount", "Payment Method", "Transaction ID", 
-      "Notes", "Recorded By", "Created At"
+      "Notes", "Processed By", "Created At"
     ];
 
     const csvRows = [headers.join(',')];
@@ -194,21 +211,52 @@ export default function PaymentsOverviewPage() {
       </header>
 
       <Card className="mb-6 shadow-md">
-        <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-end sm:justify-between">
+        <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:flex-wrap sm:items-end">
           <DateRangeFilter value={dateFilter} onChange={setDateFilter} idPrefix="paymentsDate" />
-          <p className="text-sm text-muted-foreground" role="status">
+          <div className="sm:w-44">
+            <Label htmlFor="filterPaymentType">Payment Type</Label>
+            <Select value={filterType} onValueChange={setFilterType}>
+              <SelectTrigger id="filterPaymentType"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All Types</SelectItem>
+                {["Salary", "Material", "Pharmacy", "Doctor Fee", "Referral/CC", "Other"].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="sm:w-44">
+            <Label htmlFor="filterPaymentMethod">Payment Method</Label>
+            <Select value={filterMethod} onValueChange={setFilterMethod}>
+              <SelectTrigger id="filterPaymentMethod"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All Methods</SelectItem>
+                {methodOptions.filter(m => m.usedFor !== 'Bills').map(m => <SelectItem key={m.id} value={m.name}>{m.name}{m.active ? '' : ' (off)'}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="sm:w-48">
+            <Label htmlFor="filterPaymentProcessedBy">Processed By</Label>
+            <Select value={filterProcessedBy} onValueChange={setFilterProcessedBy}>
+              <SelectTrigger id="filterPaymentProcessedBy"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">Anyone</SelectItem>
+                {staffList.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {!isFiltering && <MethodTotals label="Paid out" rows={payments.map(p => ({ method: p.paymentMethod, amount: p.amount }))} />}
+          <p className="w-full text-sm text-muted-foreground" role="status">
             {isFiltering ? 'Loading…' : `${payments.length} payment${payments.length === 1 ? '' : 's'} · ₹${payments.reduce((sum, p) => sum + p.amount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · ${describeDateFilter(dateFilter)}`}
           </p>
         </CardContent>
       </Card>
 
-      {payments.length === 0 && !isLoading && dateFilter.preset !== 'all' ? (
+      {payments.length === 0 && !isLoading && anyFilter ? (
         <Card className="text-center shadow-lg">
           <CardHeader>
-            <CardTitle>No Payments in This Period</CardTitle>
+            <CardTitle>No Payments Match These Filters</CardTitle>
           </CardHeader>
           <CardContent>
-            <CardDescription>Choose a longer period, or &quot;All time&quot;, to see older payments.</CardDescription>
+            <CardDescription>Choose a longer period, &quot;All time&quot;, or other filters to see more payments.</CardDescription>
           </CardContent>
         </Card>
       ) : payments.length === 0 && !isLoading ? (
@@ -261,7 +309,7 @@ export default function PaymentsOverviewPage() {
                                 <p><span className="font-medium">Payment Method:</span> {payment.paymentMethod}</p>
                                 {payment.transactionId && <p><span className="font-medium">Transaction ID:</span> {payment.transactionId}</p>}
                                 {payment.notes && <p className="md:col-span-2"><span className="font-medium">Notes:</span> {payment.notes}</p>}
-                                {payment.recordedByStaffName && <p><span className="font-medium">Recorded By:</span> {payment.recordedByStaffName}</p>}
+                                {payment.recordedByStaffName && <p><span className="font-medium">Processed By:</span> {payment.recordedByStaffName}</p>}
                                 <p><span className="font-medium">Recorded At:</span> {format(parseISO(payment.createdAt), "dd/MM/yyyy HH:mm")}</p>
                                 {payment.associatedPatientIds && payment.associatedPatientIds.length > 0 && (
                                     <p className="md:col-span-2"><span className="font-medium">Associated Patients:</span> {getPatientNamesForPayment(payment) || payment.associatedPatientIds.join(', ')}</p>

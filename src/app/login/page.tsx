@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useAuth } from '@/context/AuthContext';
 import { Eye, EyeOff } from 'lucide-react';
-import { SevaLogo } from '@/components/seva-logo';
+import { AuthBrandHeader } from '@/components/auth-brand-header';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { getSupabase } from '@/lib/supabase/client';
@@ -75,19 +75,11 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 p-4">
+    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
       <Card className="w-full max-w-md shadow-2xl border-0 overflow-hidden">
         {/* Header with branding */}
-        <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 pb-10 sm:p-8 sm:pb-12 relative">
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <div className="bg-white rounded-full p-2 shadow-sm">
-              <SevaLogo className="h-10 w-10" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">Seva</h1>
-              <p className="text-blue-100 text-sm">Healthcare Management</p>
-            </div>
-          </div>
+        <CardHeader className="bg-primary text-primary-foreground p-6 pb-10 sm:p-8 sm:pb-12 relative">
+          <AuthBrandHeader />
         </CardHeader>
 
         {/* Login Form */}
@@ -148,7 +140,7 @@ export default function LoginPage() {
                 <button 
                   type="button" 
                   onClick={() => router.push('/forgot-password')}
-                  className="text-blue-600 hover:text-blue-700 font-medium transition-colors"
+                  className="text-primary hover:text-primary font-medium transition-colors"
                 >
                   Forgot password?
                 </button>
@@ -156,7 +148,7 @@ export default function LoginPage() {
 
               <Button 
                 type="submit" 
-                className="w-full h-12 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold text-base shadow-lg shadow-blue-200 transition-colors" 
+                className="w-full h-12 bg-primary hover:bg-primary/90 text-white font-semibold text-base transition-colors" 
                 disabled={isLoading}
               >
                 {isLoading ? 'Logging in...' : 'Login'}
@@ -168,6 +160,7 @@ export default function LoginPage() {
           <p className="text-xs text-center text-gray-400 mt-6">
             New staff receive an email invite from an admin to set their password.
           </p>
+          <p className="mt-2 text-center text-[11px] text-muted-foreground/80">Powered by Seva</p>
         </CardContent>
       </Card>
     </div>

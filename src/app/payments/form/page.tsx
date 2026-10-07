@@ -17,6 +17,9 @@ import { Payment, PaymentType, PaymentMethodSpent, PurchasedMedicationItem, Purc
 import { ReferringDoctor } from '@/types/referringDoctor';
 import { StaffMember } from '@/types/staff';
 import type { StaffRole as AppStaffRole } from '@/types/staff';
+import { usePaymentMethods } from '@/hooks/use-payment-methods';
+import { methodChoices } from '@/types/paymentMethod';
+import { ProcessedByField } from '@/components/processed-by-field';
 import { AuditLogEntry, Patient } from '@/types/patient'; 
 import { Medication } from '@/types/medication';
 import { Vendor } from '@/types/vendor';
@@ -39,7 +42,6 @@ const PAYMENT_TYPES: PaymentType[] = ["Referral/CC", "Material", "Pharmacy", "Sa
 // Doctor and referral fees are settled by finance staff only (the database enforces this too).
 const DOCTOR_FEE_ROLES: AppStaffRole[] = ["Super Admin", "Admin", "Accounts"];
 const FEE_PAYMENT_TYPES: PaymentType[] = ["Doctor Fee", "Referral/CC"];
-const PAYMENT_METHODS_SPENT: PaymentMethodSpent[] = ["Cash", "Cheque", "Bank Transfer", "UPI", "Card", "Other"];
 
 
 
@@ -64,6 +66,11 @@ export default function PaymentFormPage() {
   const [description, setDescription] = useState<string>("");
   const [amount, setAmount] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodSpent>("");
+  const methodOptions = usePaymentMethods();
+  // Who processed the payment: the person recording it, unless the Super Admin picks someone else.
+  const [processedById, setProcessedById] = useState<string>("");
+  const [processedByName, setProcessedByName] = useState<string | null>(null);
+  const canAssignProcessor = currentUser?.role === 'Super Admin';
   const [transactionId, setTransactionId] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
   
@@ -117,6 +124,10 @@ export default function PaymentFormPage() {
       setAvailableMaterials(mats);
       setAvailableVendors(vendorList);
       setAllPatientsList(patientList);
+      if (!isEditMode && currentUser) {
+        setProcessedById(String(currentUser.id));
+        setProcessedByName(currentUser.name);
+      }
     } catch (e) {
       console.error("Error loading payee/medication/material lists:", e);
       toast({ title: "Error", description: "Could not load related data lists.", variant: "destructive" });
@@ -140,6 +151,8 @@ export default function PaymentFormPage() {
           setDescription(paymentToEdit.description);
           setAmount(String(paymentToEdit.amount));
           setPaymentMethod(paymentToEdit.paymentMethod);
+          setProcessedById(paymentToEdit.recordedByStaffId ? String(paymentToEdit.recordedByStaffId) : "");
+          setProcessedByName(paymentToEdit.recordedByStaffName ?? null);
           setTransactionId(paymentToEdit.transactionId || "");
           setNotes(paymentToEdit.notes || "");
           setCurrentPurchasedMedications(paymentToEdit.purchasedMedications || []);
@@ -513,11 +526,14 @@ export default function PaymentFormPage() {
     setIsSaving(true);
     try {
       if (isEditMode && currentPaymentIdState) {
-        await paymentsRepo.update(currentPaymentIdState, paymentData, { actionType: "Payment Updated", details: auditDetails });
+        // Only the Super Admin may change who processed it; others leave it as it was.
+        await paymentsRepo.update(currentPaymentIdState,
+          canAssignProcessor && processedById ? { ...paymentData, recordedByStaffId: Number(processedById) } : paymentData,
+          { actionType: "Payment Updated", details: auditDetails });
         toast({ title: "Success", description: `Payment ${currentPaymentIdState} updated.` });
       } else {
         const newPayment = await paymentsRepo.create(
-          { ...paymentData, recordedByStaffId: currentUser.id, recordedByStaffName: currentUser.name },
+          { ...paymentData, recordedByStaffId: processedById ? Number(processedById) : currentUser.id, recordedByStaffName: processedByName ?? currentUser.name },
           auditDetails,
         );
         if (paymentType === "Doctor Fee") {
@@ -926,10 +942,12 @@ export default function PaymentFormPage() {
                   <SelectValue placeholder="Select Payment Method" />
                 </SelectTrigger>
                 <SelectContent>
-                  {PAYMENT_METHODS_SPENT.map(method => <SelectItem key={method} value={method}>{method}</SelectItem>)}
+                  {methodChoices(methodOptions, 'Payments', paymentMethod).map(method => <SelectItem key={method} value={method}>{method}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
+            <ProcessedByField id="processedBy" value={processedById} onChange={setProcessedById}
+              staff={staffMembersList} canAssign={canAssignProcessor} displayName={processedByName ?? (isEditMode ? null : currentUser?.name)} />
           </div>
           
           <div>

@@ -15,7 +15,10 @@ import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Eye, CreditCard, ArrowLeft, Pill, Stethoscope, Download, Trash2 } from 'lucide-react';
 import { format, parseISO, isValid, parse } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
-import { bills as billsRepo } from '@/lib/data';
+import { bills as billsRepo, staff as staffRepo } from '@/lib/data';
+import { usePaymentMethods } from '@/hooks/use-payment-methods';
+import { MethodTotals } from '@/components/method-totals';
+import type { StaffMember } from '@/types/staff';
 import { cn } from "@/lib/utils";
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
@@ -43,6 +46,11 @@ export default function BillingOverviewPage() {
   // The period and status are applied by the database, so only matching bills are downloaded.
   // Choose "All time" with "Unpaid" to find every outstanding bill.
   const [dateFilter, setDateFilter] = useState<DateFilterValue>(DEFAULT_DATE_FILTER);
+  const [filterMethod, setFilterMethod] = useState<string>("All");
+  const [filterProcessedBy, setFilterProcessedBy] = useState<string>("All");
+  const methodOptions = usePaymentMethods();
+  const [staffList, setStaffList] = useState<StaffMember[]>([]);
+  useEffect(() => { staffRepo.list().then(setStaffList).catch(() => setStaffList([])); }, []);
   const [isFiltering, setIsFiltering] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
@@ -58,7 +66,12 @@ export default function BillingOverviewPage() {
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       if (hasLoadedOnce) setIsFiltering(true); else setIsLoading(true);
-      billsRepo.list({ ...dateFilterRange(dateFilter), status: filterStatus === "All" ? undefined : filterStatus })
+      billsRepo.list({
+        ...dateFilterRange(dateFilter),
+        status: filterStatus === "All" ? undefined : filterStatus,
+        method: filterMethod === "All" ? undefined : filterMethod,
+        processedBy: filterProcessedBy === "All" ? undefined : Number(filterProcessedBy),
+      })
         .then(setBills)
         .catch(error => {
           console.error("Error loading bills:", error);
@@ -71,7 +84,7 @@ export default function BillingOverviewPage() {
         setIsLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- hasLoadedOnce only picks the loading style
-  }, [toast, currentUser, dateFilter, filterStatus]);
+  }, [toast, currentUser, dateFilter, filterStatus, filterMethod, filterProcessedBy]);
 
   const filteredBills = useMemo(() => {
     let tempBills = [...bills];
@@ -139,7 +152,7 @@ export default function BillingOverviewPage() {
     const headers = [
       "Bill ID", "Patient ID", "Patient Name", "Bill Date", "Bill Type",
       "Total Amount", "Payment Method", "Payment Status", "Payment Date",
-      "Notes", "Created At"
+      "Processed By", "Notes", "Created At"
     ];
 
     const csvRows = [headers.join(',')];
@@ -155,6 +168,7 @@ export default function BillingOverviewPage() {
         escapeCsvField(bill.paymentMethod || 'N/A'),
         escapeCsvField(bill.paymentStatus || 'N/A'),
         escapeCsvField(bill.paymentStatus === 'Paid' && bill.paymentDate ? formatDateSafe(bill.paymentDate) : 'N/A'),
+        escapeCsvField(bill.processedByStaffName || ''),
         escapeCsvField(bill.notes || ''),
         escapeCsvField(formatDateSafe(bill.createdAt))
       ];
@@ -248,13 +262,38 @@ export default function BillingOverviewPage() {
               </SelectContent>
             </Select>
           </div>
+          <div className="w-full sm:w-auto min-w-[180px]">
+            <Label htmlFor="filterBillMethod">Payment Method</Label>
+            <Select value={filterMethod} onValueChange={setFilterMethod}>
+              <SelectTrigger id="filterBillMethod" className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All Methods</SelectItem>
+                {methodOptions.filter(m => m.usedFor !== 'Payments').map(m => <SelectItem key={m.id} value={m.name}>{m.name}{m.active ? '' : ' (off)'}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-full sm:w-auto min-w-[200px]">
+            <Label htmlFor="filterBillProcessedBy">Processed By</Label>
+            <Select value={filterProcessedBy} onValueChange={setFilterProcessedBy}>
+              <SelectTrigger id="filterBillProcessedBy" className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">Anyone</SelectItem>
+                {staffList.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {!isFiltering && (
+            <MethodTotals label="Received"
+              rows={filteredBills.filter(b => b.paymentStatus === 'Paid' || b.paymentStatus === 'Partially Paid')
+                .map(b => ({ method: b.paymentMethod, amount: b.paymentStatus === 'Paid' ? b.totalAmount : b.totalAmount / 2 }))} />
+          )}
           <p className="w-full text-sm text-muted-foreground" role="status">
             {isFiltering ? 'Loading…' : `${filteredBills.length} bill${filteredBills.length === 1 ? '' : 's'} · ₹${filteredBills.reduce((sum, b) => sum + b.totalAmount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · ${describeDateFilter(dateFilter)}`}
           </p>
         </CardContent>
       </Card>
 
-      {bills.length === 0 && !isLoading && (dateFilter.preset !== 'all' || filterStatus !== "All") ? (
+      {bills.length === 0 && !isLoading && (dateFilter.preset !== 'all' || filterStatus !== "All" || filterMethod !== "All" || filterProcessedBy !== "All") ? (
         <Card className="text-center shadow-lg">
           <CardHeader>
             <CardTitle>No Bills Match These Filters</CardTitle>
@@ -302,6 +341,8 @@ export default function BillingOverviewPage() {
                   <TableHead>Total Amount</TableHead>
                   <TableHead className="hidden sm:table-cell">Payment Status</TableHead>
                   <TableHead className="hidden lg:table-cell">Payment Date</TableHead>
+                  <TableHead className="hidden md:table-cell">Method</TableHead>
+                  <TableHead className="hidden xl:table-cell">Processed By</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -333,6 +374,8 @@ export default function BillingOverviewPage() {
                     <TableCell className="hidden lg:table-cell">
                       {bill.paymentStatus === 'Paid' && bill.paymentDate ? formatDateSafe(bill.paymentDate) : 'N/A'}
                     </TableCell>
+                    <TableCell className="hidden md:table-cell">{bill.paymentMethod || '—'}</TableCell>
+                    <TableCell className="hidden xl:table-cell">{bill.processedByStaffName || '—'}</TableCell>
                     <TableCell className="text-right whitespace-nowrap space-x-1 sm:space-x-2">
                       <Link href={`/billing/form?billId=${bill.id}`} passHref>
                         <Button variant="outline" size="sm" aria-label={`View or Edit ${bill.id}`}>

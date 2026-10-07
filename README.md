@@ -19,6 +19,33 @@ devices, protected by login and backed up.
   `audit_log`. The database records who made each change.
 - **Who can open what** is set in `src/config/permissions.ts` (menu and pages use the same list).
 
+## Going live with your first hospital
+
+Seva runs as **one copy per hospital**: its own Supabase project and its own Vercel project, both
+built from this repository. Start with one hospital; a second one later is added the same way
+with no code changes (see *Running Seva for several hospitals*).
+
+Expected cost for one hospital at small volumes (~10 new patients a day): about **$45/month**
+(Supabase Pro $25, which includes the first project's database, plus Vercel Pro about $20).
+A second hospital adds about $10/month for its database. Check current prices first.
+
+1. **Supabase** (supabase.com): create an organization on the **Pro** plan and one project in
+   region **South Asia (Mumbai)**. Then follow *Supabase setup* below: run every script in
+   `supabase/migrations` in order, set the Auth settings (turn off sign-ups, add custom SMTP),
+   and create the hospital's first Super Admin.
+2. **Vercel** (vercel.com, **Pro** plan): *Add New → Project*, import this GitHub repository
+   (branch `main`), add the four environment variables from `.env.example` with this hospital's
+   Supabase URL and keys, and deploy. `vercel.json` already runs the app in Mumbai (`bom1`), next
+   to the database. Add the hospital's web address under *Settings → Domains*.
+3. **Connect the two:** in Supabase *Authentication → URL Configuration*, set *Site URL* to that
+   web address and add `https://<address>/**` to *Redirect URLs*.
+4. **In the app:** log in as the Super Admin, open **Organization Setup → Hospital Profile**
+   (name, logo, colour, contact details), review **Payment Methods** and **Departments**, then
+   invite staff from **Staff Management**. Don't load sample data on the live hospital.
+5. **Later updates:** merging to `main` redeploys automatically. When an update adds a database
+   script, run it in the SQL Editor, or list the hospital in `hospitals.json` once and run
+   `npm run migrate:hospitals` (this also covers every hospital once there are more).
+
 ## India compliance (DPDP Act 2023, UIDAI)
 
 - **Consent**: a patient can't be registered until staff tick the consent box. The time,
@@ -34,7 +61,7 @@ devices, protected by login and backed up.
 1. **Create a project** at supabase.com in region **South Asia (Mumbai)**. The Pro plan
    (about $25/month) is recommended for daily backups and no pausing.
 2. **Create the schema**: open *SQL Editor* and run each file in `supabase/migrations`, in
-   order (paste the contents, click *Run*). Files 2–8 are safe to run again, so when you
+   order (paste the contents, click *Run*). Files 2–10 are safe to run again, so when you
    update the app you can simply run them all again in order; never run file 1 a second time.
    1. `20261007000000_init.sql` (tables, security rules, photo storage)
    2. `20261007120000_upgrade_previous_schema.sql` (only changes anything on a database set up
@@ -45,6 +72,9 @@ devices, protected by login and backed up.
    6. `20261011000000_staff_duty.sql` (duty roster and attendance)
    7. `20261012000000_dashboard_summary.sql` (Financial Dashboard totals worked out in the database)
    8. `20261013000000_date_columns.sql` (date filters on the Payments and Billing lists)
+   9. `20261014000000_payment_methods.sql` (managed payment methods, who processed each bill and
+      payment, Financial Dashboard by period)
+   10. `20261015000000_hospital_profile.sql` (the hospital's name, logo and colour)
 3. **Auth settings** (*Authentication*):
    - *Sign In / Providers*: keep Email enabled and **turn off "Allow new users to sign up"**.
    - *URL Configuration*: set *Site URL* to your app's address (e.g. `https://clinic.example.com`)
@@ -117,6 +147,64 @@ devices, protected by login and backed up.
   (On time, Late, Left early, Absent, On duty) and every time record. Admins can add or correct
   entries for someone who forgot to clock in or out; these are marked *Manual* with the admin's
   name. Super Admin, Admin and Accounts see everyone; other staff see only their own.
+
+## Running Seva for several hospitals
+
+Every hospital gets **its own copy**: its own Supabase project (database, logins and files) and
+its own web address, all running the same code from this repository. Nothing is shared between
+hospitals, so one hospital's patients, staff, bills and logins can never appear at another, and
+each can be backed up, restored or moved on its own.
+
+**Adding a hospital** (about 30 minutes):
+
+1. **Supabase:** create a new project for the hospital (region Mumbai), then follow *Supabase
+   setup* above: run the migrations (or use the script below), set the Auth settings and create
+   the hospital's first Super Admin.
+2. **Vercel:** *Add New → Project*, import this same GitHub repository, and enter that hospital's
+   four environment variables (its own Supabase URL and keys; the Gemini key can be shared). Set
+   the function region to Mumbai (`bom1`) and add the hospital's domain, e.g.
+   `sriram.yourdomain.in` or the hospital's own. Then put that address into its Supabase *Site URL*
+   and *Redirect URLs*.
+3. **Branding:** the hospital's Super Admin logs in and opens **Organization Setup → Hospital
+   Profile**: name, short name, tagline, contact details, registration number, brand colour and
+   logo. They can upload their own logo or design one from the hospital's initials (shape,
+   colour and emblem), so every hospital has a distinct mark. It appears on the login page,
+   header, browser tab, phone app icon and printed treatment summaries, with a small "Powered by
+   Seva".
+
+**Updating every hospital:** merging to `main` redeploys all the Vercel projects automatically.
+When an update adds a database script, run it on every hospital at once:
+
+```bash
+cp hospitals.example.json hospitals.json   # once: list each hospital's database URL (never commit it)
+npm run migrate:hospitals -- --dry-run     # see what would run
+npm run migrate:hospitals                  # run it
+```
+
+The database URL is under *Project Settings → Database → Connection string* (session pooler) in
+each Supabase project. A hospital that fails (e.g. wrong password) is reported and the others
+still update.
+
+**Cost per hospital** (check current prices): a Supabase Pro project (about $25/month for the
+first, plus about $10/month compute for each extra project in the same organization) and its
+share of the Vercel Pro plan (priced per team member, not per project).
+
+## Payment methods, who processed it, and filters
+
+- **Organization Setup → Payment Methods** (Super Admin): the choices offered on bills (money
+  received) and payments (money paid out), such as Cash, UPI, Card, Bank Transfer, Arogyasree or
+  Insurance. Add new ones, choose whether each is for bills, payments or both, change the order,
+  or switch one off (records that used it keep it). Renaming a method renames it on existing
+  bills and payments too.
+- **Processed by**: every bill and payment records who processed it. Staff are recorded as
+  themselves automatically; only the Super Admin can record or change it to someone else (the
+  database enforces this too).
+- **Filters**: Billing filters by period, status, payment method and who processed it; Payments
+  by period, payment type, payment method and who processed it. Both show totals per method for
+  what is listed (e.g. "Cash ₹12,400 · UPI ₹8,150"), and the CSV includes "Processed By".
+- **Financial Dashboard**: choose a period (this month, last month, custom dates, …). Totals and
+  charts cover that period, with money received and paid out by payment method. The doctor and
+  referral fee tables show what is owed now.
 
 ## Keeping Supabase usage low
 

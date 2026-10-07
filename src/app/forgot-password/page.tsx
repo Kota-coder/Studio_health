@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ArrowLeft, Mail, CheckCircle } from 'lucide-react';
-import { SevaLogo } from '@/components/seva-logo';
+import { AuthBrandHeader } from '@/components/auth-brand-header';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { getSupabase } from '@/lib/supabase/client';
@@ -66,18 +66,10 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 p-4">
+    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
       <Card className="w-full max-w-md shadow-2xl border-0 overflow-hidden">
-        <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 pb-10 sm:p-8 sm:pb-12 relative">
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <div className="bg-white rounded-full p-2 shadow-sm">
-              <SevaLogo className="h-10 w-10" />
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">Seva</h1>
-              <p className="text-blue-100 text-sm">Healthcare Management</p>
-            </div>
-          </div>
+        <CardHeader className="bg-primary text-primary-foreground p-6 pb-10 sm:p-8 sm:pb-12 relative">
+          <AuthBrandHeader />
         </CardHeader>
 
         <CardContent className="pt-8 pb-8 px-4 sm:px-8 -mt-6 relative">
@@ -85,8 +77,8 @@ export default function ForgotPasswordPage() {
             {!emailSent ? (
               <>
                 <div className="flex items-center justify-center mb-4">
-                  <div className="bg-blue-100 rounded-full p-3">
-                    <Mail className="h-8 w-8 text-blue-600" />
+                  <div className="bg-primary/10 rounded-full p-3">
+                    <Mail className="h-8 w-8 text-primary" />
                   </div>
                 </div>
                 
@@ -113,7 +105,7 @@ export default function ForgotPasswordPage() {
 
                   <Button 
                     type="submit" 
-                    className="w-full h-12 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold text-base shadow-lg shadow-blue-200 transition-colors" 
+                    className="w-full h-12 bg-primary hover:bg-primary/90 text-white font-semibold text-base transition-colors" 
                     disabled={isLoading}
                   >
                     {isLoading ? 'Sending...' : 'Send Reset Link'}

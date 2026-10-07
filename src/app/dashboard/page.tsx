@@ -13,6 +13,8 @@ import { ArrowRight, UserPlus, AlertTriangle, ShieldCheck, Activity, HelpCircle,
 import { bills as billsRepo, departments as departmentsRepo, patients as patientsRepo, staff as staffRepo } from '@/lib/data';
 import { cachedAt, invalidate } from '@/lib/data/cache';
 import { RefreshStamp } from '@/components/refresh-stamp';
+import { useBranding } from '@/components/branding-provider';
+import { isSevaDefault } from '@/lib/branding';
 import type { Department } from '@/types/department';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -43,6 +45,7 @@ const CONDITION_CONFIG: Record<PatientCondition, { icon: React.ElementType, colo
 };
 
 export default function DashboardPage() {
+  const { profile: hospital } = useBranding();
   const { currentUser, isLoading: authIsLoading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
@@ -278,6 +281,17 @@ export default function DashboardPage() {
           </Link>
         </div>
       </header>
+      {currentUser?.role === 'Super Admin' && isSevaDefault(hospital) && (
+        <Card className="mb-6 border-primary/40 bg-primary/5">
+          <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-semibold">Set up your hospital&apos;s name and logo</p>
+              <p className="text-sm text-muted-foreground">Staff will see them on the login page, the header and printed summaries.</p>
+            </div>
+            <Button asChild><Link href="/hospital-profile">Set up Hospital Profile</Link></Button>
+          </CardContent>
+        </Card>
+      )}
       <RefreshStamp loadedAt={loadedAt} onRefresh={handleRefresh} isRefreshing={isRefreshing} className="-mt-6 mb-2 justify-end" />
 
       <Card className="mb-6 shadow-md">

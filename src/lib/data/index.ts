@@ -16,6 +16,8 @@ import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 import type { TreatmentTemplate } from '@/config/treatmentTemplates';
 import type { Department, DepartmentMembers } from '@/types/department';
 import type { AttendanceEntry, StaffShift } from '@/types/duty';
+import type { PaymentMethodOption } from '@/types/paymentMethod';
+import { DEFAULT_PROFILE, type HospitalProfile } from '@/lib/branding';
 
 type Row = Record<string, unknown>;
 
@@ -147,6 +149,8 @@ export const materials = table<Material>('materials', 'name', [], REFERENCE_TTL)
 export const vendors = table<Vendor>('vendors', 'name', [], REFERENCE_TTL);
 export const testCatalog = table<MedicalTestCatalogItem>('medical_test_catalog', 'name', [], REFERENCE_TTL);
 export const treatmentTemplates = table<TreatmentTemplate>('treatment_templates', 'name', [], REFERENCE_TTL);
+// Managed by the Super Admin (Organization Setup → Payment Methods); in display order.
+export const paymentMethods = table<PaymentMethodOption>('payment_methods', 'sort_order', ['created_at'], REFERENCE_TTL);
 
 // ---------------------------------------------------------------------------
 // Departments and their doctors/nurses
@@ -309,17 +313,49 @@ export interface FinancialSummary {
   billStatusCounts: Record<string, number>;
   billTypeAmounts: Record<string, number>;
   paymentTypeAmounts: Record<string, number>;
+  receivedByMethod: Record<string, number>; // Bills paid (partly paid at half) by payment method
+  paidOutByMethod: Record<string, number>; // Payments by payment method
   monthly: Array<{ month: string; billed: number; collected: number; spent: number }>; // month = yyyy-MM
   doctorFees: Array<{ doctorId: number; doctor: string; departments: string[]; cases: number; paid: number; pending: number }>;
   referralFees: Array<{ doctorId: number; doctor: string; referrals: number; paid: number; pending: number; unpriced: number }>;
 }
 
-export function financialSummary(): Promise<FinancialSummary> {
-  return cached('summary:financial', DASHBOARD_TTL, async () => {
+// Totals for bills and payments dated within range (all time if empty).
+export function financialSummaryKey(range: DateRange = {}) {
+  return `summary:financial:${range.from ?? ''}:${range.to ?? ''}`;
+}
+export function financialSummary(range: DateRange = {}): Promise<FinancialSummary> {
+  return cached(financialSummaryKey(range), DASHBOARD_TTL, async () => {
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
-    return check(await db().rpc('financial_summary', { tz: timeZone })) as FinancialSummary;
+    return check(await db().rpc('financial_summary', { tz: timeZone, from_date: range.from ?? null, to_date: range.to ?? null })) as FinancialSummary;
   });
 }
+
+// ---------------------------------------------------------------------------
+// Hospital profile (name, logo, colour) — one row; see 20261015000000_hospital_profile.sql
+// ---------------------------------------------------------------------------
+
+export const hospitalProfile = {
+  async get(): Promise<HospitalProfile> {
+    const row = check(await db().from('hospital_profile').select('*').eq('id', 1).maybeSingle()) as Row | null;
+    return row ? { ...DEFAULT_PROFILE, ...fromRow<HospitalProfile>(row) } : DEFAULT_PROFILE;
+  },
+  async update(changes: Partial<HospitalProfile>): Promise<HospitalProfile> {
+    const row = check(await db().from('hospital_profile').update(toRow(changes)).eq('id', 1).select().single()) as Row;
+    return { ...DEFAULT_PROFILE, ...fromRow<HospitalProfile>(row) };
+  },
+  // Uploads PNGs into a new folder of the public "branding" bucket and returns the folder.
+  async uploadBranding(files: Record<string, Blob>): Promise<string> {
+    const folder = `v${Date.now()}`;
+    for (const [name, blob] of Object.entries(files)) {
+      const { error } = await db().storage.from('branding').upload(`${folder}/${name}`, blob, {
+        contentType: 'image/png', cacheControl: '31536000', upsert: false,
+      });
+      if (error) throw new Error(error.message);
+    }
+    return folder;
+  },
+};
 
 export async function countRows(tableName: 'patients' | 'staff'): Promise<number> {
   let query = db().from(tableName).select('id', { count: 'exact', head: true });
@@ -515,10 +551,12 @@ function billFromRow(row: Row): Bill {
 }
 
 export const bills = invalidatesOnWrite({
-  async list(filter?: { patientId?: number; status?: string } & DateRange): Promise<Bill[]> {
+  async list(filter?: { patientId?: number; status?: string; method?: string; processedBy?: number } & DateRange): Promise<Bill[]> {
     let query = db().from('bills').select('*');
     if (filter?.patientId !== undefined) query = query.eq('patient_id', filter.patientId);
     if (filter?.status) query = query.eq('payment_status', filter.status);
+    if (filter?.method) query = query.eq('payment_method', filter.method);
+    if (filter?.processedBy !== undefined) query = query.eq('processed_by_staff_id', filter.processedBy);
     if (filter?.from) query = query.gte('billed_on', filter.from);
     if (filter?.to) query = query.lte('billed_on', filter.to);
     const rows = check(await query.order('created_at', { ascending: false }));
@@ -572,10 +610,13 @@ function paymentFromRow(row: Row): Payment {
 
 export const payments = invalidatesOnWrite({
   // Newest first. With a range, only payments dated within it (by their payment date).
-  async list(range?: DateRange): Promise<Payment[]> {
+  async list(filter?: DateRange & { method?: string; type?: string; recordedBy?: number }): Promise<Payment[]> {
     let query = db().from('payments').select('*');
-    if (range?.from) query = query.gte('paid_on', range.from);
-    if (range?.to) query = query.lte('paid_on', range.to);
+    if (filter?.from) query = query.gte('paid_on', filter.from);
+    if (filter?.to) query = query.lte('paid_on', filter.to);
+    if (filter?.method) query = query.eq('payment_method', filter.method);
+    if (filter?.type) query = query.eq('payment_type', filter.type);
+    if (filter?.recordedBy !== undefined) query = query.eq('recorded_by_staff_id', filter.recordedBy);
     const rows = check(await query.order('paid_on', { ascending: false }).order('created_at', { ascending: false }));
     return (rows as Row[]).map(paymentFromRow);
   },
