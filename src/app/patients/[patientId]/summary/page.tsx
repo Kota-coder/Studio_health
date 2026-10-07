@@ -8,7 +8,7 @@ import { ArrowLeft, ClipboardList, FlaskConical, Pill, Printer, Stethoscope } fr
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { SevaLogo } from '@/components/seva-logo';
+import { HospitalMark, useBranding } from '@/components/branding-provider';
 import { useAuth } from '@/context/AuthContext';
 import {
   bills as billsRepo, departments as departmentsRepo, patients as patientsRepo,
@@ -39,6 +39,7 @@ interface MedicationRow { name: string; dosage: string; prescribedOn: Date[]; pr
 // One-page treatment summary for a patient: key procedures, tests and medications.
 // Prints cleanly (Print / Save as PDF) to hand to the patient or another doctor.
 export default function PatientSummaryPage() {
+  const { profile: hospital } = useBranding();
   const params = useParams();
   const router = useRouter();
   const { currentUser, isLoading: authIsLoading } = useAuth();
@@ -163,6 +164,19 @@ export default function PatientSummaryPage() {
         <Button onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" /> Print / Save as PDF</Button>
       </div>
 
+      {/* Letterhead: the hospital's logo, name and contact details. */}
+      <div className="flex items-start gap-3 border-b-2 border-primary pb-3">
+        <HospitalMark className="h-14 w-14" />
+        <div className="min-w-0">
+          <p className="text-xl font-bold leading-tight">{hospital.name}</p>
+          {hospital.tagline && <p className="text-sm text-muted-foreground">{hospital.tagline}</p>}
+          <p className="text-xs text-muted-foreground">
+            {[hospital.address, hospital.phone && `Phone ${hospital.phone}`, hospital.email, hospital.website].filter(Boolean).join(' · ')}
+          </p>
+          {hospital.registrationNumber && <p className="text-xs text-muted-foreground">Registration no. {hospital.registrationNumber}</p>}
+        </div>
+      </div>
+
       <header className="flex items-start justify-between gap-4 border-b pb-4">
         <div>
           <p className="text-sm text-muted-foreground">Treatment Summary</p>
@@ -171,7 +185,6 @@ export default function PatientSummaryPage() {
             Patient ID {displayId}{age !== null ? ` · ${age} years` : ''}{patient.gender ? ` · ${patient.gender}` : ''} · Generated {format(new Date(), 'dd MMM yyyy')}
           </p>
         </div>
-        <div className="flex items-center gap-2 text-lg font-bold"><SevaLogo className="h-8 w-8" /> Seva</div>
       </header>
 
       <Card className="print:shadow-none print:border-0">
@@ -283,6 +296,7 @@ export default function PatientSummaryPage() {
           </dl>
         </CardContent>
       </Card>
+      <p className="text-center text-[11px] text-muted-foreground">Generated with Seva</p>
     </div>
   );
 }

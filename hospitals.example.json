@@ -1,0 +1,10 @@
+[
+  {
+    "name": "Sri Ram Hospital",
+    "databaseUrl": "postgresql://postgres.YOUR-PROJECT-REF:YOUR-DB-PASSWORD@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
+  },
+  {
+    "name": "Lakshmi Clinic",
+    "databaseUrl": "postgresql://postgres.ANOTHER-PROJECT-REF:ANOTHER-PASSWORD@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
+  }
+]

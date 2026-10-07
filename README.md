@@ -34,7 +34,7 @@ devices, protected by login and backed up.
 1. **Create a project** at supabase.com in region **South Asia (Mumbai)**. The Pro plan
    (about $25/month) is recommended for daily backups and no pausing.
 2. **Create the schema**: open *SQL Editor* and run each file in `supabase/migrations`, in
-   order (paste the contents, click *Run*). Files 2–9 are safe to run again, so when you
+   order (paste the contents, click *Run*). Files 2–10 are safe to run again, so when you
    update the app you can simply run them all again in order; never run file 1 a second time.
    1. `20261007000000_init.sql` (tables, security rules, photo storage)
    2. `20261007120000_upgrade_previous_schema.sql` (only changes anything on a database set up
@@ -47,6 +47,7 @@ devices, protected by login and backed up.
    8. `20261013000000_date_columns.sql` (date filters on the Payments and Billing lists)
    9. `20261014000000_payment_methods.sql` (managed payment methods, who processed each bill and
       payment, Financial Dashboard by period)
+   10. `20261015000000_hospital_profile.sql` (the hospital's name, logo and colour)
 3. **Auth settings** (*Authentication*):
    - *Sign In / Providers*: keep Email enabled and **turn off "Allow new users to sign up"**.
    - *URL Configuration*: set *Site URL* to your app's address (e.g. `https://clinic.example.com`)
@@ -119,6 +120,47 @@ devices, protected by login and backed up.
   (On time, Late, Left early, Absent, On duty) and every time record. Admins can add or correct
   entries for someone who forgot to clock in or out; these are marked *Manual* with the admin's
   name. Super Admin, Admin and Accounts see everyone; other staff see only their own.
+
+## Running Seva for several hospitals
+
+Every hospital gets **its own copy**: its own Supabase project (database, logins and files) and
+its own web address, all running the same code from this repository. Nothing is shared between
+hospitals, so one hospital's patients, staff, bills and logins can never appear at another, and
+each can be backed up, restored or moved on its own.
+
+**Adding a hospital** (about 30 minutes):
+
+1. **Supabase:** create a new project for the hospital (region Mumbai), then follow *Supabase
+   setup* above: run the migrations (or use the script below), set the Auth settings and create
+   the hospital's first Super Admin.
+2. **Vercel:** *Add New → Project*, import this same GitHub repository, and enter that hospital's
+   four environment variables (its own Supabase URL and keys; the Gemini key can be shared). Set
+   the function region to Mumbai (`bom1`) and add the hospital's domain, e.g.
+   `sriram.yourdomain.in` or the hospital's own. Then put that address into its Supabase *Site URL*
+   and *Redirect URLs*.
+3. **Branding:** the hospital's Super Admin logs in and opens **Organization Setup → Hospital
+   Profile**: name, short name, tagline, contact details, registration number, brand colour and
+   logo. They can upload their own logo or design one from the hospital's initials (shape,
+   colour and emblem), so every hospital has a distinct mark. It appears on the login page,
+   header, browser tab, phone app icon and printed treatment summaries, with a small "Powered by
+   Seva".
+
+**Updating every hospital:** merging to `main` redeploys all the Vercel projects automatically.
+When an update adds a database script, run it on every hospital at once:
+
+```bash
+cp hospitals.example.json hospitals.json   # once: list each hospital's database URL (never commit it)
+npm run migrate:hospitals -- --dry-run     # see what would run
+npm run migrate:hospitals                  # run it
+```
+
+The database URL is under *Project Settings → Database → Connection string* (session pooler) in
+each Supabase project. A hospital that fails (e.g. wrong password) is reported and the others
+still update.
+
+**Cost per hospital** (check current prices): a Supabase Pro project (about $25/month for the
+first, plus about $10/month compute for each extra project in the same organization) and its
+share of the Vercel Pro plan (priced per team member, not per project).
 
 ## Payment methods, who processed it, and filters
 

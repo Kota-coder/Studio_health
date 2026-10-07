@@ -12,7 +12,7 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Menu as MenuIcon, LayoutDashboard, FileText, CreditCard, Receipt, Pill, Archive, Truck, Users, FlaskConical, HeartHandshake, LogIn, LogOut, UserCircle, AreaChart, Database, Building2, CalendarClock, Wallet } from 'lucide-react';
+import { Menu as MenuIcon, LayoutDashboard, FileText, CreditCard, Receipt, Pill, Archive, Truck, Users, FlaskConical, HeartHandshake, LogIn, LogOut, UserCircle, AreaChart, Database, Building2, CalendarClock, Wallet, Hospital } from 'lucide-react';
 import React from 'react';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
@@ -43,6 +43,7 @@ const allMenuItems: MenuItemConfig[] = [
   { href: '/duty', label: 'Duty Roster & Attendance', icon: CalendarClock, allowedRoles: PAGE_ROLES.duty, isPrimary: true },
 
   // Organization Setup Links
+  { href: '/hospital-profile', label: 'Hospital Profile', icon: Hospital, allowedRoles: PAGE_ROLES.hospitalProfile, isPrimary: false },
   { href: '/patient-care', label: 'Patient Care Templates', icon: FileText, allowedRoles: PAGE_ROLES.patientCare, isPrimary: false },
   { href: '/medications', label: 'Medications', icon: Pill, allowedRoles: PAGE_ROLES.medications, isPrimary: false },
   { href: '/materials', label: 'Materials', icon: Archive, allowedRoles: PAGE_ROLES.materials, isPrimary: false },

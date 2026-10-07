@@ -17,6 +17,7 @@ import type { TreatmentTemplate } from '@/config/treatmentTemplates';
 import type { Department, DepartmentMembers } from '@/types/department';
 import type { AttendanceEntry, StaffShift } from '@/types/duty';
 import type { PaymentMethodOption } from '@/types/paymentMethod';
+import { DEFAULT_PROFILE, type HospitalProfile } from '@/lib/branding';
 
 type Row = Record<string, unknown>;
 
@@ -329,6 +330,32 @@ export function financialSummary(range: DateRange = {}): Promise<FinancialSummar
     return check(await db().rpc('financial_summary', { tz: timeZone, from_date: range.from ?? null, to_date: range.to ?? null })) as FinancialSummary;
   });
 }
+
+// ---------------------------------------------------------------------------
+// Hospital profile (name, logo, colour) — one row; see 20261015000000_hospital_profile.sql
+// ---------------------------------------------------------------------------
+
+export const hospitalProfile = {
+  async get(): Promise<HospitalProfile> {
+    const row = check(await db().from('hospital_profile').select('*').eq('id', 1).maybeSingle()) as Row | null;
+    return row ? { ...DEFAULT_PROFILE, ...fromRow<HospitalProfile>(row) } : DEFAULT_PROFILE;
+  },
+  async update(changes: Partial<HospitalProfile>): Promise<HospitalProfile> {
+    const row = check(await db().from('hospital_profile').update(toRow(changes)).eq('id', 1).select().single()) as Row;
+    return { ...DEFAULT_PROFILE, ...fromRow<HospitalProfile>(row) };
+  },
+  // Uploads PNGs into a new folder of the public "branding" bucket and returns the folder.
+  async uploadBranding(files: Record<string, Blob>): Promise<string> {
+    const folder = `v${Date.now()}`;
+    for (const [name, blob] of Object.entries(files)) {
+      const { error } = await db().storage.from('branding').upload(`${folder}/${name}`, blob, {
+        contentType: 'image/png', cacheControl: '31536000', upsert: false,
+      });
+      if (error) throw new Error(error.message);
+    }
+    return folder;
+  },
+};
 
 export async function countRows(tableName: 'patients' | 'staff'): Promise<number> {
   let query = db().from(tableName).select('id', { count: 'exact', head: true });

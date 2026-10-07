@@ -17,6 +17,7 @@ export const PAGE_ROLES = {
   staff: ["Super Admin", "Admin", "Doctor"],
   departments: ["Super Admin", "Admin"],
   paymentMethods: ["Super Admin"],
+  hospitalProfile: ["Super Admin"],
   duty: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist", "Accounts"],
   medicalTests: ["Super Admin", "Admin", "Doctor", "Nurse"],
   referringDoctors: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"],

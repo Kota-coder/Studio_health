@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { UserPlus } from 'lucide-react';
-import { SevaLogo } from '@/components/seva-logo';
+import { AuthBrandHeader } from '@/components/auth-brand-header';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
@@ -10,18 +10,13 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 // new staff member an invite to set their password. There is no self sign-up.
 export default function SignupPage() {
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-50 p-4">
+    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
       <Card className="w-full max-w-md shadow-2xl border-0 overflow-hidden">
-        <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 sm:p-8">
-          <div className="flex items-center justify-center gap-3">
-            <div className="bg-white rounded-full p-2 shadow-sm">
-              <SevaLogo className="h-10 w-10" />
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight">Seva</h1>
-          </div>
+        <CardHeader className="bg-primary text-primary-foreground p-6 sm:p-8">
+          <AuthBrandHeader />
         </CardHeader>
         <CardContent className="p-6 sm:p-8 text-center space-y-4">
-          <UserPlus className="mx-auto h-10 w-10 text-blue-600" />
+          <UserPlus className="mx-auto h-10 w-10 text-primary" />
           <h2 className="text-2xl font-semibold text-gray-800">Need an account?</h2>
           <p className="text-gray-500 text-sm">
             Staff accounts are created by a clinic admin. Ask them to add you in Staff Management;
