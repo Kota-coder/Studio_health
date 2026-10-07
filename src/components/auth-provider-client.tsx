@@ -12,9 +12,10 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Menu as MenuIcon, LayoutDashboard, FileText, CreditCard, Receipt, Pill, Archive, Truck, Users, FlaskConical, HeartHandshake, LogIn, LogOut, UserCircle, AreaChart } from 'lucide-react'; // Added AreaChart
+import { Menu as MenuIcon, LayoutDashboard, FileText, CreditCard, Receipt, Pill, Archive, Truck, Users, FlaskConical, HeartHandshake, LogIn, LogOut, UserCircle, AreaChart, Database } from 'lucide-react'; // Added AreaChart
 import React from 'react';
 import type { StaffRole } from '@/types/staff';
+import { PAGE_ROLES } from '@/config/permissions';
 
 // This component wraps AuthProvider and renders the menu based on auth state
 export function AuthProviderClient({ children }: { children: React.ReactNode }) {
@@ -35,19 +36,20 @@ interface MenuItemConfig {
 
 const allMenuItems: MenuItemConfig[] = [
   // Primary Patient-Facing & Operational Links
-  { href: '/dashboard', label: 'Patient Dashboard', icon: LayoutDashboard, allowedRoles: ["Admin", "Doctor", "Nurse", "Receptionist"], isPrimary: true },
-  { href: '/billing', label: 'Billing', icon: CreditCard, allowedRoles: ["Admin", "Doctor", "Nurse", "Receptionist"], isPrimary: true },
-  { href: '/payments', label: 'Payments', icon: Receipt, allowedRoles: ["Admin", "Doctor"], isPrimary: true },
-  { href: '/financial-dashboard', label: 'Financial Dashboard', icon: AreaChart, allowedRoles: ["Admin", "Doctor"], isPrimary: true },
+  { href: '/dashboard', label: 'Patient Dashboard', icon: LayoutDashboard, allowedRoles: PAGE_ROLES.dashboard, isPrimary: true },
+  { href: '/billing', label: 'Billing', icon: CreditCard, allowedRoles: PAGE_ROLES.billing, isPrimary: true },
+  { href: '/payments', label: 'Payments', icon: Receipt, allowedRoles: PAGE_ROLES.payments, isPrimary: true },
+  { href: '/financial-dashboard', label: 'Financial Dashboard', icon: AreaChart, allowedRoles: PAGE_ROLES.financialDashboard, isPrimary: true },
 
   // Organization Setup Links
-  { href: '/patient-care', label: 'Patient Care Templates', icon: FileText, allowedRoles: ["Admin", "Doctor", "Nurse"], isPrimary: false },
-  { href: '/medications', label: 'Medications', icon: Pill, allowedRoles: ["Admin", "Doctor", "Nurse"], isPrimary: false },
-  { href: '/materials', label: 'Materials', icon: Archive, allowedRoles: ["Admin", "Doctor", "Nurse"], isPrimary: false },
-  { href: '/vendors', label: 'Material Vendors', icon: Truck, allowedRoles: ["Admin", "Doctor", "Nurse"], isPrimary: false },
-  { href: '/staff', label: 'Staff Management', icon: Users, allowedRoles: ["Admin", "Doctor"], isPrimary: false },
-  { href: '/medical-tests', label: 'Medical Tests Catalog', icon: FlaskConical, allowedRoles: ["Admin", "Doctor", "Nurse"], isPrimary: false },
-  { href: '/referring-doctors', label: 'Referring Doctors', icon: HeartHandshake, allowedRoles: ["Admin", "Doctor", "Nurse", "Receptionist"], isPrimary: false },
+  { href: '/patient-care', label: 'Patient Care Templates', icon: FileText, allowedRoles: PAGE_ROLES.patientCare, isPrimary: false },
+  { href: '/medications', label: 'Medications', icon: Pill, allowedRoles: PAGE_ROLES.medications, isPrimary: false },
+  { href: '/materials', label: 'Materials', icon: Archive, allowedRoles: PAGE_ROLES.materials, isPrimary: false },
+  { href: '/vendors', label: 'Material Vendors', icon: Truck, allowedRoles: PAGE_ROLES.vendors, isPrimary: false },
+  { href: '/staff', label: 'Staff Management', icon: Users, allowedRoles: PAGE_ROLES.staff, isPrimary: false },
+  { href: '/medical-tests', label: 'Medical Tests Catalog', icon: FlaskConical, allowedRoles: PAGE_ROLES.medicalTests, isPrimary: false },
+  { href: '/referring-doctors', label: 'Referring Doctors', icon: HeartHandshake, allowedRoles: PAGE_ROLES.referringDoctors, isPrimary: false },
+  { href: '/admin', label: 'Sample Data & Reset', icon: Database, allowedRoles: PAGE_ROLES.admin, isPrimary: false },
 ];
 
 

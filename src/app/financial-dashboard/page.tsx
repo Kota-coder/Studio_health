@@ -11,21 +11,23 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { ChartContainer, ChartTooltip as ShadCNChartTooltip, ChartTooltipContent as ShadCNChartTooltipContent, ChartLegend as ShadCNChartLegend, ChartLegendContent as ShadCNChartLegendContent, type ChartConfig } from "@/components/ui/chart";
 import { AreaChart, DollarSign, TrendingUp, TrendingDown, AlertTriangle, Receipt } from 'lucide-react'; // Added Receipt
 import { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval, isWithinInterval, subMonths } from 'date-fns';
+import type { StaffRole } from '@/types/staff';
+import { PAGE_ROLES } from '@/config/permissions';
 
-const ALLOWED_ROLES = ["Admin", "Doctor", "Accounts"];
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.financialDashboard;
 
 const chartColorMapping: { [key: string]: string } = {
-  Paid: "var(--chart-2)", // Greenish
-  Unpaid: "var(--chart-1)", // Reddish/Orange
-  "Partially Paid": "var(--chart-4)", // Yellowish
-  Cancelled: "var(--chart-5)", // Grayish/Bluish
+  Paid: "hsl(var(--chart-2))", // Greenish
+  Unpaid: "hsl(var(--chart-1))", // Reddish/Orange
+  "Partially Paid": "hsl(var(--chart-4))", // Yellowish
+  Cancelled: "hsl(var(--chart-5))", // Grayish/Bluish
 
-  Pharmacy: "var(--chart-1)",
-  Treatment: "var(--chart-2)",
-  "Referral/CC": "var(--chart-1)",
-  Material: "var(--chart-2)",
-  Salary: "var(--chart-3)",
-  Other: "var(--chart-4)",
+  Pharmacy: "hsl(var(--chart-1))",
+  Treatment: "hsl(var(--chart-2))",
+  "Referral/CC": "hsl(var(--chart-1))",
+  Material: "hsl(var(--chart-2))",
+  Salary: "hsl(var(--chart-3))",
+  Other: "hsl(var(--chart-4))",
 };
 
 
@@ -87,7 +89,7 @@ export default function FinancialDashboardPage() {
     const billStatusChartData = Object.entries(billStatusCounts).map(([name, count]) => ({
       name,
       count,
-      fill: chartColorMapping[name] || "var(--chart-3)",
+      fill: chartColorMapping[name] || "hsl(var(--chart-3))",
     }));
     
     const billTypeAmounts = bills.reduce((acc, bill) => {
@@ -99,7 +101,7 @@ export default function FinancialDashboardPage() {
     const billTypeChartData = Object.entries(billTypeAmounts).map(([name, total]) => ({
         name,
         total,
-        fill: chartColorMapping[name] || "var(--chart-3)",
+        fill: chartColorMapping[name] || "hsl(var(--chart-3))",
     }));
 
 
@@ -112,7 +114,7 @@ export default function FinancialDashboardPage() {
     const paymentTypeChartData = Object.entries(paymentTypeAmounts).map(([name, total]) => ({
       name,
       total,
-      fill: chartColorMapping[name] || "var(--chart-3)",
+      fill: chartColorMapping[name] || "hsl(var(--chart-3))",
     }));
 
     // Monthly Data for Line Chart (last 6 months)
@@ -291,9 +293,9 @@ export default function FinancialDashboardPage() {
                     <YAxis tickFormatter={(value) => `₹${value/1000}k`} tickLine={false} axisLine={false} stroke="#888888" fontSize={12} />
                     <Tooltip content={<CustomTooltip />} />
                     <Legend content={<CustomLegend />} />
-                    <Line type="monotone" dataKey="Billed" stroke="var(--chart-1)" strokeWidth={2} dot={{r:4, fill:"var(--chart-1)"}} activeDot={{r:6}} />
-                    <Line type="monotone" dataKey="Collected" stroke="var(--chart-2)" strokeWidth={2} dot={{r:4, fill:"var(--chart-2)"}} activeDot={{r:6}}/>
-                    <Line type="monotone" dataKey="Spent" stroke="var(--chart-3)" strokeWidth={2} dot={{r:4, fill:"var(--chart-3)"}} activeDot={{r:6}}/>
+                    <Line type="monotone" dataKey="Billed" stroke="hsl(var(--chart-1))" strokeWidth={2} dot={{r:4, fill:"hsl(var(--chart-1))"}} activeDot={{r:6}} />
+                    <Line type="monotone" dataKey="Collected" stroke="hsl(var(--chart-2))" strokeWidth={2} dot={{r:4, fill:"hsl(var(--chart-2))"}} activeDot={{r:6}}/>
+                    <Line type="monotone" dataKey="Spent" stroke="hsl(var(--chart-3))" strokeWidth={2} dot={{r:4, fill:"hsl(var(--chart-3))"}} activeDot={{r:6}}/>
                   </LineChart>
                 </ResponsiveContainer>
               </ChartContainer>

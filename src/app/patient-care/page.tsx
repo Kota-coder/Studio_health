@@ -23,9 +23,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { PAGE_ROLES } from '@/config/permissions';
 
 const USER_TEMPLATES_STORAGE_KEY = 'userDefinedTreatmentTemplates';
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse"];
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.patientCare;
 
 
 export default function PatientCarePage() {

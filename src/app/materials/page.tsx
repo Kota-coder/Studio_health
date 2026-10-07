@@ -12,10 +12,11 @@ import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Edit3, Archive, ArrowLeft, Upload } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
+import { PAGE_ROLES } from '@/config/permissions';
 
 const MATERIALS_STORAGE_KEY = 'materialsData';
 const MATERIAL_ID_COUNTER_KEY = 'nextMaterialId';
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse"];
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.materials;
 
 export default function MaterialsPage() {
   const router = useRouter();

@@ -13,10 +13,11 @@ import { ReferringDoctor } from '@/types/referringDoctor';
 import { ArrowLeft, Save, HeartHandshake } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
+import { PAGE_ROLES } from '@/config/permissions';
 
 const LOCAL_STORAGE_KEY = 'referringDoctorsData';
 const ID_COUNTER_KEY = 'nextReferringDoctorId';
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse", "Receptionist"];
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.referringDoctors;
 
 const isValidEmailOptional = (email?: string): boolean => {
   if (!email || email.trim() === "") return true;

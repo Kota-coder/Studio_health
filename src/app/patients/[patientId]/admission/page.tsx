@@ -16,6 +16,8 @@ import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Save, Paperclip, UploadCloud, UserPlus, X } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffMember } from '@/types/staff';
+import { addAuditLogEntry } from '@/lib/audit';
+import { imageFilesToDataUrls } from '@/lib/image';
 
 const REASON_FOR_VISIT_OPTIONS: string[] = [
   "Routine Checkup",
@@ -40,28 +42,6 @@ const PATIENT_ADMISSION_CONDITIONS: PatientAdmissionCondition[] = [
 ];
 
 // Helper function to add audit log entries
-function addAuditLogEntry(
-  patientToUpdate: Patient,
-  actionType: string,
-  changeDetails: string,
-  currentUser: StaffMember | null
-): Patient {
-  if (!currentUser) return patientToUpdate;
-
-  const newLogEntry: AuditLogEntry = {
-    id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-    timestamp: new Date().toISOString(),
-    staffId: currentUser.id,
-    staffName: currentUser.name,
-    actionType,
-    changeDetails,
-  };
-
-  return {
-    ...patientToUpdate,
-    auditLog: [...(patientToUpdate.auditLog || []), newLogEntry],
-  };
-}
 
 
 export default function AdmissionNotesPage() {
@@ -144,25 +124,9 @@ export default function AdmissionNotesPage() {
     const files = event.target.files;
     if (files && files.length > 0) {
         const fileArray = Array.from(files);
-        const oversizedFiles = fileArray.filter(f => f.size > 2 * 1024 * 1024);
-        
-        if (oversizedFiles.length > 0) {
-            toast({ title: "File Too Large", description: `${oversizedFiles.length} file(s) exceed 2MB limit.`, variant: "destructive" });
-            if(event.target) event.target.value = "";
-            return;
-        }
+        const readers = imageFilesToDataUrls(fileArray);
 
-        const readers = fileArray.map(file => {
-            return new Promise<string>((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    resolve(reader.result as string);
-                };
-                reader.readAsDataURL(file);
-            });
-        });
-
-        Promise.all(readers).then(results => {
+        readers.then(results => {
             setInitialObservationAttachments(prev => [...prev, ...results]);
         });
     }
@@ -337,7 +301,7 @@ export default function AdmissionNotesPage() {
           </div>
 
           <div>
-            <Label htmlFor="initialObservationAttachment">Initial Observation Attachments (Optional, max 2MB each)</Label>
+            <Label htmlFor="initialObservationAttachment">Initial Observation Attachments (Optional, images are resized automatically)</Label>
             <div className="flex items-center gap-3 mt-1">
                 <Input
                 id="initialObservationAttachment"

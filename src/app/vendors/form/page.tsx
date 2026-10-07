@@ -13,10 +13,11 @@ import { Vendor } from '@/types/vendor';
 import { ArrowLeft, Save, Truck } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
+import { PAGE_ROLES } from '@/config/permissions';
 
 const VENDORS_STORAGE_KEY = 'materialVendorsData';
 const VENDOR_ID_COUNTER_KEY = 'nextVendorId';
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse"];
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.vendors;
 
 const isValidEmailOptional = (email?: string): boolean => {
   if (!email || email.trim() === "") return true; // Optional

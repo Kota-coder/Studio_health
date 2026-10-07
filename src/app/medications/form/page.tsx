@@ -15,12 +15,13 @@ import { TreatmentTemplate, TREATMENT_TEMPLATES } from '@/config/treatmentTempla
 import { ArrowLeft, Save, Pill } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
+import { PAGE_ROLES } from '@/config/permissions';
 
 
 const MEDICATIONS_STORAGE_KEY = 'medicationsData';
 const MEDICATION_ID_COUNTER_KEY = 'nextMedicationId';
 const USER_TEMPLATES_STORAGE_KEY = 'userDefinedTreatmentTemplates';
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse"];
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.medications;
 
 
 export default function MedicationFormPage() {

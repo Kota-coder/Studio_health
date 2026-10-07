@@ -12,9 +12,10 @@ import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Edit3, Users, ArrowLeft, Upload } from 'lucide-react';
 import { format, parse, isValid } from 'date-fns';
 import { useAuth } from '@/context/AuthContext'; 
+import { PAGE_ROLES } from '@/config/permissions';
 
 const SYSTEM_STAFF_ROLES: StaffRole[] = ["Doctor", "Nurse", "Admin", "Receptionist"]; // Renamed for clarity
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor"]; // Added "Doctor"
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.staff;
 
 export default function StaffPage() {
   const router = useRouter();
@@ -136,6 +137,8 @@ export default function StaffPage() {
     let nextIdStr = localStorage.getItem('nextStaffId') || '1';
     let nextIdNum = 1;
     try { nextIdNum = parseInt(nextIdStr, 10); } catch { /* keep 1 */ }
+    // Never reuse an id that already exists (e.g. after seed data was loaded)
+    nextIdNum = Math.max(nextIdNum || 1, ...staffMembers.map(s => Number(s.id) + 1).filter(Number.isFinite));
 
     let importedCount = 0;
     let failedCount = 0;

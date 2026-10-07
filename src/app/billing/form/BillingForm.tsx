@@ -27,6 +27,8 @@ import {
 } from "@/components/ui/accordion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { addAuditLogEntry } from '@/lib/audit';
+import { imageFilesToDataUrls } from '@/lib/image';
 
 
 const PAYMENT_METHODS: PaymentMethod[] = ["Cash", "UPI", "Online/Card", "Arogyasree", "Insurance", "Other"];
@@ -37,28 +39,6 @@ const BILL_TYPES: { value: BillType; label: string; icon: React.ElementType }[] 
 ];
 
 // Helper function to add audit log entries for Bills
-function addBillAuditLogEntry(
-  billToUpdate: Bill,
-  actionType: string,
-  changeDetails: string,
-  currentUser: StaffMember | null
-): Bill {
-  if (!currentUser) return billToUpdate;
-
-  const newLogEntry: AuditLogEntry = {
-    id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-    timestamp: new Date().toISOString(),
-    staffId: currentUser.id,
-    staffName: currentUser.name,
-    actionType,
-    changeDetails,
-  };
-
-  return {
-    ...billToUpdate,
-    auditLog: [...(billToUpdate.auditLog || []), newLogEntry],
-  };
-}
 
 export default function BillingForm() {
   const router = useRouter();
@@ -329,25 +309,9 @@ export default function BillingForm() {
     const files = event.target.files;
     if (files && files.length > 0) {
         const fileArray = Array.from(files);
-        const oversizedFiles = fileArray.filter(f => f.size > 2 * 1024 * 1024);
-        
-        if (oversizedFiles.length > 0) {
-            toast({ title: "File Too Large", description: `${oversizedFiles.length} file(s) exceed 2MB limit.`, variant: "destructive" });
-            if(event.target) event.target.value = "";
-            return;
-        }
+        const readers = imageFilesToDataUrls(fileArray);
 
-        const readers = fileArray.map(file => {
-            return new Promise<string>((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    resolve(reader.result as string);
-                };
-                reader.readAsDataURL(file);
-            });
-        });
-
-        Promise.all(readers).then(results => {
+        readers.then(results => {
             setBillAttachments(prev => [...prev, ...results]);
         });
     }
@@ -459,7 +423,7 @@ export default function BillingForm() {
             if (paymentStatus === "Paid" && billToUpdate.paymentStatus !== "Paid") {
                 auditDetails += ` Marked as Paid on ${finalPaymentDateString}.`;
             }
-            updatedBill = addBillAuditLogEntry(updatedBill, auditActionType, auditDetails, currentUser);
+            updatedBill = addAuditLogEntry(updatedBill, auditActionType, auditDetails, currentUser);
             allBills = allBills.map(b => b.id === currentBillId ? updatedBill : b);
             toast({ title: "Success", description: `Bill ${currentBillId} updated.` });
         } else {
@@ -476,7 +440,7 @@ export default function BillingForm() {
          if (paymentStatus === "Paid") {
             auditDetails += ` Marked as Paid on ${finalPaymentDateString}.`;
         }
-        newBill = addBillAuditLogEntry(newBill, auditActionType, auditDetails, currentUser);
+        newBill = addAuditLogEntry(newBill, auditActionType, auditDetails, currentUser);
         allBills.push(newBill);
         localStorage.setItem('nextBillIdNumber', (nextBillIdNumber + 1).toString());
         toast({ title: "Success", description: `New bill ${newBillId} created.` });
@@ -726,7 +690,7 @@ export default function BillingForm() {
           </div>
 
            <div>
-            <Label htmlFor="billAttachment">Attachments (Optional, max 2MB each)</Label>
+            <Label htmlFor="billAttachment">Attachments (Optional, images are resized automatically)</Label>
             <div className="flex items-center gap-3 mt-1">
                 <input 
                     type="file" 

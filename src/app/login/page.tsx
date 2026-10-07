@@ -11,6 +11,8 @@ import { Eye, EyeOff, Heart } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
+import { format } from 'date-fns';
+import type { StaffMember } from '@/types/staff';
 
 export default function LoginPage() {
   const [identifier, setIdentifier] = useState('');
@@ -36,14 +38,15 @@ export default function LoginPage() {
 
     const storedStaff = localStorage.getItem('staffMembers');
     if (!storedStaff || JSON.parse(storedStaff).length === 0) {
-      const defaultAdmin = {
-        id: "admin-1",
+      const defaultAdmin: StaffMember = {
+        id: 1,
         name: "Admin User",
         email: "admin@clinic.com",
         phoneNumber: "1234567890",
         role: "Admin",
-        dateJoined: new Date().toISOString()
+        hireDate: format(new Date(), 'dd/MM/yyyy'),
       };
+      localStorage.setItem('nextStaffId', '2');
       localStorage.setItem('staffMembers', JSON.stringify([defaultAdmin]));
     }
 

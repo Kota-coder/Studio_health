@@ -17,8 +17,9 @@ import { format, parseISO, isValid, parse } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
 import { cn } from "@/lib/utils";
 import type { StaffRole } from '@/types/staff';
+import { PAGE_ROLES } from '@/config/permissions';
 
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Accounts"];
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.billing;
 const ALL_PAYMENT_STATUSES: (PaymentStatus | "All")[] = ["All", "Paid", "Unpaid", "Partially Paid", "Cancelled"];
 
 export default function BillingOverviewPage() {

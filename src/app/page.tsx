@@ -18,6 +18,8 @@ import { format, parse, isValid } from 'date-fns';
 import type { Patient, PatientCondition, AuditLogEntry } from '@/types/patient';
 import { StaffMember } from '@/types/staff';
 import { useAuth } from '@/context/AuthContext';
+import { addAuditLogEntry } from '@/lib/audit';
+import { imageFilesToDataUrls } from '@/lib/image';
 
 
 const ID_CARD_TYPES = [
@@ -54,28 +56,6 @@ const isValidMobileNumber = (number: string) => {
 };
 
 // Helper function to add audit log entries
-function addAuditLogEntry(
-  patientToUpdate: Patient,
-  actionType: string,
-  changeDetails: string,
-  currentUser: StaffMember | null
-): Patient {
-  if (!currentUser) return patientToUpdate;
-
-  const newLogEntry: AuditLogEntry = {
-    id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-    timestamp: new Date().toISOString(),
-    staffId: currentUser.id,
-    staffName: currentUser.name,
-    actionType,
-    changeDetails,
-  };
-
-  return {
-    ...patientToUpdate,
-    auditLog: [...(patientToUpdate.auditLog || []), newLogEntry],
-  };
-}
 
 export default function Home() {
   const router = useRouter();
@@ -215,20 +195,7 @@ export default function Home() {
     input.onchange = async (event: any) => {
       const files = Array.from(event.target.files || []) as File[];
       if (files.length > 0) {
-        const newImages: string[] = [];
-        for (const file of files) {
-          const reader = new FileReader();
-          await new Promise((resolve) => {
-            reader.onload = (e) => {
-              const result = e.target?.result;
-              if (typeof result === 'string') {
-                newImages.push(result);
-              }
-              resolve(null);
-            };
-            reader.readAsDataURL(file);
-          });
-        }
+        const newImages = await imageFilesToDataUrls(files);
         setIdCardImages(prev => [...prev, ...newImages]);
         setDetailsExtracted(false);
         toast({ title: "ID Card Images Uploaded", description: `${files.length} image(s) added successfully.` });
@@ -245,20 +212,7 @@ export default function Home() {
     input.onchange = async (event: any) => {
       const files = Array.from(event.target.files || []) as File[];
       if (files.length > 0) {
-        const newPhotos: string[] = [];
-        for (const file of files) {
-          const reader = new FileReader();
-          await new Promise((resolve) => {
-            reader.onload = (e) => {
-              const result = e.target?.result;
-              if (typeof result === 'string') {
-                newPhotos.push(result);
-              }
-              resolve(null);
-            };
-            reader.readAsDataURL(file);
-          });
-        }
+        const newPhotos = await imageFilesToDataUrls(files);
         setPatientPhotos(prev => [...prev, ...newPhotos]);
         toast({ title: "Patient Photos Uploaded", description: `${files.length} photo(s) added successfully.` });
       }
@@ -364,7 +318,8 @@ export default function Home() {
 
 
   const saveIdCardImageToFile = (currentImageSrc: string, currentIdCardType: string, currentFirstName: string) => {
-    const filename = `${currentFirstName.replace(/ /g, '_')}_${currentIdCardType.replace(/ /g, '_')}_${Date.now()}.png`;
+    const extension = currentImageSrc.startsWith('data:image/jpeg') ? 'jpg' : 'png';
+    const filename = `${currentFirstName.replace(/ /g, '_')}_${currentIdCardType.replace(/ /g, '_')}_${Date.now()}.${extension}`;
 
     const link = document.createElement('a');
     link.href = currentImageSrc;

@@ -4,6 +4,7 @@ import {Geist, Geist_Mono} from 'next/font/google';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { AuthProviderClient, AppHeaderMenu } from '@/components/auth-provider-client'; // Import AppHeaderMenu
 
 const geistSans = Geist({
@@ -45,7 +46,9 @@ export default function RootLayout({
             </div>
           </header>
           <main className="flex-1 py-6">
-            {children}
+            <Suspense fallback={<div className="flex justify-center items-center py-20 text-muted-foreground">Loading...</div>}>
+              {children}
+            </Suspense>
           </main>
           <Toaster />
         </AuthProviderClient>

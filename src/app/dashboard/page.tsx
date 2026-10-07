@@ -26,6 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { addAuditLogEntry } from '@/lib/audit';
 
 const CONDITION_ORDER: PatientCondition[] = ["Critical", "Medium", "Low", "Unassigned", "Discharged"];
 const ALL_CONDITIONS_FILTER: (PatientCondition | "All")[] = ["All", ...CONDITION_ORDER];
@@ -40,28 +41,6 @@ const CONDITION_CONFIG: Record<PatientCondition, { icon: React.ElementType, colo
 };
 
 // Helper function to add audit log entries
-function addAuditLogEntry(
-  patientToUpdate: Patient,
-  actionType: string,
-  changeDetails: string,
-  currentUser: StaffMember | null
-): Patient {
-  if (!currentUser) return patientToUpdate;
-
-  const newLogEntry: AuditLogEntry = {
-    id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-    timestamp: new Date().toISOString(),
-    staffId: currentUser.id,
-    staffName: currentUser.name,
-    actionType,
-    changeDetails,
-  };
-
-  return {
-    ...patientToUpdate,
-    auditLog: [...(patientToUpdate.auditLog || []), newLogEntry],
-  };
-}
 
 export default function DashboardPage() {
   const { currentUser, isLoading: authIsLoading } = useAuth();

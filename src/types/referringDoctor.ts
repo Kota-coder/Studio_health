@@ -1,8 +1,8 @@
 export interface ReferringDoctor {
   id: number;
   name: string;
-  specialization?: string;
-  hospital?: string;
-  phone?: string;
+  location: string; // Hospital / clinic name
+  phoneNumber?: string;
   email?: string;
+  specialization?: string;
 }

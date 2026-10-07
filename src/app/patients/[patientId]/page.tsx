@@ -15,6 +15,7 @@ import { StaffMember } from '@/types/staff';
 import { ReferringDoctor } from '@/types/referringDoctor';
 import { Bill, BillItem } from '@/types/billing';
 import { Medication } from '@/types/medication';
+import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 import { useToast } from '@/hooks/use-toast';
 import { format, parse, parseISO, isValid as isValidDate } from 'date-fns';
 import { ArrowLeft, PlusCircle, Users, ChevronsUpDown, Edit, Paperclip, FlaskConical, CalendarDays, UserCircle as UserCircleIcon, CreditCard, Eye, Activity, Edit3Icon, AlertTriangle, Files, ClipboardList, BriefcaseMedical, CheckCircle2, HelpCircle, Info, Phone, Mail, Home, User, UserSquare2, FileText, CheckCircle, AlertCircle, Pill, Trash2, ShoppingCart, ShieldCheck, History, Camera as CameraIcon, UploadCloud, X } from 'lucide-react';
@@ -51,6 +52,8 @@ import { useAuth } from '@/context/AuthContext';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription as AlertDesc, AlertTitle as AlertTitleComponent } from '@/components/ui/alert';
+import { addAuditLogEntry } from '@/lib/audit';
+import { imageFilesToDataUrls } from '@/lib/image';
 
 
 const USER_TEMPLATES_STORAGE_KEY = 'userDefinedTreatmentTemplates';
@@ -64,28 +67,6 @@ const CONDITION_CONFIG: Record<PatientCondition, { icon: React.ElementType, badg
   "Unassigned": { icon: HelpCircle, badgeColor: "bg-gray-100", textColor: "text-gray-700", title: "Condition Unassigned" },
 };
 
-function addAuditLogEntry(
-  patientToUpdate: Patient,
-  actionType: string,
-  changeDetails: string,
-  currentUser: StaffMember | null
-): Patient {
-  if (!currentUser) return patientToUpdate;
-
-  const newLogEntry: AuditLogEntry = {
-    id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-    timestamp: new Date().toISOString(),
-    staffId: currentUser.id,
-    staffName: currentUser.name,
-    actionType,
-    changeDetails,
-  };
-
-  return {
-    ...patientToUpdate,
-    auditLog: [...(patientToUpdate.auditLog || []), newLogEntry],
-  };
-}
 
 
 export default function PatientDetailPage() {
@@ -330,23 +311,7 @@ export default function PatientDetailPage() {
   const handleNoteFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     if (files.length > 0) {
-        const newAttachments: string[] = [];
-        for (const file of files) {
-            if (file.size > 2 * 1024 * 1024) {
-                toast({ title: "File Too Large", description: `${file.name} exceeds 2MB limit and was skipped.`, variant: "destructive" });
-                continue;
-            }
-            const reader = new FileReader();
-            await new Promise((resolve) => {
-                reader.onloadend = () => {
-                    if (reader.result) {
-                        newAttachments.push(reader.result as string);
-                    }
-                    resolve(null);
-                };
-                reader.readAsDataURL(file);
-            });
-        }
+        const newAttachments = await imageFilesToDataUrls(files);
         setNewNoteAttachments(prev => [...prev, ...newAttachments]);
         if (newAttachments.length > 0) {
             toast({ title: "Attachments Added", description: `${newAttachments.length} file(s) uploaded successfully.` });
@@ -571,23 +536,7 @@ export default function PatientDetailPage() {
   const handleTestFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     if (files.length > 0) {
-        const newAttachments: string[] = [];
-        for (const file of files) {
-            if (file.size > 2 * 1024 * 1024) {
-                toast({ title: "File Too Large", description: `${file.name} exceeds 2MB limit and was skipped.`, variant: "destructive" });
-                continue;
-            }
-            const reader = new FileReader();
-            await new Promise((resolve) => {
-                reader.onloadend = () => {
-                    if (reader.result) {
-                        newAttachments.push(reader.result as string);
-                    }
-                    resolve(null);
-                };
-                reader.readAsDataURL(file);
-            });
-        }
+        const newAttachments = await imageFilesToDataUrls(files);
         setNewTestAttachments(prev => [...prev, ...newAttachments]);
         if (newAttachments.length > 0) {
             toast({ title: "Attachments Added", description: `${newAttachments.length} file(s) uploaded successfully.` });
@@ -968,7 +917,7 @@ export default function PatientDetailPage() {
                                 <Input
                                     id={`templateField-${field.fieldId}`}
                                     type={field.fieldType}
-                                    value={dynamicTemplateFieldValues[field.fieldId] || ""}
+                                    value={String(dynamicTemplateFieldValues[field.fieldId] ?? "")}
                                     onChange={(e) => handleDynamicTemplateFieldChange(field.fieldId, field.fieldType === 'number' ? parseFloat(e.target.value) || "" : e.target.value)}
                                     placeholder={field.placeholder}
                                     min={field.fieldType === 'number' ? 0 : undefined}
@@ -1059,7 +1008,7 @@ export default function PatientDetailPage() {
                     </div>
 
                     <div className="mt-3">
-                        <Label htmlFor="newNoteAttachment">Attachments (Optional, max 2MB each)</Label>
+                        <Label htmlFor="newNoteAttachment">Attachments (Optional, images are resized automatically)</Label>
                         <div className="flex items-center gap-3 mt-1">
                             <input
                                 type="file"
@@ -1260,7 +1209,7 @@ export default function PatientDetailPage() {
                                 <Input
                                     id={`testField-${field.id}`}
                                     type={field.type}
-                                    value={dynamicTestFieldValues[field.id] || ""}
+                                    value={String(dynamicTestFieldValues[field.id] ?? "")}
                                     onChange={(e) => handleDynamicTestFieldChange(field.id, field.type === 'number' ? parseFloat(e.target.value) || "" : e.target.value)}
                                     placeholder={field.placeholder}
                                     min={field.type === 'number' ? 0 : undefined}
@@ -1311,7 +1260,7 @@ export default function PatientDetailPage() {
                       <Textarea id="newTestNotes" value={newTestNotes} onChange={(e) => setNewTestNotes(e.target.value)} placeholder="Additional general notes for the test..." rows={2} />
                     </div>
                     <div>
-                        <Label htmlFor="newTestAttachment">Attachments (Optional, max 2MB each)</Label>
+                        <Label htmlFor="newTestAttachment">Attachments (Optional, images are resized automatically)</Label>
                         <div className="flex items-center gap-3 mt-1">
                             <input
                                 type="file"

@@ -25,6 +25,7 @@ import { ArrowLeft, Save, Receipt, UserPlus, Briefcase, List, PlusCircle, Trash2
 import { format, parse, isValid, parseISO } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { addAuditLogEntry } from '@/lib/audit';
 
 
 const ALLOWED_ROLES: AppStaffRole[] = ["Admin"];
@@ -42,28 +43,6 @@ const PAYMENT_TYPES: PaymentType[] = ["Referral/CC", "Material", "Pharmacy", "Sa
 const PAYMENT_METHODS_SPENT: PaymentMethodSpent[] = ["Cash", "Cheque", "Bank Transfer", "UPI", "Card", "Other"];
 
 
-function addPaymentAuditLogEntry(
-  paymentToUpdate: Payment,
-  actionType: string,
-  changeDetails: string,
-  currentUser: StaffMember | null
-): Payment {
-  if (!currentUser) return paymentToUpdate;
-
-  const newLogEntry: AuditLogEntry = {
-    id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
-    timestamp: new Date().toISOString(),
-    staffId: currentUser.id,
-    staffName: currentUser.name,
-    actionType,
-    changeDetails,
-  };
-
-  return {
-    ...paymentToUpdate,
-    auditLog: [...(paymentToUpdate.auditLog || []), newLogEntry],
-  };
-}
 
 export default function PaymentFormPage() {
   const router = useRouter();
@@ -494,7 +473,7 @@ export default function PaymentFormPage() {
              if(paymentType === "Material" && currentPurchasedMaterials.length > 0) {
                 auditDetails += ` Material items listed: ${currentPurchasedMaterials.length}.`;
             }
-            updatedPayment = addPaymentAuditLogEntry(updatedPayment, auditActionType, auditDetails, currentUser);
+            updatedPayment = addAuditLogEntry(updatedPayment, auditActionType, auditDetails, currentUser);
             allPayments = allPayments.map(p => p.id === currentPaymentIdState ? updatedPayment : p);
             toast({ title: "Success", description: `Payment ${currentPaymentIdState} updated.` });
         } else {
@@ -525,7 +504,7 @@ export default function PaymentFormPage() {
         if(paymentType === "Material" && currentPurchasedMaterials.length > 0) {
             auditDetails += ` Material items listed: ${currentPurchasedMaterials.length}.`;
         }
-        newPayment = addPaymentAuditLogEntry(newPayment, auditActionType, auditDetails, currentUser);
+        newPayment = addAuditLogEntry(newPayment, auditActionType, auditDetails, currentUser);
         allPayments.push(newPayment);
         localStorage.setItem(NEXT_PAYMENT_ID_KEY, (nextIdNum + 1).toString());
         toast({ title: "Success", description: `New payment ${newPaymentId} recorded.` });
@@ -744,7 +723,7 @@ export default function PaymentFormPage() {
                         <SelectContent>
                           {availableMedications.map(med => (
                             <SelectItem key={med.id} value={med.id}>
-                              {med.name} (List: ₹{(med.listPriceSnapshot || med.listPrice || 0).toFixed(2)})
+                              {med.name} (List: ₹{(med.listPrice || 0).toFixed(2)})
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -811,7 +790,7 @@ export default function PaymentFormPage() {
                         <SelectContent>
                           {availableMaterials.map(mat => (
                             <SelectItem key={mat.id} value={mat.id}>
-                              {mat.name} (List: ₹{(mat.listPriceSnapshot || mat.listPrice || 0).toFixed(2)})
+                              {mat.name} (List: ₹{(mat.listPrice || 0).toFixed(2)})
                             </SelectItem>
                           ))}
                         </SelectContent>

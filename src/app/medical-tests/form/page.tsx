@@ -13,11 +13,12 @@ import { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 import { ArrowLeft, Save, FlaskConical } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
+import { PAGE_ROLES } from '@/config/permissions';
 
 
 const CATALOG_STORAGE_KEY = 'medicalTestCatalog';
 const CATALOG_ID_COUNTER_KEY = 'nextMedicalTestCatalogId';
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse"];
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.medicalTests;
 
 export default function MedicalTestCatalogFormPage() {
   const router = useRouter();

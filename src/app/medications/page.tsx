@@ -12,10 +12,11 @@ import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Edit3, Pill, ArrowLeft, Upload } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
+import { PAGE_ROLES } from '@/config/permissions';
 
 const MEDICATIONS_STORAGE_KEY = 'medicationsData';
 const MEDICATION_ID_COUNTER_KEY = 'nextMedicationId';
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse"];
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.medications;
 
 export default function MedicationsPage() {
   const router = useRouter();

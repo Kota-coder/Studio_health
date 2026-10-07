@@ -15,12 +15,13 @@ import { TreatmentTemplate, TreatmentTemplateField, TreatmentTemplateFieldOption
 import { ArrowLeft, Save, PlusCircle, Trash2, GripVertical, FileText } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
+import { PAGE_ROLES } from '@/config/permissions';
 
 const USER_TEMPLATES_STORAGE_KEY = 'userDefinedTreatmentTemplates';
 const TEMPLATE_ID_COUNTER_KEY = 'nextTreatmentTemplateId';
 
 const FIELD_TYPES: TreatmentTemplateField['fieldType'][] = ["text", "textarea", "number", "select"];
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse"];
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.patientCare;
 
 // Helper to generate unique IDs for fields
 const generateFieldId = () => `field_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;

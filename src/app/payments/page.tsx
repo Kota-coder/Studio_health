@@ -14,9 +14,10 @@ import { format, parseISO, isValid, parse } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { PAGE_ROLES } from '@/config/permissions';
 
 
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Accounts"];
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.payments;
 const PAYMENTS_STORAGE_KEY = 'paymentsData';
 
 export default function PaymentsOverviewPage() {
@@ -243,7 +244,7 @@ export default function PaymentsOverviewPage() {
                             {payment.paymentType === "Pharmacy" && payment.purchasedMedications && payment.purchasedMedications.length > 0 && (
                                 <div className="mt-3">
                                     <h4 className="text-sm font-semibold mb-1">Purchased Medications:</h4>
-                                    <Table size="sm" className="bg-background rounded-md">
+                                    <Table className="bg-background rounded-md text-xs">
                                         <TableHeader>
                                             <TableRow>
                                                 <TableHead className="text-xs h-8">Medication</TableHead>
@@ -272,7 +273,7 @@ export default function PaymentsOverviewPage() {
                             {payment.paymentType === "Material" && payment.purchasedMaterials && payment.purchasedMaterials.length > 0 && (
                                 <div className="mt-3">
                                     <h4 className="text-sm font-semibold mb-1">Purchased Materials:</h4>
-                                    <Table size="sm" className="bg-background rounded-md">
+                                    <Table className="bg-background rounded-md text-xs">
                                         <TableHeader>
                                             <TableRow>
                                                 <TableHead className="text-xs h-8">Material</TableHead>

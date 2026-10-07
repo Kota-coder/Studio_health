@@ -15,11 +15,12 @@ import { TreatmentTemplate, TREATMENT_TEMPLATES } from '@/config/treatmentTempla
 import { ArrowLeft, Save, Archive } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
+import { PAGE_ROLES } from '@/config/permissions';
 
 const MATERIALS_STORAGE_KEY = 'materialsData';
 const MATERIAL_ID_COUNTER_KEY = 'nextMaterialId';
 const USER_TEMPLATES_STORAGE_KEY = 'userDefinedTreatmentTemplates'; // For fetching treatment templates
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse"];
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.materials;
 const NO_TEMPLATE_OPTION_VALUE = "__NO_TEMPLATE_OPTION_VALUE__"; // Unique value for the "None" option
 
 export default function MaterialFormPage() {

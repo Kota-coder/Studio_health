@@ -12,6 +12,8 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import type { StaffMember, StaffRole } from '@/types/staff';
 import Link from 'next/link';
+import { format } from 'date-fns';
+import { STORAGE_KEYS, takeNextNumericId } from '@/lib/storage';
 
 const STAFF_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse", "Receptionist", "Accounts"];
 
@@ -179,12 +181,12 @@ export default function SignUpPage() {
       let staffMembers: StaffMember[] = storedStaff ? JSON.parse(storedStaff) : [];
 
       const newStaffMember: StaffMember = {
-        id: `staff-${Date.now()}`,
+        id: takeNextNumericId(STORAGE_KEYS.nextStaffId, staffMembers),
         name: formData.name.trim(),
-        email: formData.email.trim().toLowerCase() || undefined,
-        phoneNumber: formData.phoneNumber.trim() || undefined,
+        email: formData.email.trim().toLowerCase(),
+        phoneNumber: formData.phoneNumber.trim(),
         role: formData.role as StaffRole,
-        dateJoined: new Date().toISOString(),
+        hireDate: format(new Date(), 'dd/MM/yyyy'),
         password: formData.password // In production, this should be hashed
       };
 

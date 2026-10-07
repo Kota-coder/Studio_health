@@ -12,10 +12,11 @@ import { useToast } from '@/hooks/use-toast';
 import { PlusCircle, Edit3, Truck, ArrowLeft, Upload } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import type { StaffRole } from '@/types/staff';
+import { PAGE_ROLES } from '@/config/permissions';
 
 const VENDORS_STORAGE_KEY = 'materialVendorsData';
 const VENDOR_ID_COUNTER_KEY = 'nextVendorId';
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse"];
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.vendors;
 
 export default function VendorsPage() {
   const router = useRouter();

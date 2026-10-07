@@ -14,9 +14,11 @@ import { StaffMember, StaffRole } from '@/types/staff';
 import { ArrowLeft, Save, UserCog } from 'lucide-react'; 
 import { format, parse, isValid, parseISO } from 'date-fns';
 import { useAuth } from '@/context/AuthContext'; 
+import { STORAGE_KEYS, takeNextNumericId } from '@/lib/storage';
+import { PAGE_ROLES } from '@/config/permissions';
 
 const SYSTEM_STAFF_ROLES: StaffRole[] = ["Doctor", "Nurse", "Admin", "Receptionist"]; // Renamed for clarity
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor"]; // Added "Doctor"
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.staff;
 
 const isValidEmail = (email: string) => {
   if (!email) return false;
@@ -204,11 +206,8 @@ export default function StaffFormPage() {
             toast({ title: "Error", description: "A staff member with this email already exists.", variant: "destructive" });
             return;
         }
-        const nextStaffIdJSON = localStorage.getItem('nextStaffId');
-        let nextStaffId = nextStaffIdJSON ? parseInt(nextStaffIdJSON, 10) : 1;
-        const newStaffMember: StaffMember = { ...staffMemberData, id: nextStaffId };
+        const newStaffMember: StaffMember = { ...staffMemberData, id: takeNextNumericId(STORAGE_KEYS.nextStaffId, staffMembers) };
         staffMembers.push(newStaffMember);
-        localStorage.setItem('nextStaffId', (nextStaffId + 1).toString());
         toast({ title: "Success", description: "New staff member added." });
       }
       

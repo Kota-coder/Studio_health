@@ -23,10 +23,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { PAGE_ROLES } from '@/config/permissions';
 
 const CATALOG_STORAGE_KEY = 'medicalTestCatalog';
 const CATALOG_ID_COUNTER_KEY = 'nextMedicalTestCatalogId';
-const ALLOWED_ROLES: StaffRole[] = ["Admin", "Doctor", "Nurse"];
+const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.medicalTests;
 
 export default function MedicalTestsCatalogPage() {
   const router = useRouter();

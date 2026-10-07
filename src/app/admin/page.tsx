@@ -1,14 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { initializeSeedData, clearAllData, getDataSummary } from '@/lib/seedData';
 import { Database, Trash2, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
+import { useAuth } from '@/context/AuthContext';
+import { STORAGE_KEYS } from '@/lib/storage';
 
 export default function AdminPage() {
+  const { currentUser, isLoading: authIsLoading } = useAuth();
+  const router = useRouter();
   const [summary, setSummary] = useState<{ [key: string]: number } | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -17,7 +22,13 @@ export default function AdminPage() {
     setIsLoading(true);
     setMessage(null);
     try {
+      const userBefore = localStorage.getItem(STORAGE_KEYS.currentUser);
       initializeSeedData();
+      if (localStorage.getItem(STORAGE_KEYS.currentUser) !== userBefore) {
+        // The logged-in account was renumbered to make room for the sample staff.
+        window.location.reload();
+        return;
+      }
       const newSummary = getDataSummary();
       setSummary(newSummary);
       setMessage({ 
@@ -59,6 +70,16 @@ export default function AdminPage() {
   const handleRefreshSummary = () => {
     setSummary(getDataSummary());
   };
+
+
+  useEffect(() => {
+    if (!authIsLoading && !currentUser) router.replace('/login');
+    else if (!authIsLoading && currentUser?.role !== 'Admin') router.replace('/dashboard');
+  }, [authIsLoading, currentUser, router]);
+
+  if (authIsLoading || currentUser?.role !== 'Admin') {
+    return <div className="flex justify-center items-center min-h-screen"><p>{authIsLoading ? 'Loading...' : 'Access Denied. Redirecting...'}</p></div>;
+  }
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
