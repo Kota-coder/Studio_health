@@ -25,8 +25,7 @@ for Indian patient data.
   images are used for extraction and then discarded, never uploaded or downloadable.
 - **Data location**: create the Supabase project in `ap-south-1` (Mumbai).
 
-Still to do before going live: a way for patients to export or delete their data
-on request, and a written breach-response process.
+Still to do before going live: a written breach-response process.
 
 ## Supabase setup (one time)
 

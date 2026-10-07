@@ -53,7 +53,7 @@ const isValidMobileNumber = (number: string) => {
 
 // Bump when the consent wording below changes, so records show which text was agreed to.
 const CONSENT_VERSION = "2026-10-v1";
-const CONSENT_TEXT = "The patient (or their guardian) consents to the clinic collecting and using their personal and health information for treatment, billing and follow-up, as required under the Digital Personal Data Protection Act, 2023. They can ask to view, correct or delete their data at any time.";
+const CONSENT_TEXT = "The patient (or their guardian) consents to the clinic collecting and using their personal and health information for treatment, billing and follow-up, as required under the Digital Personal Data Protection Act, 2023.";
 
 export default function PatientIntake() {
   const router = useRouter();
