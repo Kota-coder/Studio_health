@@ -6,5 +6,6 @@ export interface ReferringDoctor {
   email?: string;
   specialization?: string;
   notes?: string;
+  defaultReferralFee?: number | null; // Suggested referral fee per referred patient
   createdAt?: string; // Set by the database
 }

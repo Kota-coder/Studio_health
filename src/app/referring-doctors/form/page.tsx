@@ -43,6 +43,7 @@ export default function ReferringDoctorFormPage() {
   const [hospitalClinicName, setHospitalClinicName] = useState(""); // Changed from location
   const [phoneNumber, setPhoneNumber] = useState("");
   const [email, setEmail] = useState("");
+  const [defaultReferralFee, setDefaultReferralFee] = useState("");
 
   const [emailError, setEmailError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
@@ -75,6 +76,7 @@ export default function ReferringDoctorFormPage() {
           setHospitalClinicName(doctorToEdit.location); // Map 'location' to 'hospitalClinicName'
           setPhoneNumber(doctorToEdit.phoneNumber || "");
           setEmail(doctorToEdit.email || "");
+          setDefaultReferralFee(doctorToEdit.defaultReferralFee != null ? String(doctorToEdit.defaultReferralFee) : "");
         } else {
           toast({ title: "Error", description: "Referring doctor profile not found.", variant: "destructive" });
           router.push('/referring-doctors');
@@ -102,7 +104,14 @@ export default function ReferringDoctorFormPage() {
       return;
     }
 
+    const referralFee = defaultReferralFee.trim() === "" ? null : Number(defaultReferralFee);
+    if (referralFee !== null && (!Number.isFinite(referralFee) || referralFee < 0)) {
+      toast({ title: "Validation Error", description: "Default referral fee must be 0 or more, or left empty.", variant: "destructive" });
+      return;
+    }
+
     const doctorData: Omit<ReferringDoctor, 'id'> = {
+      defaultReferralFee: referralFee,
       name: name.trim(),
       location: hospitalClinicName.trim(), // Save hospitalClinicName to location
       phoneNumber: phoneNumber.trim() || "",
@@ -182,6 +191,12 @@ export default function ReferringDoctorFormPage() {
                 }
             }} placeholder="name@example.com"/>
             {emailError && <p className="text-destructive text-sm mt-1">{emailError}</p>}
+          </div>
+          <div>
+            <Label htmlFor="defaultReferralFee">Default referral fee per patient (₹, optional)</Label>
+            <Input id="defaultReferralFee" type="number" inputMode="decimal" min={0} value={defaultReferralFee}
+              onChange={(e) => setDefaultReferralFee(e.target.value)} placeholder="e.g. 500" />
+            <p className="text-xs text-muted-foreground mt-1">Suggested fee for each patient this doctor refers. Paid through Payments → Referral/CC.</p>
           </div>
         </CardContent>
         <CardFooter className="flex justify-between mt-4">

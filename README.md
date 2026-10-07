@@ -39,6 +39,7 @@ devices, protected by login and backed up.
    2. `20261007120000_upgrade_previous_schema.sql` (only changes anything on a database set up
       with the earlier version; fixes "Could not find the 'id_card_images' column")
    3. `20261008000000_departments.sql` (departments, care teams, doctor fees)
+   4. `20261009000000_referral_fees.sql` (referral fees)
 3. **Auth settings** (*Authentication*):
    - *Sign In / Providers*: keep Email enabled and **turn off "Allow new users to sign up"**.
    - *URL Configuration*: set *Site URL* to your app's address (e.g. `https://clinic.example.com`)
@@ -78,8 +79,12 @@ devices, protected by login and backed up.
   Accounts can set or change it (the database enforces this).
 - **Payments → Record New Payment → Doctor Fee** (Super Admin, Admin, Accounts): choose a
   doctor, tick the unpaid cases, and the amount is filled in. The cases are then marked paid.
+- **Referral fees**: give each referring doctor a default referral fee (Referring Doctors).
+  The patient page shows the referral fee for that patient (finance roles can change it), and
+  **Payments → Referral/CC** lists the doctor's unpaid referrals, totals their fees and marks
+  them paid.
 - The Patient Dashboard filters by department or "My Patients", and the Financial Dashboard
-  lists each doctor's paid and pending fees.
+  lists paid and pending doctor fees and referral fees.
 
 ## Sample data for testing
 

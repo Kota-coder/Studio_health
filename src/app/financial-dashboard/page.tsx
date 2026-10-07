@@ -13,7 +13,8 @@ import { AreaChart, DollarSign, TrendingUp, TrendingDown, AlertTriangle, Receipt
 import { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval, isWithinInterval, subMonths } from 'date-fns';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
-import { bills as billsRepo, departments as departmentsRepo, patients as patientsRepo, payments as paymentsRepo, staff as staffRepo } from '@/lib/data';
+import { bills as billsRepo, departments as departmentsRepo, patients as patientsRepo, payments as paymentsRepo, referringDoctors as referringDoctorsRepo, staff as staffRepo } from '@/lib/data';
+import type { ReferringDoctor } from '@/types/referringDoctor';
 import type { Patient } from '@/types/patient';
 import type { StaffMember } from '@/types/staff';
 import type { Department } from '@/types/department';
@@ -45,6 +46,7 @@ export default function FinancialDashboardPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [departmentList, setDepartmentList] = useState<Department[]>([]);
+  const [referringDoctorList, setReferringDoctorList] = useState<ReferringDoctor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -58,8 +60,9 @@ export default function FinancialDashboardPage() {
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(true);
-      Promise.all([billsRepo.list(), paymentsRepo.list(), patientsRepo.listBasic(), staffRepo.list(), departmentsRepo.list()])
-        .then(([billList, paymentList, patientList, staffMembers, departmentsLoaded]) => {
+      Promise.all([billsRepo.list(), paymentsRepo.list(), patientsRepo.listBasic(), staffRepo.list(), departmentsRepo.list(), referringDoctorsRepo.list()])
+        .then(([billList, paymentList, patientList, staffMembers, departmentsLoaded, referringDoctorsLoaded]) => {
+          setReferringDoctorList(referringDoctorsLoaded);
           setBills(billList);
           setPayments(paymentList);
           setPatients(patientList);
@@ -205,6 +208,24 @@ export default function FinancialDashboardPage() {
     }
     return [...rows.values()].sort((a, b) => b.pending - a.pending || a.doctor.localeCompare(b.doctor));
   }, [patients, staffList, departmentList]);
+
+  // Referral fees per referring doctor. Unpaid referrals without their own fee count at
+  // the doctor's default fee.
+  const referralFeeRows = useMemo(() => {
+    const rows = new Map<number, { doctor: string; referrals: number; paid: number; pending: number; unpriced: number }>();
+    for (const patient of patients) {
+      if (!patient.referredDoctorId) continue;
+      const doctor = referringDoctorList.find(d => d.id === patient.referredDoctorId);
+      const row = rows.get(patient.referredDoctorId) ?? { doctor: doctor?.name ?? `Referring doctor #${patient.referredDoctorId}`, referrals: 0, paid: 0, pending: 0, unpriced: 0 };
+      row.referrals++;
+      const fee = patient.referralFee ?? doctor?.defaultReferralFee ?? null;
+      if (patient.referralFeeStatus === 'Paid') row.paid += patient.referralFee ?? 0;
+      else if (fee == null) row.unpriced++;
+      else row.pending += fee;
+      rows.set(patient.referredDoctorId, row);
+    }
+    return [...rows.values()].sort((a, b) => b.pending - a.pending || a.doctor.localeCompare(b.doctor));
+  }, [patients, referringDoctorList]);
 
   if (authIsLoading || isLoading) {
     return <div className="flex justify-center items-center min-h-screen"><p>Loading financial dashboard...</p></div>;
@@ -445,6 +466,42 @@ export default function FinancialDashboardPage() {
                         <TableCell className="text-right">{row.cases}</TableCell>
                         <TableCell className="text-right">₹{row.paid.toFixed(2)}</TableCell>
                         <TableCell className="text-right font-semibold">{row.pending > 0 ? `₹${row.pending.toFixed(2)}` : '—'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg mt-6">
+            <CardHeader>
+              <CardTitle>Referral Fees</CardTitle>
+              <CardDescription>Fees owed to referring doctors for the patients they referred. Pay them from Payments → Record New Payment → Referral/CC.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {referralFeeRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No referred patients yet. Set the referring doctor on a patient&apos;s admission details.</p>
+              ) : (
+                <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-4 sm:[&_th]:px-4">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Referring Doctor</TableHead>
+                      <TableHead className="text-right">Referrals</TableHead>
+                      <TableHead className="text-right">Paid</TableHead>
+                      <TableHead className="text-right">Pending</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {referralFeeRows.map(row => (
+                      <TableRow key={row.doctor}>
+                        <TableCell className="font-medium">{row.doctor}</TableCell>
+                        <TableCell className="text-right">{row.referrals}</TableCell>
+                        <TableCell className="text-right">₹{row.paid.toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-semibold">
+                          {row.pending > 0 ? `₹${row.pending.toFixed(2)}` : row.unpriced === 0 ? '—' : ''}
+                          {row.unpriced > 0 && <span className="block text-xs font-normal text-muted-foreground">{row.unpriced} with no fee set</span>}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

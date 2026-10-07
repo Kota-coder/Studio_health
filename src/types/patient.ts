@@ -87,6 +87,12 @@ export interface Patient {
   doctorFeeStatus?: DoctorFeeStatus;
   doctorFeePaymentId?: string | null;
 
+  // Fee owed to the referring doctor (referredDoctorId) for this patient, settled by a
+  // Referral/CC payment.
+  referralFee?: number | null;
+  referralFeeStatus?: DoctorFeeStatus;
+  referralFeePaymentId?: string | null;
+
   // DPDP Act consent record, captured at registration.
   consentGivenAt?: string;
   consentVersion?: string;

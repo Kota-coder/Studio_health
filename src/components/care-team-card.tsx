@@ -10,7 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { departments as departmentsRepo, patients as patientsRepo } from '@/lib/data';
+import { departments as departmentsRepo, patients as patientsRepo, referringDoctors as referringDoctorsRepo } from '@/lib/data';
+import type { ReferringDoctor } from '@/types/referringDoctor';
 import type { Department, DepartmentMembers } from '@/types/department';
 import type { Patient } from '@/types/patient';
 import type { StaffMember, StaffRole } from '@/types/staff';
@@ -35,11 +36,14 @@ export function CareTeamCard({ patient, staff, currentUser, onSaved }: CareTeamC
   const [doctorId, setDoctorId] = useState<string>(patient.attendingDoctorId ? String(patient.attendingDoctorId) : NONE);
   const [nurseId, setNurseId] = useState<string>(patient.attendingNurseId ? String(patient.attendingNurseId) : NONE);
   const [fee, setFee] = useState<string>(patient.doctorFee != null ? String(patient.doctorFee) : '');
+  const [referralFee, setReferralFee] = useState<string>(patient.referralFee != null ? String(patient.referralFee) : '');
+  const [referringDoctor, setReferringDoctor] = useState<ReferringDoctor | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const canEditTeam = currentUser.role !== 'Accounts';
   const canEditFee = FEE_ROLES.includes(currentUser.role);
   const feePaid = patient.doctorFeeStatus === 'Paid';
+  const referralPaid = patient.referralFeeStatus === 'Paid';
 
   useEffect(() => {
     Promise.all([departmentsRepo.list(), departmentsRepo.listMembers()])
@@ -47,13 +51,21 @@ export function CareTeamCard({ patient, staff, currentUser, onSaved }: CareTeamC
       .catch(error => console.error('Could not load departments', error));
   }, []);
 
+  useEffect(() => {
+    if (!patient.referredDoctorId) { setReferringDoctor(null); return; }
+    referringDoctorsRepo.get(patient.referredDoctorId)
+      .then(setReferringDoctor)
+      .catch(error => console.error('Could not load referring doctor', error));
+  }, [patient.referredDoctorId]);
+
   // Keep the form in step when the patient is reloaded after a save.
   useEffect(() => {
     setDepartmentId(patient.departmentId ? String(patient.departmentId) : NONE);
     setDoctorId(patient.attendingDoctorId ? String(patient.attendingDoctorId) : NONE);
     setNurseId(patient.attendingNurseId ? String(patient.attendingNurseId) : NONE);
     setFee(patient.doctorFee != null ? String(patient.doctorFee) : '');
-  }, [patient.departmentId, patient.attendingDoctorId, patient.attendingNurseId, patient.doctorFee]);
+    setReferralFee(patient.referralFee != null ? String(patient.referralFee) : '');
+  }, [patient.departmentId, patient.attendingDoctorId, patient.attendingNurseId, patient.doctorFee, patient.referralFee]);
 
   const department = departments.find(d => String(d.id) === departmentId);
   const team = useMemo(() => {
@@ -81,9 +93,12 @@ export function CareTeamCard({ patient, staff, currentUser, onSaved }: CareTeamC
 
   const handleSave = async () => {
     const feeValue = fee.trim() === '' ? null : Number(fee);
-    if (feeValue !== null && (!Number.isFinite(feeValue) || feeValue < 0)) {
-      toast({ title: "Invalid fee", description: "Enter a fee of 0 or more, or leave it empty.", variant: "destructive" });
-      return;
+    const referralFeeValue = referralFee.trim() === '' ? null : Number(referralFee);
+    for (const value of [feeValue, referralFeeValue]) {
+      if (value !== null && (!Number.isFinite(value) || value < 0)) {
+        toast({ title: "Invalid fee", description: "Enter fees of 0 or more, or leave them empty.", variant: "destructive" });
+        return;
+      }
     }
     const newDepartmentId = departmentId === NONE ? null : Number(departmentId);
     const newDoctorId = doctorId === NONE ? null : Number(doctorId);
@@ -101,12 +116,14 @@ export function CareTeamCard({ patient, staff, currentUser, onSaved }: CareTeamC
       assignedStaffIds: [...assigned],
     };
     if (canEditFee && !feePaid) changes.doctorFee = feeValue;
+    if (canEditFee && !referralPaid && patient.referredDoctorId) changes.referralFee = referralFeeValue;
 
     const details = [
       `Department: ${departments.find(d => d.id === newDepartmentId)?.name ?? 'none'}`,
       `Doctor: ${staffName(newDoctorId) ?? 'none'}`,
       `Nurse: ${staffName(newNurseId) ?? 'none'}`,
       ...(changes.doctorFee !== undefined ? [`Doctor fee: ${feeValue != null ? `₹${feeValue.toFixed(2)}` : 'not set'}`] : []),
+      ...(changes.referralFee !== undefined ? [`Referral fee: ${referralFeeValue != null ? `₹${referralFeeValue.toFixed(2)}` : 'not set'}`] : []),
     ].join('; ');
 
     setIsSaving(true);
@@ -127,7 +144,7 @@ export function CareTeamCard({ patient, staff, currentUser, onSaved }: CareTeamC
     <Card className="shadow-lg">
       <CardHeader>
         <CardTitle className="flex items-center"><Building2 className="mr-2 h-5 w-5 text-primary" />Department &amp; Care Team</CardTitle>
-        <CardDescription>The department treating this patient, the doctor and nurse in charge, and the doctor&apos;s fee for the case.</CardDescription>
+        <CardDescription>The department treating this patient, the doctor and nurse in charge, the doctor&apos;s fee for the case and any referral fee.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {departments.length === 0 ? (
@@ -185,13 +202,32 @@ export function CareTeamCard({ patient, staff, currentUser, onSaved }: CareTeamC
                     : 'Only Admin or Accounts staff can set the fee.'}
               </p>
             </div>
-            {(canEditTeam || canEditFee) && (
+          </>
+        )}
+            {patient.referredDoctorId && (
+              <div className="rounded-md border p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="careReferralFee">Referral fee (₹)</Label>
+                  <Badge variant={referralPaid ? 'default' : 'secondary'}>{referralPaid ? `Paid${patient.referralFeePaymentId ? ` · ${patient.referralFeePaymentId}` : ''}` : 'Pending'}</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">Referred by {referringDoctor ? `${referringDoctor.name}${referringDoctor.location ? ` (${referringDoctor.location})` : ''}` : '…'}</p>
+                <Input id="careReferralFee" type="number" inputMode="decimal" min={0} value={referralFee} onChange={e => setReferralFee(e.target.value)}
+                  disabled={!canEditFee || referralPaid}
+                  placeholder={referringDoctor?.defaultReferralFee != null ? `Default ₹${referringDoctor.defaultReferralFee}` : 'e.g. 500'} />
+                <p className="text-xs text-muted-foreground">
+                  {referralPaid
+                    ? 'The referral fee has been paid.'
+                    : referralFee.trim() === '' && referringDoctor?.defaultReferralFee != null
+                      ? `If left empty, the doctor's default of ₹${referringDoctor.defaultReferralFee.toFixed(2)} is used when paying through Payments → Referral/CC.`
+                      : 'Paid to the referring doctor through Payments → Referral/CC.'}
+                </p>
+              </div>
+            )}
+            {(canEditTeam || canEditFee) && (departments.length > 0 || patient.referredDoctorId) && (
               <Button onClick={handleSave} disabled={isSaving} className="w-full">
                 <Save className="mr-2 h-4 w-4" /> {isSaving ? 'Saving...' : 'Save Care Team'}
               </Button>
             )}
-          </>
-        )}
       </CardContent>
     </Card>
   );

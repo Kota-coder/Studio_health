@@ -36,7 +36,9 @@ const ALLOWED_ROLES: AppStaffRole[] = PAGE_ROLES.payments;
 
 
 const PAYMENT_TYPES: PaymentType[] = ["Referral/CC", "Material", "Pharmacy", "Salary", "Doctor Fee", "Other"];
+// Doctor and referral fees are settled by finance staff only (the database enforces this too).
 const DOCTOR_FEE_ROLES: AppStaffRole[] = ["Super Admin", "Admin", "Accounts"];
+const FEE_PAYMENT_TYPES: PaymentType[] = ["Doctor Fee", "Referral/CC"];
 const PAYMENT_METHODS_SPENT: PaymentMethodSpent[] = ["Cash", "Cheque", "Bank Transfer", "UPI", "Card", "Other"];
 
 
@@ -175,8 +177,18 @@ export default function PaymentFormPage() {
 
   const fetchReferredPatients = useCallback((doctorId: string) => {
     const numericDoctorId = parseInt(doctorId, 10);
-    setReferredPatientsList(allPatientsList.filter(patient => patient.referredDoctorId === numericDoctorId));
-  }, [allPatientsList]);
+    // New payments list referrals not yet paid; an existing payment shows the ones it paid.
+    setReferredPatientsList(allPatientsList.filter(patient => patient.referredDoctorId === numericDoctorId
+      && (isEditMode ? selectedPatientIdsForPayment.includes(patient.id) : patient.referralFeeStatus !== 'Paid')));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allPatientsList, isEditMode]);
+
+  // Referral fee for a patient: their own fee, else the referring doctor's default.
+  const referralFeeFor = useCallback((patient: Patient) => {
+    if (patient.referralFee != null) return { fee: patient.referralFee, isDefault: false };
+    const doctor = referringDoctorsList.find(d => d.id === patient.referredDoctorId);
+    return { fee: doctor?.defaultReferralFee ?? null, isDefault: doctor?.defaultReferralFee != null };
+  }, [referringDoctorsList]);
 
   useEffect(() => {
     if (paymentType === "Referral/CC" && payeeId) {
@@ -225,6 +237,21 @@ export default function PaymentFormPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paymentType, doctorCases, selectedPatientIdsForPayment, isEditMode]);
+
+  // Choosing a different referring doctor starts a fresh selection.
+  useEffect(() => {
+    if (paymentType === "Referral/CC" && !isEditMode) setSelectedPatientIdsForPayment([]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payeeId]);
+
+  // Referral/CC: the amount is the total of the selected patients' referral fees.
+  useEffect(() => {
+    if (paymentType !== "Referral/CC" || isEditMode || selectedPatientIdsForPayment.length === 0) return;
+    const total = referredPatientsList
+      .filter(p => selectedPatientIdsForPayment.includes(p.id))
+      .reduce((sum, p) => sum + (referralFeeFor(p).fee ?? 0), 0);
+    if (total > 0) setAmount(total.toFixed(2));
+  }, [paymentType, isEditMode, selectedPatientIdsForPayment, referredPatientsList, referralFeeFor]);
 
   useEffect(() => {
     if (paymentType === "Pharmacy" && currentPurchasedMedications.length > 0) {
@@ -497,6 +524,14 @@ export default function PaymentFormPage() {
           // Mark the cases as paid so they aren't paid twice.
           await patientsRepo.setDoctorFeePayment(selectedPatientIdsForPayment, newPayment.id);
         }
+        if (paymentType === "Referral/CC" && selectedPatientIdsForPayment.length > 0) {
+          await patientsRepo.setReferralFeePayment(
+            referredPatientsList
+              .filter(p => selectedPatientIdsForPayment.includes(p.id))
+              .map(p => ({ patientId: p.id, fee: p.referralFee ?? referralFeeFor(p).fee })),
+            newPayment.id,
+          );
+        }
         toast({ title: "Success", description: `New payment ${newPayment.id} recorded.` });
       }
       router.push('/payments');
@@ -565,8 +600,7 @@ export default function PaymentFormPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {PAYMENT_TYPES
-                    // Doctor fees are settled by finance staff only (the database enforces this too).
-                    .filter(type => type !== "Doctor Fee" || DOCTOR_FEE_ROLES.includes(currentUser.role) || paymentType === "Doctor Fee")
+                    .filter(type => !FEE_PAYMENT_TYPES.includes(type) || DOCTOR_FEE_ROLES.includes(currentUser.role) || paymentType === type)
                     .map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}
                 </SelectContent>
               </Select>
@@ -602,7 +636,7 @@ export default function PaymentFormPage() {
                     <CardHeader className="p-0 mb-2">
                         <CardTitle className="text-sm font-medium flex items-center">
                             <List className="mr-2 h-4 w-4 text-primary"/>
-                            Select Patients Referred by this Doctor (for this payment)
+                            {isEditMode ? 'Referrals paid by this payment' : 'Unpaid referrals by this doctor (tick the ones this payment covers)'}
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="p-0 max-h-48 overflow-y-auto text-sm space-y-2">
@@ -613,17 +647,20 @@ export default function PaymentFormPage() {
                                     checked={selectedPatientIdsForPayment.includes(patient.id)}
                                     onCheckedChange={(checked) => handlePatientSelectionForPayment(patient.id, checked)}
                                 />
-                                <Label htmlFor={`patient-${patient.id}`} className="text-sm font-normal cursor-pointer">
+                                <Label htmlFor={`patient-${patient.id}`} className="flex-grow text-sm font-normal cursor-pointer">
                                     {patient.firstName} {patient.lastName} (ID: {patient.id.toString().padStart(3,'0')})
                                     <span className="block text-xs text-muted-foreground">Reason: {patient.reasonForVisit || "N/A"}</span>
                                 </Label>
+                                <span className="text-sm font-medium whitespace-nowrap">
+                                    {(() => { const { fee, isDefault } = referralFeeFor(patient); return fee != null ? `₹${fee.toFixed(2)}${isDefault ? ' (default)' : ''}` : 'No fee set'; })()}
+                                </span>
                             </div>
                         ))}
                     </CardContent>
                 </Card>
               )}
                {paymentType === "Referral/CC" && payeeId && referredPatientsList.length === 0 && (
-                 <p className="text-sm text-muted-foreground mt-1">No patients found referred by this doctor.</p>
+                 <p className="text-sm text-muted-foreground mt-1">No unpaid referrals for this doctor.</p>
                )}
             </>
           )}

@@ -94,7 +94,19 @@ function table<T extends { id: string | number }>(name: string, orderBy: string,
   };
 }
 
-export const referringDoctors = table<ReferringDoctor>('referring_doctors', 'name', ['created_at', 'audit_log']);
+const referringDoctorTable = table<ReferringDoctor>('referring_doctors', 'name', ['created_at', 'audit_log']);
+const referringDoctorFromRow = (doctor: ReferringDoctor): ReferringDoctor =>
+  ({ ...doctor, defaultReferralFee: doctor.defaultReferralFee == null ? null : Number(doctor.defaultReferralFee) });
+export const referringDoctors = {
+  ...referringDoctorTable,
+  async list(): Promise<ReferringDoctor[]> {
+    return (await referringDoctorTable.list()).map(referringDoctorFromRow);
+  },
+  async get(id: number): Promise<ReferringDoctor | null> {
+    const doctor = await referringDoctorTable.get(id);
+    return doctor ? referringDoctorFromRow(doctor) : null;
+  },
+};
 export const medications = table<Medication>('medications', 'name');
 export const materials = table<Material>('materials', 'name');
 export const vendors = table<Vendor>('vendors', 'name');
@@ -236,6 +248,8 @@ function patientFromRow(row: Row): Patient {
   patient.condition = patient.condition || 'Unassigned';
   patient.doctorFee = patient.doctorFee == null ? null : Number(patient.doctorFee);
   patient.doctorFeeStatus = patient.doctorFeeStatus || 'Pending';
+  patient.referralFee = patient.referralFee == null ? null : Number(patient.referralFee);
+  patient.referralFeeStatus = patient.referralFeeStatus || 'Pending';
   patient.careNotes = ((care_notes as Row[] | undefined) ?? [])
     .map(r => fromRow<CareNote>(r))
     .map(n => ({ ...n, medicationsMentioned: n.medicationsMentioned ?? [], templateFieldsData: n.templateFieldsData ?? {} }))
@@ -307,6 +321,17 @@ export const patients = {
     for (const id of patientIds) {
       await addAuditEntry('patient', id, paymentId ? 'Doctor Fee Paid' : 'Doctor Fee Reopened',
         paymentId ? `Doctor's fee for this case paid in ${paymentId}.` : 'Doctor fee marked unpaid again.');
+    }
+  },
+
+  // Marks referral fees as paid by paymentId. fees gives the amount for patients whose
+  // fee wasn't set yet (the referring doctor's default), so the record shows what was paid.
+  async setReferralFeePayment(fees: Array<{ patientId: number; fee: number | null }>, paymentId: string): Promise<void> {
+    for (const { patientId, fee } of fees) {
+      check(await db().from('patients')
+        .update({ referral_fee_status: 'Paid', referral_fee_payment_id: paymentId, ...(fee != null ? { referral_fee: fee } : {}) })
+        .eq('id', patientId));
+      await addAuditEntry('patient', patientId, 'Referral Fee Paid', `Referral fee${fee != null ? ` of ₹${fee.toFixed(2)}` : ''} paid in ${paymentId}.`);
     }
   },
 
