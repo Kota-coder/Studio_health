@@ -244,12 +244,6 @@ export default function MedicalTestsCatalogPage() {
             <CardDescription className="mb-4">
               The medical test catalog is empty. Add tests manually or import them from a CSV file.
             </CardDescription>
-            <img 
-              src="https://placehold.co/600x300.png" 
-              alt="Empty test catalog placeholder" 
-              data-ai-hint="empty laboratory list"
-              className="mx-auto rounded-md mt-4 shadow-md" 
-            />
           </CardContent>
         </Card>
       ) : (

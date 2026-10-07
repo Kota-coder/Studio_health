@@ -35,7 +35,10 @@ import {
 const ALLOWED_ROLES: AppStaffRole[] = PAGE_ROLES.payments;
 
 
-const PAYMENT_TYPES: PaymentType[] = ["Referral/CC", "Material", "Pharmacy", "Salary", "Other"];
+const PAYMENT_TYPES: PaymentType[] = ["Referral/CC", "Material", "Pharmacy", "Salary", "Doctor Fee", "Other"];
+// Doctor and referral fees are settled by finance staff only (the database enforces this too).
+const DOCTOR_FEE_ROLES: AppStaffRole[] = ["Super Admin", "Admin", "Accounts"];
+const FEE_PAYMENT_TYPES: PaymentType[] = ["Doctor Fee", "Referral/CC"];
 const PAYMENT_METHODS_SPENT: PaymentMethodSpent[] = ["Cash", "Cheque", "Bank Transfer", "UPI", "Card", "Other"];
 
 
@@ -69,6 +72,8 @@ export default function PaymentFormPage() {
   const [availableVendors, setAvailableVendors] = useState<Vendor[]>([]);
   const [referredPatientsList, setReferredPatientsList] = useState<Patient[]>([]);
   const [allPatientsList, setAllPatientsList] = useState<Patient[]>([]);
+  // Doctor Fee: the doctor's cases whose fee is still unpaid (or, when editing, the cases this payment covered).
+  const [doctorCases, setDoctorCases] = useState<Patient[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [selectedPatientIdsForPayment, setSelectedPatientIdsForPayment] = useState<number[]>([]);
 
@@ -172,19 +177,81 @@ export default function PaymentFormPage() {
 
   const fetchReferredPatients = useCallback((doctorId: string) => {
     const numericDoctorId = parseInt(doctorId, 10);
-    setReferredPatientsList(allPatientsList.filter(patient => patient.referredDoctorId === numericDoctorId));
-  }, [allPatientsList]);
+    // New payments list referrals not yet paid; an existing payment shows the ones it paid.
+    setReferredPatientsList(allPatientsList.filter(patient => patient.referredDoctorId === numericDoctorId
+      && (isEditMode ? selectedPatientIdsForPayment.includes(patient.id) : patient.referralFeeStatus !== 'Paid')));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allPatientsList, isEditMode]);
+
+  // Referral fee for a patient: their own fee, else the referring doctor's default.
+  const referralFeeFor = useCallback((patient: Patient) => {
+    if (patient.referralFee != null) return { fee: patient.referralFee, isDefault: false };
+    const doctor = referringDoctorsList.find(d => d.id === patient.referredDoctorId);
+    return { fee: doctor?.defaultReferralFee ?? null, isDefault: doctor?.defaultReferralFee != null };
+  }, [referringDoctorsList]);
 
   useEffect(() => {
     if (paymentType === "Referral/CC" && payeeId) {
       fetchReferredPatients(payeeId);
     } else {
       setReferredPatientsList([]);
-      if (paymentType !== "Referral/CC") { 
+      if (paymentType !== "Referral/CC" && paymentType !== "Doctor Fee") { 
           setSelectedPatientIdsForPayment([]);
       }
     }
   }, [paymentType, payeeId, fetchReferredPatients]);
+
+  // Doctor Fee: load the chosen doctor's unpaid cases. An existing payment shows the
+  // cases it already paid for, which can't be changed.
+  useEffect(() => {
+    if (paymentType !== "Doctor Fee" || !payeeId) {
+      setDoctorCases([]);
+      return;
+    }
+    if (isEditMode) {
+      setDoctorCases(allPatientsList.filter(p => selectedPatientIdsForPayment.includes(p.id)));
+      return;
+    }
+    let cancelled = false;
+    patientsRepo.listUnpaidDoctorCases(Number(payeeId))
+      .then(cases => {
+        if (cancelled) return;
+        setDoctorCases(cases);
+        setSelectedPatientIdsForPayment(cases.map(c => c.id));
+      })
+      .catch(error => console.error("Could not load the doctor's cases", error));
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentType, payeeId, isEditMode, allPatientsList]);
+
+  useEffect(() => {
+    if (paymentType === "Doctor Fee" && !isEditMode) {
+      const total = doctorCases
+        .filter(c => selectedPatientIdsForPayment.includes(c.id))
+        .reduce((sum, c) => sum + (c.doctorFee ?? 0), 0);
+      setAmount(total > 0 ? total.toFixed(2) : "");
+      if (!description.trim() || description.startsWith("Doctor fee for ")) {
+        const count = selectedPatientIdsForPayment.length;
+        setDescription(count > 0 ? `Doctor fee for ${count} case${count === 1 ? '' : 's'}` : "");
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentType, doctorCases, selectedPatientIdsForPayment, isEditMode]);
+
+  // Choosing a different referring doctor starts a fresh selection.
+  useEffect(() => {
+    if (paymentType === "Referral/CC" && !isEditMode) setSelectedPatientIdsForPayment([]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payeeId]);
+
+  // Referral/CC: the amount is the total of the selected patients' referral fees.
+  useEffect(() => {
+    if (paymentType !== "Referral/CC" || isEditMode || selectedPatientIdsForPayment.length === 0) return;
+    const total = referredPatientsList
+      .filter(p => selectedPatientIdsForPayment.includes(p.id))
+      .reduce((sum, p) => sum + (referralFeeFor(p).fee ?? 0), 0);
+    if (total > 0) setAmount(total.toFixed(2));
+  }, [paymentType, isEditMode, selectedPatientIdsForPayment, referredPatientsList, referralFeeFor]);
 
   useEffect(() => {
     if (paymentType === "Pharmacy" && currentPurchasedMedications.length > 0) {
@@ -379,6 +446,15 @@ export default function PaymentFormPage() {
         resolvedPayeeName = doctor?.name;
         resolvedPayeeType = "ReferringDoctor";
         if (!doctor) { toast({ title: "Validation Error", description: "Selected Referring Doctor not found.", variant: "destructive" }); return;}
+    } else if (paymentType === "Doctor Fee") {
+        const doctor = staffMembersList.find(s => s.id.toString() === payeeId);
+        if (!doctor) { toast({ title: "Validation Error", description: "Please select the doctor being paid.", variant: "destructive" }); return; }
+        if (!isEditMode && selectedPatientIdsForPayment.length === 0) {
+          toast({ title: "Validation Error", description: "Select at least one case to pay for.", variant: "destructive" }); return;
+        }
+        resolvedPayeeId = doctor.id;
+        resolvedPayeeName = doctor.name;
+        resolvedPayeeType = "StaffMember";
     } else if (paymentType === "Salary" && payeeId) {
         const staff = staffMembersList.find(s => s.id.toString() === payeeId);
         resolvedPayeeId = staff?.id;
@@ -416,7 +492,7 @@ export default function PaymentFormPage() {
       paymentMethod,
       transactionId: transactionId.trim() || undefined,
       notes: notes.trim() || undefined,
-      associatedPatientIds: paymentType === "Referral/CC" ? selectedPatientIdsForPayment : undefined,
+      associatedPatientIds: paymentType === "Referral/CC" || paymentType === "Doctor Fee" ? selectedPatientIdsForPayment : undefined,
       purchasedMedications: paymentType === "Pharmacy" ? currentPurchasedMedications : undefined,
       purchasedMaterials: paymentType === "Material" ? currentPurchasedMaterials : undefined,
     };
@@ -444,6 +520,18 @@ export default function PaymentFormPage() {
           { ...paymentData, recordedByStaffId: currentUser.id, recordedByStaffName: currentUser.name },
           auditDetails,
         );
+        if (paymentType === "Doctor Fee") {
+          // Mark the cases as paid so they aren't paid twice.
+          await patientsRepo.setDoctorFeePayment(selectedPatientIdsForPayment, newPayment.id);
+        }
+        if (paymentType === "Referral/CC" && selectedPatientIdsForPayment.length > 0) {
+          await patientsRepo.setReferralFeePayment(
+            referredPatientsList
+              .filter(p => selectedPatientIdsForPayment.includes(p.id))
+              .map(p => ({ patientId: p.id, fee: p.referralFee ?? referralFeeFor(p).fee })),
+            newPayment.id,
+          );
+        }
         toast({ title: "Success", description: `New payment ${newPayment.id} recorded.` });
       }
       router.push('/payments');
@@ -511,7 +599,9 @@ export default function PaymentFormPage() {
                   <SelectValue placeholder="Select Payment Type" />
                 </SelectTrigger>
                 <SelectContent>
-                  {PAYMENT_TYPES.map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}
+                  {PAYMENT_TYPES
+                    .filter(type => !FEE_PAYMENT_TYPES.includes(type) || DOCTOR_FEE_ROLES.includes(currentUser.role) || paymentType === type)
+                    .map(type => <SelectItem key={type} value={type}>{type}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -546,8 +636,9 @@ export default function PaymentFormPage() {
                     <CardHeader className="p-0 mb-2">
                         <CardTitle className="text-sm font-medium flex items-center">
                             <List className="mr-2 h-4 w-4 text-primary"/>
-                            Select Patients Referred by this Doctor (for this payment)
+                            {isEditMode ? 'Referrals paid by this payment' : 'Unpaid referrals by this doctor (tick the ones this payment covers)'}
                         </CardTitle>
+                        <p className="text-xs text-muted-foreground">Referral fees are paid by the hospital to the referring doctor; they are not charged to the patient.</p>
                     </CardHeader>
                     <CardContent className="p-0 max-h-48 overflow-y-auto text-sm space-y-2">
                         {referredPatientsList.map(patient => (
@@ -557,19 +648,61 @@ export default function PaymentFormPage() {
                                     checked={selectedPatientIdsForPayment.includes(patient.id)}
                                     onCheckedChange={(checked) => handlePatientSelectionForPayment(patient.id, checked)}
                                 />
-                                <Label htmlFor={`patient-${patient.id}`} className="text-sm font-normal cursor-pointer">
+                                <Label htmlFor={`patient-${patient.id}`} className="flex-grow text-sm font-normal cursor-pointer">
                                     {patient.firstName} {patient.lastName} (ID: {patient.id.toString().padStart(3,'0')})
                                     <span className="block text-xs text-muted-foreground">Reason: {patient.reasonForVisit || "N/A"}</span>
                                 </Label>
+                                <span className="text-sm font-medium whitespace-nowrap">
+                                    {(() => { const { fee, isDefault } = referralFeeFor(patient); return fee != null ? `₹${fee.toFixed(2)}${isDefault ? ' (default)' : ''}${patient.referralFeeBasis?.mode === 'percent' ? ' (% of procedures)' : ''}` : 'No fee set — set it on the patient page'; })()}
+                                </span>
                             </div>
                         ))}
                     </CardContent>
                 </Card>
               )}
                {paymentType === "Referral/CC" && payeeId && referredPatientsList.length === 0 && (
-                 <p className="text-sm text-muted-foreground mt-1">No patients found referred by this doctor.</p>
+                 <p className="text-sm text-muted-foreground mt-1">No unpaid referrals for this doctor.</p>
                )}
             </>
+          )}
+
+          {paymentType === "Doctor Fee" && (
+            <div className="space-y-3">
+              <div>
+                <Label htmlFor="doctorFeePayee">Doctor *</Label>
+                <Select onValueChange={setPayeeId} value={payeeId} disabled={isEditMode}>
+                  <SelectTrigger id="doctorFeePayee"><SelectValue placeholder="Select the doctor being paid" /></SelectTrigger>
+                  <SelectContent>
+                    {staffMembersList.filter(s => s.role === "Doctor").map(doctor => (
+                      <SelectItem key={doctor.id} value={String(doctor.id)}>{doctor.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {payeeId && (
+                <Card className="bg-muted/30">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">{isEditMode ? 'Cases paid by this payment' : 'Unpaid cases'}</CardTitle>
+                    {!isEditMode && <CardDescription>Cases where this doctor is the attending doctor and the fee is still pending. Set fees on each patient&apos;s page (Department &amp; Care Team).</CardDescription>}
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {doctorCases.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">{isEditMode ? 'No cases recorded.' : 'No unpaid cases for this doctor.'}</p>
+                    ) : doctorCases.map(c => (
+                      <label key={c.id} htmlFor={`case-${c.id}`} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-md border bg-background px-3 py-2">
+                        <Checkbox id={`case-${c.id}`} className="h-5 w-5" disabled={isEditMode}
+                          checked={selectedPatientIdsForPayment.includes(c.id)}
+                          onCheckedChange={(checked) => handlePatientSelectionForPayment(c.id, checked)} />
+                        <span className="flex-grow text-sm">
+                          {c.firstName} {c.lastName} <span className="text-muted-foreground">(ID: {String(c.id).padStart(3, '0')}{c.admissionDate ? `, admitted ${format(parseISO(c.admissionDate), 'dd/MM/yyyy')}` : ''})</span>
+                        </span>
+                        <span className="text-sm font-medium">₹{(c.doctorFee ?? 0).toFixed(2)}</span>
+                      </label>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           )}
 
           {paymentType === "Salary" && (
@@ -780,10 +913,11 @@ export default function PaymentFormPage() {
                 placeholder="e.g., 5000.00" 
                 min="0.01" 
                 step="0.01"
-                readOnly={isPharmacyPaymentWithItems || isMaterialPaymentWithItems}
-                className={(isPharmacyPaymentWithItems || isMaterialPaymentWithItems) ? "bg-muted" : ""}
+                readOnly={isPharmacyPaymentWithItems || isMaterialPaymentWithItems || paymentType === "Doctor Fee"}
+                className={(isPharmacyPaymentWithItems || isMaterialPaymentWithItems || paymentType === "Doctor Fee") ? "bg-muted" : ""}
               />
                {(isPharmacyPaymentWithItems || isMaterialPaymentWithItems) && <p className="text-xs text-muted-foreground mt-1">Total calculated from items.</p>}
+               {paymentType === "Doctor Fee" && <p className="text-xs text-muted-foreground mt-1">Total of the selected cases&apos; doctor fees.</p>}
             </div>
             <div>
               <Label htmlFor="paymentMethod">Payment Method *</Label>

@@ -258,12 +258,6 @@ export default function MedicationsPage() {
             <CardDescription className="mb-4">
               There are no medications registered yet. Click "Add New Medication" or "Import from CSV" to start.
             </CardDescription>
-            <img 
-              src="https://placehold.co/600x300.png" 
-              alt="No medications placeholder" 
-              data-ai-hint="empty pharmacy shelves"
-              className="mx-auto rounded-md mt-4 shadow-md" 
-            />
           </CardContent>
         </Card>
       ) : (

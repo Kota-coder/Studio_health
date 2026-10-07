@@ -247,12 +247,6 @@ export default function ReferringDoctorsPage() {
             <CardDescription className="mb-4">
               There are no referring doctor profiles registered yet. Click "Add New Referring Doctor" or "Import from CSV" to begin.
             </CardDescription>
-            <img
-              src="https://placehold.co/600x300.png"
-              alt="No referring doctors placeholder"
-              data-ai-hint="empty list doctors"
-              className="mx-auto rounded-md mt-4 shadow-md"
-            />
           </CardContent>
         </Card>
       ) : (
@@ -269,6 +263,7 @@ export default function ReferringDoctorsPage() {
                   <TableHead className="hidden sm:table-cell">Hospital/Clinic Name</TableHead>
                   <TableHead className="hidden md:table-cell">Phone</TableHead>
                   <TableHead className="hidden lg:table-cell">Email</TableHead>
+                  <TableHead className="hidden sm:table-cell text-right">Referral Fee</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -279,6 +274,7 @@ export default function ReferringDoctorsPage() {
                     <TableCell className="hidden sm:table-cell">{doctor.location}</TableCell>
                     <TableCell className="hidden md:table-cell">{doctor.phoneNumber}</TableCell>
                     <TableCell className="hidden lg:table-cell">{doctor.email}</TableCell>
+                    <TableCell className="hidden sm:table-cell text-right">{[doctor.defaultReferralFee != null ? `₹${doctor.defaultReferralFee.toFixed(2)}` : null, doctor.defaultReferralPercent != null ? `${doctor.defaultReferralPercent}%` : null].filter(Boolean).join(' or ') || '—'}</TableCell>
                     <TableCell className="text-right space-x-2">
                       <Link href={`/referring-doctors/form?id=${doctor.id}`} passHref>
                         <Button variant="outline" size="sm" aria-label={`Edit ${doctor.name}`}>

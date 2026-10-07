@@ -93,18 +93,19 @@ export default function VendorFormPage() {
 
   const handleSubmit = async () => {
     let hasError = false;
+    const problems: string[] = [];
     if (!name.trim()) { 
-        toast({ title: "Validation Error", description: "Vendor Name is required.", variant: "destructive" }); 
+        problems.push("Vendor Name is required."); 
         hasError = true; 
     }
     if (!isValidPhoneNumberOptional(phoneNumber)) { 
-        setPhoneError("Please enter a valid phone number if provided."); 
+        setPhoneError("Please enter a valid phone number if provided."); problems.push("Please enter a valid phone number if provided."); 
         hasError = true; 
     } else { 
         setPhoneError(null); 
     }
     if (!isValidEmailOptional(email)) { 
-        setEmailError("Please enter a valid email address if provided."); 
+        setEmailError("Please enter a valid email address if provided."); problems.push("Please enter a valid email address if provided."); 
         hasError = true; 
     } else { 
         setEmailError(null); 
@@ -113,7 +114,7 @@ export default function VendorFormPage() {
     if (hasError) {
       toast({
             title: "Validation Error",
-            description: "Please correct the highlighted fields.",
+            description: problems.join(" ") || "Please check the form.",
             variant: "destructive",
         });
       return;

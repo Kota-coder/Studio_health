@@ -218,12 +218,6 @@ export default function VendorsPage() {
             <CardDescription className="mb-4">
               There are no material vendors cataloged yet. Click "Add New Vendor" or "Import from CSV" to start.
             </CardDescription>
-            <img 
-              src="https://placehold.co/600x300.png" 
-              alt="No vendors placeholder" 
-              data-ai-hint="empty warehouse boxes"
-              className="mx-auto rounded-md mt-4 shadow-md" 
-            />
           </CardContent>
         </Card>
       ) : (

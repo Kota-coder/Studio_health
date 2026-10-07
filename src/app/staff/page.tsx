@@ -286,12 +286,6 @@ export default function StaffPage() {
             <CardDescription className="mb-4">
               There are no staff members registered yet. Click "Add New Staff Manually" or "Import from CSV" to begin.
             </CardDescription>
-            <img 
-              src="https://placehold.co/600x300.png" 
-              alt="No staff placeholder" 
-              data-ai-hint="empty team office"
-              className="mx-auto rounded-md mt-4 shadow-md" 
-            />
           </CardContent>
         </Card>
       ) : (

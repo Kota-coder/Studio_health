@@ -141,10 +141,11 @@ export default function StaffFormPage() {
 
   const handleSubmit = async () => {
     let hasError = false;
-    if (!name.trim()) { toast({ title: "Validation Error", description: "Name is required.", variant: "destructive" }); hasError = true; }
-    if (!isValidPhoneNumber(phoneNumber)) { setPhoneError("Phone number must be 10 digits."); hasError = true; } else { setPhoneError(null); }
-    if (!isValidEmail(email)) { setEmailError("Please enter a valid email address."); hasError = true; } else { setEmailError(null); }
-    if (!role) { toast({ title: "Validation Error", description: "Role is required.", variant: "destructive" }); hasError = true; }
+    const problems: string[] = [];
+    if (!name.trim()) { problems.push("Name is required."); hasError = true; }
+    if (!isValidPhoneNumber(phoneNumber)) { setPhoneError("Phone number must be 10 digits."); problems.push("Phone number must be 10 digits."); hasError = true; } else { setPhoneError(null); }
+    if (!isValidEmail(email)) { setEmailError("Please enter a valid email address."); problems.push("Please enter a valid email address."); hasError = true; } else { setEmailError(null); }
+    if (!role) { problems.push("Role is required."); hasError = true; }
     
     let finalHireDateString = "";
     if (hireDate) {
@@ -153,22 +154,22 @@ export default function StaffFormPage() {
         try {
             const parsed = parse(hireDateInput, 'dd/MM/yyyy', new Date());
             if(!isValid(parsed) || format(parsed, 'dd/MM/yyyy') !== hireDateInput) { 
-                 toast({ title: "Validation Error", description: "Hire Date must be in dd/MM/yyyy format.", variant: "destructive" }); hasError = true;
+                 problems.push("Hire Date must be in dd/MM/yyyy format."); hasError = true;
             } else {
                 finalHireDateString = hireDateInput;
             }
         } catch {
-            toast({ title: "Validation Error", description: "Hire Date must be in dd/MM/yyyy format.", variant: "destructive" }); hasError = true;
+            problems.push("Hire Date must be in dd/MM/yyyy format."); hasError = true;
         }
     } else {
-      toast({ title: "Validation Error", description: "Hire Date is required.", variant: "destructive" }); hasError = true;
+      problems.push("Hire Date is required."); hasError = true;
     }
 
     let numericSalary: number | undefined = undefined;
     if (salary.trim() !== "") {
       numericSalary = parseFloat(salary);
       if (isNaN(numericSalary) || numericSalary < 0) {
-        toast({ title: "Validation Error", description: "Salary must be a valid non-negative number if provided.", variant: "destructive" });
+        problems.push("Salary must be a valid non-negative number if provided.");
         hasError = true;
       }
     }
@@ -177,7 +178,7 @@ export default function StaffFormPage() {
     if (hasError) {
       toast({
             title: "Error",
-            description: "Please correct the highlighted fields and ensure all required fields are filled.",
+            description: problems.join(" ") || "Please check the form.",
             variant: "destructive",
         });
       return;

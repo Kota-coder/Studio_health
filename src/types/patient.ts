@@ -1,4 +1,5 @@
 
+export type DoctorFeeStatus = "Pending" | "Paid";
 export type PatientCondition = "Critical" | "Medium" | "Low" | "Discharged" | "Unassigned";
 export type PatientAdmissionCondition = "Stable" | "Guarded" | "Serious" | "Critical" | "Undetermined" | "";
 
@@ -47,6 +48,21 @@ export interface TestEntry {
   attachments?: string[]; // Storage paths in the patient-files bucket (data: URLs only before upload)
 }
 
+// One billed procedure type and the referral % applied to it.
+export interface ReferralFeeLine {
+  key: string; // billType + description, lower-cased
+  description: string;
+  billType: string;
+  amount: number; // Total billed for this procedure type
+  percent: number;
+  fee: number;
+}
+
+export interface ReferralFeeBasis {
+  mode: 'percent';
+  lines: ReferralFeeLine[];
+}
+
 export interface Patient {
   id: number;
   firstName: string;
@@ -76,6 +92,22 @@ export interface Patient {
 
   tests?: TestEntry[];
   auditLog?: AuditLogEntry[];
+
+  // Department and care team. The attending doctor earns doctorFee for this case,
+  // paid through a "Doctor Fee" payment (which sets doctorFeeStatus to Paid).
+  departmentId?: number | null;
+  attendingDoctorId?: number | null;
+  attendingNurseId?: number | null;
+  doctorFee?: number | null;
+  doctorFeeStatus?: DoctorFeeStatus;
+  doctorFeePaymentId?: string | null;
+
+  // Fee the hospital owes the referring doctor (referredDoctorId) for this patient,
+  // settled by a Referral/CC payment. The patient does not pay it.
+  referralFee?: number | null;
+  referralFeeBasis?: ReferralFeeBasis | null; // How referralFee was worked out; null = fixed amount
+  referralFeeStatus?: DoctorFeeStatus;
+  referralFeePaymentId?: string | null;
 
   // DPDP Act consent record, captured at registration.
   consentGivenAt?: string;

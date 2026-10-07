@@ -12,7 +12,7 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Menu as MenuIcon, LayoutDashboard, FileText, CreditCard, Receipt, Pill, Archive, Truck, Users, FlaskConical, HeartHandshake, LogIn, LogOut, UserCircle, AreaChart, Database } from 'lucide-react'; // Added AreaChart
+import { Menu as MenuIcon, LayoutDashboard, FileText, CreditCard, Receipt, Pill, Archive, Truck, Users, FlaskConical, HeartHandshake, LogIn, LogOut, UserCircle, AreaChart, Database, Building2, CalendarClock } from 'lucide-react';
 import React from 'react';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
@@ -40,12 +40,14 @@ const allMenuItems: MenuItemConfig[] = [
   { href: '/billing', label: 'Billing', icon: CreditCard, allowedRoles: PAGE_ROLES.billing, isPrimary: true },
   { href: '/payments', label: 'Payments', icon: Receipt, allowedRoles: PAGE_ROLES.payments, isPrimary: true },
   { href: '/financial-dashboard', label: 'Financial Dashboard', icon: AreaChart, allowedRoles: PAGE_ROLES.financialDashboard, isPrimary: true },
+  { href: '/duty', label: 'Duty Roster & Attendance', icon: CalendarClock, allowedRoles: PAGE_ROLES.duty, isPrimary: true },
 
   // Organization Setup Links
   { href: '/patient-care', label: 'Patient Care Templates', icon: FileText, allowedRoles: PAGE_ROLES.patientCare, isPrimary: false },
   { href: '/medications', label: 'Medications', icon: Pill, allowedRoles: PAGE_ROLES.medications, isPrimary: false },
   { href: '/materials', label: 'Materials', icon: Archive, allowedRoles: PAGE_ROLES.materials, isPrimary: false },
   { href: '/vendors', label: 'Material Vendors', icon: Truck, allowedRoles: PAGE_ROLES.vendors, isPrimary: false },
+  { href: '/departments', label: 'Departments', icon: Building2, allowedRoles: PAGE_ROLES.departments, isPrimary: false },
   { href: '/staff', label: 'Staff Management', icon: Users, allowedRoles: PAGE_ROLES.staff, isPrimary: false },
   { href: '/medical-tests', label: 'Medical Tests Catalog', icon: FlaskConical, allowedRoles: PAGE_ROLES.medicalTests, isPrimary: false },
   { href: '/referring-doctors', label: 'Referring Doctors', icon: HeartHandshake, allowedRoles: PAGE_ROLES.referringDoctors, isPrimary: false },
@@ -59,7 +61,7 @@ export function AppHeaderMenu() {
   if (isLoading) {
     return (
        <Button variant="ghost" size="icon" aria-label="Loading menu" disabled>
-          <MenuIcon className="h-5 w-5 animate-spin" />
+          <MenuIcon className="h-5 w-5 opacity-50" />
        </Button>
     );
   }

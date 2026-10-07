@@ -43,6 +43,8 @@ export default function ReferringDoctorFormPage() {
   const [hospitalClinicName, setHospitalClinicName] = useState(""); // Changed from location
   const [phoneNumber, setPhoneNumber] = useState("");
   const [email, setEmail] = useState("");
+  const [defaultReferralFee, setDefaultReferralFee] = useState("");
+  const [defaultReferralPercent, setDefaultReferralPercent] = useState("");
 
   const [emailError, setEmailError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
@@ -75,6 +77,8 @@ export default function ReferringDoctorFormPage() {
           setHospitalClinicName(doctorToEdit.location); // Map 'location' to 'hospitalClinicName'
           setPhoneNumber(doctorToEdit.phoneNumber || "");
           setEmail(doctorToEdit.email || "");
+          setDefaultReferralFee(doctorToEdit.defaultReferralFee != null ? String(doctorToEdit.defaultReferralFee) : "");
+          setDefaultReferralPercent(doctorToEdit.defaultReferralPercent != null ? String(doctorToEdit.defaultReferralPercent) : "");
         } else {
           toast({ title: "Error", description: "Referring doctor profile not found.", variant: "destructive" });
           router.push('/referring-doctors');
@@ -87,21 +91,35 @@ export default function ReferringDoctorFormPage() {
 
   const handleSubmit = async () => {
     let hasError = false;
-    if (!name.trim()) { toast({ title: "Validation Error", description: "Name is required.", variant: "destructive" }); hasError = true; }
-    if (!hospitalClinicName.trim()) { toast({ title: "Validation Error", description: "Hospital/Clinic Name is required.", variant: "destructive" }); hasError = true; }
-    if (phoneNumber && !isValidPhoneNumberOptional(phoneNumber)) { setPhoneError("Please enter a valid phone number if provided."); hasError = true; } else { setPhoneError(null); }
-    if (email && !isValidEmailOptional(email)) { setEmailError("Please enter a valid email address if provided."); hasError = true; } else { setEmailError(null); }
+    const problems: string[] = [];
+    if (!name.trim()) { problems.push("Name is required."); hasError = true; }
+    if (!hospitalClinicName.trim()) { problems.push("Hospital/Clinic Name is required."); hasError = true; }
+    if (phoneNumber && !isValidPhoneNumberOptional(phoneNumber)) { setPhoneError("Please enter a valid phone number if provided."); problems.push("Please enter a valid phone number if provided."); hasError = true; } else { setPhoneError(null); }
+    if (email && !isValidEmailOptional(email)) { setEmailError("Please enter a valid email address if provided."); problems.push("Please enter a valid email address if provided."); hasError = true; } else { setEmailError(null); }
 
     if (hasError) {
       toast({
             title: "Validation Error",
-            description: "Please correct the highlighted fields.",
+            description: problems.join(" ") || "Please check the form.",
             variant: "destructive",
         });
       return;
     }
 
+    const referralFee = defaultReferralFee.trim() === "" ? null : Number(defaultReferralFee);
+    if (referralFee !== null && (!Number.isFinite(referralFee) || referralFee < 0)) {
+      toast({ title: "Validation Error", description: "Default referral fee must be 0 or more, or left empty.", variant: "destructive" });
+      return;
+    }
+    const referralPercent = defaultReferralPercent.trim() === "" ? null : Number(defaultReferralPercent);
+    if (referralPercent !== null && (!Number.isFinite(referralPercent) || referralPercent < 0 || referralPercent > 100)) {
+      toast({ title: "Validation Error", description: "Default referral percentage must be between 0 and 100, or left empty.", variant: "destructive" });
+      return;
+    }
+
     const doctorData: Omit<ReferringDoctor, 'id'> = {
+      defaultReferralFee: referralFee,
+      defaultReferralPercent: referralPercent,
       name: name.trim(),
       location: hospitalClinicName.trim(), // Save hospitalClinicName to location
       phoneNumber: phoneNumber.trim() || "",
@@ -181,6 +199,24 @@ export default function ReferringDoctorFormPage() {
                 }
             }} placeholder="name@example.com"/>
             {emailError && <p className="text-destructive text-sm mt-1">{emailError}</p>}
+          </div>
+          <div className="rounded-md border p-3 space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Referral fees are paid by the hospital to this doctor, not by the patient. Set either default; both can be changed for each patient.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="defaultReferralFee">Fixed fee per patient (₹, optional)</Label>
+                <Input id="defaultReferralFee" type="number" inputMode="decimal" min={0} value={defaultReferralFee}
+                  onChange={(e) => setDefaultReferralFee(e.target.value)} placeholder="e.g. 500" />
+              </div>
+              <div>
+                <Label htmlFor="defaultReferralPercent">Or % of billed procedures (optional)</Label>
+                <Input id="defaultReferralPercent" type="number" inputMode="decimal" min={0} max={100} step="0.5" value={defaultReferralPercent}
+                  onChange={(e) => setDefaultReferralPercent(e.target.value)} placeholder="e.g. 10" />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">Paid through Payments → Referral/CC.</p>
           </div>
         </CardContent>
         <CardFooter className="flex justify-between mt-4">

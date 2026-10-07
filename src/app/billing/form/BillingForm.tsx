@@ -92,7 +92,7 @@ export default function BillingForm() {
     let cancelled = false;
     const load = async () => {
     try {
-    setPatients(await patientsRepo.listBasic());
+    setPatients(await patientsRepo.listNames());
 
     if (patientIdFromQuery && !isEditMode) {
       const unpaddedPatientId = parseInt(patientIdFromQuery, 10).toString();

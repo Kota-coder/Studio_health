@@ -237,12 +237,6 @@ export default function MaterialsPage() {
             <CardDescription className="mb-4">
               There are no materials cataloged yet. Click "Add New Material" or "Import from CSV" to start.
             </CardDescription>
-            <img 
-              src="https://placehold.co/600x300.png" 
-              alt="No materials placeholder" 
-              data-ai-hint="empty storage shelves"
-              className="mx-auto rounded-md mt-4 shadow-md" 
-            />
           </CardContent>
         </Card>
       ) : (

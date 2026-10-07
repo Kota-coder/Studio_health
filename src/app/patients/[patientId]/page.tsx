@@ -55,6 +55,7 @@ import { Alert, AlertDescription as AlertDesc, AlertTitle as AlertTitleComponent
 import { compressImageFiles } from '@/lib/images';
 import { uploadNewImages } from '@/lib/storage';
 import { StoredImage } from '@/components/stored-image';
+import { CareTeamCard } from '@/components/care-team-card';
 import { PATIENT_DATA_REQUESTS_ENABLED } from '@/config/features';
 import { downloadPatientData, erasePatientData } from '@/lib/patient-data';
 import {
@@ -466,10 +467,12 @@ export default function PatientDetailPage() {
 
   const handleTestTypeChange = useCallback((typeId: string) => {
     setSelectedTestTypeId(typeId);
-    const definition = TEST_DEFINITIONS.find(def => def.id === typeId);
+    // Catalog tests (ids like "test_cat_3") use the matching built-in form by name, e.g. "ECG".
+    const catalogName = testCatalog.find(t => t.id === typeId)?.name.trim().toLowerCase();
+    const definition = TEST_DEFINITIONS.find(def => def.id === typeId || def.name.toLowerCase() === catalogName);
     setCurrentTestDefinition(definition || null);
     setDynamicTestFieldValues({});
-  }, []);
+  }, [testCatalog]);
 
   const handleDynamicTestFieldChange = useCallback((fieldId: string, value: string | number) => {
     setDynamicTestFieldValues(prev => ({ ...prev, [fieldId]: value }));
@@ -542,7 +545,7 @@ export default function PatientDetailPage() {
     try {
       await patientsRepo.addTest(patient.id, {
         testTypeId: selectedTestTypeId,
-        testTypeName: currentTestDefinition?.name || "Unknown Test",
+        testTypeName: testCatalog.find(t => t.id === selectedTestTypeId)?.name || currentTestDefinition?.name || "Unknown Test",
         datePerformed: finalTestDateString,
         testData: { ...dynamicTestFieldValues },
         overallResults: newTestOverallResults.trim() || undefined,
@@ -571,11 +574,12 @@ export default function PatientDetailPage() {
     setSelectedStaffForTest("");
     setShowAddTestForm(false);
     clearTestAttachment();
-  }, [selectedTestTypeId, patient, currentUser, newTestDate, newTestDateInput, currentTestDefinition, dynamicTestFieldValues, newTestOverallResults, newTestNotes, selectedStaffForTest, newTestAttachments, toast, reloadPatient, availableStaff, clearTestAttachment]);
+  }, [selectedTestTypeId, patient, currentUser, newTestDate, newTestDateInput, currentTestDefinition, dynamicTestFieldValues, newTestOverallResults, newTestNotes, selectedStaffForTest, newTestAttachments, toast, reloadPatient, availableStaff, clearTestAttachment, testCatalog]);
 
   const handleCreateTestBill = useCallback(async (test: TestEntry) => {
     if (!patient) return;
-    const testCatalogItem = testCatalog.find(t => t.id === test.testTypeId);
+    const testCatalogItem = testCatalog.find(t => t.id === test.testTypeId)
+      ?? testCatalog.find(t => t.name.trim().toLowerCase() === test.testTypeName.trim().toLowerCase());
     const billItem: BillItem = {
       id: `${test.id}-${Date.now()}`,
       description: test.testTypeName,
@@ -664,7 +668,6 @@ export default function PatientDetailPage() {
     return (
       <div className="container mx-auto p-8 text-center">
         <h1 className="text-2xl font-semibold mb-4">Patient Not Found</h1>
-        <img src="https://placehold.co/600x300.png" data-ai-hint="error medical" alt="Patient not found" className="mx-auto rounded-md mb-4" />
         <Link href="/dashboard" passHref>
           <Button variant="outline"><ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard</Button>
         </Link>
@@ -742,6 +745,9 @@ export default function PatientDetailPage() {
         <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
           <Button variant="outline" onClick={() => router.push('/dashboard')}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href={`/patients/${patient.id.toString().padStart(3, '0')}/summary`}><FileText className="mr-2 h-4 w-4" /> Treatment Summary</Link>
           </Button>
           {PATIENT_DATA_REQUESTS_ENABLED && currentUser?.role === "Super Admin" && (
             <div className="flex flex-wrap gap-2">
@@ -1422,6 +1428,9 @@ export default function PatientDetailPage() {
         </div>
 
         <div className="space-y-6"> {/* Sidebar area */}
+            {currentUser && (
+              <CareTeamCard patient={patient} staff={availableStaff} currentUser={currentUser} onSaved={() => reloadPatient(patient.id)} />
+            )}
             <Card className="shadow-lg">
                 <CardHeader>
                     <CardTitle className="flex items-center"><Users className="mr-2 h-5 w-5 text-primary"/>Assigned Staff</CardTitle>

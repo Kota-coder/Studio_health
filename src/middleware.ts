@@ -6,9 +6,9 @@ import { createServerClient } from '@supabase/ssr';
 const PUBLIC_PATHS = ['/login', '/auth/confirm', '/set-password', '/forgot-password', '/reset-password', '/signup'];
 
 const SETUP_MESSAGE = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CardioCare setup needed</title>
+<title>Seva setup needed</title>
 <body style="font-family:system-ui;max-width:40rem;margin:3rem auto;padding:0 1rem;line-height:1.5">
-<h1>CardioCare isn't connected to its database yet</h1>
+<h1>Seva isn't connected to its database yet</h1>
 <p>Add <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to your
 <code>.env</code> file (see <code>.env.example</code> and the README's "Supabase setup"), then restart the app.</p>
 </body>`;
@@ -35,7 +35,12 @@ export async function middleware(request: NextRequest) {
       },
     },
   );
-  const { data: { user } } = await supabase.auth.getUser();
+  // getClaims() checks the session token's signature locally when the project uses
+  // asymmetric JWT signing keys (the default for new Supabase projects), so a page load
+  // or link prefetch doesn't need a call to Supabase Auth. Projects still on the legacy
+  // shared secret fall back to asking the Auth server, as before.
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const user = claimsData?.claims?.sub ? claimsData.claims : null;
 
   const { pathname } = request.nextUrl;
   if (!user && !PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(`${p}/`))) {
@@ -70,8 +75,8 @@ export const config = {
      * - api (API routes)
      * - _next/static (static files)
      * - _next/image (image optimization files)
-     * - favicon.ico, apple-icon.png, manifest.webmanifest and /icons (home-screen app files)
+     * - favicon.ico, apple-icon.png, manifest.webmanifest, /icons, sw.js and offline.html (installed-app files)
      */
-    '/((?!api|_next/static|_next/image|favicon.ico|apple-icon.png|manifest.webmanifest|icons/).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|apple-icon.png|manifest.webmanifest|icons/|sw.js|offline.html).*)',
   ],
 };

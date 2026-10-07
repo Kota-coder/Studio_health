@@ -19,9 +19,17 @@ import { bills as billsRepo } from '@/lib/data';
 import { cn } from "@/lib/utils";
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
+import { DEFAULT_DATE_FILTER, DateRangeFilter, dateFilterRange, describeDateFilter, type DateFilterValue } from '@/components/date-range-filter';
 
 const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.billing;
 const ALL_PAYMENT_STATUSES: (PaymentStatus | "All")[] = ["All", "Paid", "Unpaid", "Partially Paid", "Cancelled"];
+
+const STATUS_COLORS: Record<string, string> = {
+  'Unpaid': 'text-red-600',
+  'Partially Paid': 'text-yellow-600',
+  'Paid': 'text-emerald-700',
+  'Cancelled': 'text-gray-500',
+};
 
 export default function BillingOverviewPage() {
   const router = useRouter();
@@ -32,6 +40,11 @@ export default function BillingOverviewPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [filterStatus, setFilterStatus] = useState<PaymentStatus | "All">("All");
+  // The period and status are applied by the database, so only matching bills are downloaded.
+  // Choose "All time" with "Unpaid" to find every outstanding bill.
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(DEFAULT_DATE_FILTER);
+  const [isFiltering, setIsFiltering] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   useEffect(() => {
     if (!authIsLoading && currentUser && !ALLOWED_ROLES.includes(currentUser.role)) {
@@ -44,20 +57,21 @@ export default function BillingOverviewPage() {
 
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
-      setIsLoading(true);
-      billsRepo.list()
+      if (hasLoadedOnce) setIsFiltering(true); else setIsLoading(true);
+      billsRepo.list({ ...dateFilterRange(dateFilter), status: filterStatus === "All" ? undefined : filterStatus })
         .then(setBills)
         .catch(error => {
           console.error("Error loading bills:", error);
           toast({ title: "Error", description: "Could not load billing data.", variant: "destructive" });
           setBills([]);
         })
-        .finally(() => setIsLoading(false));
+        .finally(() => { setIsLoading(false); setIsFiltering(false); setHasLoadedOnce(true); });
     } else {
         setBills([]);
         setIsLoading(false);
     }
-  }, [toast, currentUser]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- hasLoadedOnce only picks the loading style
+  }, [toast, currentUser, dateFilter, filterStatus]);
 
   const filteredBills = useMemo(() => {
     let tempBills = [...bills];
@@ -69,16 +83,12 @@ export default function BillingOverviewPage() {
       );
     }
 
-    if (filterStatus !== "All") {
-      tempBills = tempBills.filter(bill => bill.paymentStatus === filterStatus);
-    }
-
     return tempBills.sort((a, b) => {
         const dateA = isValid(parseISO(a.createdAt)) ? parseISO(a.createdAt) : new Date(0);
         const dateB = isValid(parseISO(b.createdAt)) ? parseISO(b.createdAt) : new Date(0);
         return dateB.getTime() - dateA.getTime();
     });
-  }, [bills, searchTerm, filterStatus]);
+  }, [bills, searchTerm]);
 
   const formatDateSafe = (dateString: string | undefined) => {
     if (!dateString) return 'N/A';
@@ -122,7 +132,7 @@ export default function BillingOverviewPage() {
 
   const handleDownloadCSV = useCallback(() => {
     if (filteredBills.length === 0) {
-      toast({ title: "No Data", description: "There is no billing data to download.", variant: "default" });
+      toast({ title: "No Data", description: "There are no bills matching these filters to download.", variant: "default" });
       return;
     }
 
@@ -158,7 +168,9 @@ export default function BillingOverviewPage() {
       const url = URL.createObjectURL(blob);
       const today = format(new Date(), 'yyyy-MM-dd');
       link.setAttribute('href', url);
-      link.setAttribute('download', `billing_overview_${today}.csv`);
+      const range = dateFilterRange(dateFilter);
+      const period = range.from || range.to ? `${range.from ?? 'start'}_to_${range.to ?? today}` : `all_${today}`;
+      link.setAttribute('download', `bills_${period}.csv`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
@@ -208,7 +220,8 @@ export default function BillingOverviewPage() {
         <CardHeader>
           <CardTitle className="text-lg">Filters & Search</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col sm:flex-row gap-4 items-end">
+        <CardContent className="flex flex-col sm:flex-row sm:flex-wrap gap-4 sm:items-end">
+          <DateRangeFilter value={dateFilter} onChange={setDateFilter} idPrefix="billsDate" className="w-full sm:w-auto [&_button]:mt-1" />
           <div className="w-full sm:flex-grow">
             <Label htmlFor="searchPatientName">Search by Patient Name or Bill ID</Label>
             <Input
@@ -235,24 +248,30 @@ export default function BillingOverviewPage() {
               </SelectContent>
             </Select>
           </div>
+          <p className="w-full text-sm text-muted-foreground" role="status">
+            {isFiltering ? 'Loading…' : `${filteredBills.length} bill${filteredBills.length === 1 ? '' : 's'} · ₹${filteredBills.reduce((sum, b) => sum + b.totalAmount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · ${describeDateFilter(dateFilter)}`}
+          </p>
         </CardContent>
       </Card>
 
-      {bills.length === 0 && !isLoading ? (
+      {bills.length === 0 && !isLoading && (dateFilter.preset !== 'all' || filterStatus !== "All") ? (
+        <Card className="text-center shadow-lg">
+          <CardHeader>
+            <CardTitle>No Bills Match These Filters</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <CardDescription>Choose a longer period, &quot;All time&quot; or another status to see more bills.</CardDescription>
+          </CardContent>
+        </Card>
+      ) : bills.length === 0 && !isLoading ? (
         <Card className="text-center shadow-lg">
           <CardHeader>
             <CardTitle>No Bills Found</CardTitle>
           </CardHeader>
           <CardContent>
-            <CardDescription className="mb-4">
+            <CardDescription>
               There are no bills recorded yet. Click "Create New Bill" to start.
             </CardDescription>
-            <img
-              src="https://placehold.co/600x300.png"
-              alt="No bills placeholder"
-              data-ai-hint="empty finance document"
-              className="mx-auto rounded-md mt-4 shadow-md"
-            />
           </CardContent>
         </Card>
       ) : filteredBills.length === 0 && bills.length > 0 ? (
@@ -261,25 +280,19 @@ export default function BillingOverviewPage() {
             <CardTitle>No Bills Match Criteria</CardTitle>
           </CardHeader>
           <CardContent>
-            <CardDescription className="mb-4">
+            <CardDescription>
               No bills found matching your current search and filter settings.
             </CardDescription>
-             <img
-              src="https://placehold.co/600x300.png"
-              alt="No matching bills placeholder"
-              data-ai-hint="empty search results"
-              className="mx-auto rounded-md mt-4 shadow-md"
-            />
           </CardContent>
         </Card>
       ) : (
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>All Bills</CardTitle>
-            <CardDescription>List of all generated bills. Use filters above to narrow down results.</CardDescription>
+            <CardTitle>Bills</CardTitle>
+            <CardDescription>{dateFilter.preset === 'all' ? 'All bills' : `Bills dated ${describeDateFilter(dateFilter)}`}{filterStatus !== "All" ? ` · ${filterStatus}` : ''}, newest first.</CardDescription>
           </CardHeader>
           <CardContent>
-            <Table>
+            <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-4 sm:[&_th]:px-4">
               <TableHeader>
                 <TableRow>
                   <TableHead>Bill ID</TableHead>
@@ -287,7 +300,7 @@ export default function BillingOverviewPage() {
                   <TableHead className="hidden sm:table-cell">Bill Type</TableHead>
                   <TableHead className="hidden md:table-cell">Bill Date</TableHead>
                   <TableHead>Total Amount</TableHead>
-                  <TableHead>Payment Status</TableHead>
+                  <TableHead className="hidden sm:table-cell">Payment Status</TableHead>
                   <TableHead className="hidden lg:table-cell">Payment Date</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -302,8 +315,12 @@ export default function BillingOverviewPage() {
                       {bill.billType || 'N/A'}
                     </TableCell>
                     <TableCell className="hidden md:table-cell">{formatDateSafe(bill.billDate)}</TableCell>
-                    <TableCell>₹{bill.totalAmount.toFixed(2)}</TableCell>
                     <TableCell>
+                      ₹{bill.totalAmount.toFixed(2)}
+                      {/* On phones the status column is hidden, so show it under the amount. */}
+                      <span className={cn("block text-xs font-semibold sm:hidden", STATUS_COLORS[bill.paymentStatus] )}>{bill.paymentStatus || 'N/A'}</span>
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell">
                       <span className={cn("font-semibold",{
                         'text-red-600': bill.paymentStatus === 'Unpaid',
                         'text-yellow-600': bill.paymentStatus === 'Partially Paid',
@@ -316,7 +333,7 @@ export default function BillingOverviewPage() {
                     <TableCell className="hidden lg:table-cell">
                       {bill.paymentStatus === 'Paid' && bill.paymentDate ? formatDateSafe(bill.paymentDate) : 'N/A'}
                     </TableCell>
-                    <TableCell className="text-right space-x-1 sm:space-x-2">
+                    <TableCell className="text-right whitespace-nowrap space-x-1 sm:space-x-2">
                       <Link href={`/billing/form?billId=${bill.id}`} passHref>
                         <Button variant="outline" size="sm" aria-label={`View or Edit ${bill.id}`}>
                           <Eye className="h-4 w-4" />
@@ -328,6 +345,7 @@ export default function BillingOverviewPage() {
                           size="sm" 
                           className="text-destructive hover:bg-destructive/10"
                           onClick={async () => {
+                            if (!confirm(`Delete unpaid bill ${bill.id}?`)) return;
                             try {
                               await billsRepo.remove(bill.id);
                               setBills(prev => prev.filter(b => b.id !== bill.id));

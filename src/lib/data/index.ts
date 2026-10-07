@@ -3,6 +3,7 @@
 // values (bill items, template field data, ...) are jsonb and keep their camelCase keys.
 
 import { getSupabase } from '@/lib/supabase/client';
+import { MINUTE, cached, invalidate } from './cache';
 import type { AuditLogEntry, CareNote, Patient, TestEntry } from '@/types/patient';
 import type { Bill } from '@/types/billing';
 import type { Payment } from '@/types/payment';
@@ -13,6 +14,8 @@ import type { Material } from '@/types/material';
 import type { Vendor } from '@/types/vendor';
 import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 import type { TreatmentTemplate } from '@/config/treatmentTemplates';
+import type { Department, DepartmentMembers } from '@/types/department';
+import type { AttendanceEntry, StaffShift } from '@/types/duty';
 
 type Row = Record<string, unknown>;
 
@@ -58,7 +61,28 @@ const db = () => getSupabase();
 // Generic CRUD for flat tables
 // ---------------------------------------------------------------------------
 
-function table<T extends { id: string | number }>(name: string, orderBy: string, omitOnWrite: string[] = []) {
+// Wraps a repository so that its write methods clear the given cache entries once they finish.
+function invalidatesOnWrite<T extends object>(repo: T, writes: Array<keyof T>, prefixes: string[]): T {
+  const wrapped = { ...repo } as Record<keyof T, unknown>;
+  for (const name of writes) {
+    const write = repo[name] as unknown as (...args: unknown[]) => Promise<unknown>;
+    wrapped[name] = async (...args: unknown[]) => {
+      try {
+        return await write(...args);
+      } finally {
+        invalidate(...prefixes);
+      }
+    };
+  }
+  return wrapped as T;
+}
+
+// Reference data changes rarely; this tab re-reads it at most this often (sooner after its own saves).
+const REFERENCE_TTL = 10 * MINUTE;
+// Dashboard lists and summaries: short enough that other staff's changes appear quickly.
+const DASHBOARD_TTL = MINUTE;
+
+function table<T extends { id: string | number }>(name: string, orderBy: string, omitOnWrite: string[] = [], cacheTtl = 0) {
   const writable = (obj: Partial<T>) => {
     const row = toRow(obj);
     delete row.id;
@@ -67,38 +91,108 @@ function table<T extends { id: string | number }>(name: string, orderBy: string,
   };
   return {
     async list(): Promise<T[]> {
-      const rows = check(await db().from(name).select('*').order(orderBy));
-      return (rows as Row[]).map(r => fromRow<T>(r));
+      const load = async () => (check(await db().from(name).select('*').order(orderBy)) as Row[]).map(r => fromRow<T>(r));
+      return cacheTtl ? cached(`${name}:list`, cacheTtl, load) : load();
     },
     async get(id: T['id']): Promise<T | null> {
       const row = check(await db().from(name).select('*').eq('id', id).maybeSingle());
       return row ? fromRow<T>(row as Row) : null;
     },
     async create(obj: Omit<T, 'id'>): Promise<T> {
-      const row = check(await db().from(name).insert(writable(obj as Partial<T>)).select().single());
-      return fromRow<T>(row as Row);
+      try {
+        const row = check(await db().from(name).insert(writable(obj as Partial<T>)).select().single());
+        return fromRow<T>(row as Row);
+      } finally { invalidate(`${name}:`, 'summary:'); }
     },
     async createMany(objs: Omit<T, 'id'>[]): Promise<T[]> {
       if (objs.length === 0) return [];
-      const rows = check(await db().from(name).insert(objs.map(o => writable(o as Partial<T>))).select());
-      return (rows as Row[]).map(r => fromRow<T>(r));
+      try {
+        const rows = check(await db().from(name).insert(objs.map(o => writable(o as Partial<T>))).select());
+        return (rows as Row[]).map(r => fromRow<T>(r));
+      } finally { invalidate(`${name}:`, 'summary:'); }
     },
     async update(id: T['id'], changes: Partial<T>): Promise<T> {
-      const row = check(await db().from(name).update(writable(changes)).eq('id', id).select().single());
-      return fromRow<T>(row as Row);
+      try {
+        const row = check(await db().from(name).update(writable(changes)).eq('id', id).select().single());
+        return fromRow<T>(row as Row);
+      } finally { invalidate(`${name}:`, 'summary:'); }
     },
     async remove(id: T['id']): Promise<void> {
-      checkDeleted(await db().from(name).delete().eq('id', id).select('id'));
+      try {
+        checkDeleted(await db().from(name).delete().eq('id', id).select('id'));
+      } finally { invalidate(`${name}:`, 'summary:'); }
     },
   };
 }
 
-export const referringDoctors = table<ReferringDoctor>('referring_doctors', 'name', ['created_at', 'audit_log']);
-export const medications = table<Medication>('medications', 'name');
-export const materials = table<Material>('materials', 'name');
-export const vendors = table<Vendor>('vendors', 'name');
-export const testCatalog = table<MedicalTestCatalogItem>('medical_test_catalog', 'name');
-export const treatmentTemplates = table<TreatmentTemplate>('treatment_templates', 'name');
+const referringDoctorTable = table<ReferringDoctor>('referring_doctors', 'name', ['created_at', 'audit_log'], REFERENCE_TTL);
+const referringDoctorFromRow = (doctor: ReferringDoctor): ReferringDoctor =>
+  ({
+    ...doctor,
+    defaultReferralFee: doctor.defaultReferralFee == null ? null : Number(doctor.defaultReferralFee),
+    defaultReferralPercent: doctor.defaultReferralPercent == null ? null : Number(doctor.defaultReferralPercent),
+  });
+export const referringDoctors = {
+  ...referringDoctorTable,
+  async list(): Promise<ReferringDoctor[]> {
+    return (await referringDoctorTable.list()).map(referringDoctorFromRow);
+  },
+  async get(id: number): Promise<ReferringDoctor | null> {
+    const doctor = await referringDoctorTable.get(id);
+    return doctor ? referringDoctorFromRow(doctor) : null;
+  },
+};
+export const medications = table<Medication>('medications', 'name', [], REFERENCE_TTL);
+export const materials = table<Material>('materials', 'name', [], REFERENCE_TTL);
+export const vendors = table<Vendor>('vendors', 'name', [], REFERENCE_TTL);
+export const testCatalog = table<MedicalTestCatalogItem>('medical_test_catalog', 'name', [], REFERENCE_TTL);
+export const treatmentTemplates = table<TreatmentTemplate>('treatment_templates', 'name', [], REFERENCE_TTL);
+
+// ---------------------------------------------------------------------------
+// Departments and their doctors/nurses
+// ---------------------------------------------------------------------------
+
+const departmentTable = table<Department>('departments', 'name', ['created_at'], REFERENCE_TTL);
+
+function departmentFromRow(department: Department): Department {
+  return { ...department, defaultDoctorFee: department.defaultDoctorFee == null ? null : Number(department.defaultDoctorFee) };
+}
+
+export const departments = {
+  async list(): Promise<Department[]> {
+    return (await departmentTable.list()).map(departmentFromRow);
+  },
+  async get(id: number): Promise<Department | null> {
+    const department = await departmentTable.get(id);
+    return department ? departmentFromRow(department) : null;
+  },
+  create: departmentTable.create,
+  update: departmentTable.update,
+  remove: departmentTable.remove,
+
+  // Department id -> staff ids.
+  listMembers(): Promise<DepartmentMembers> {
+    return cached('departments:members', REFERENCE_TTL, async () => {
+      const rows = check(await db().from('department_staff').select('department_id, staff_id')) as Row[];
+      const members: DepartmentMembers = {};
+      for (const row of rows) {
+        const departmentId = Number(row.department_id);
+        (members[departmentId] ??= []).push(Number(row.staff_id));
+      }
+      return members;
+    });
+  },
+
+  // Replaces the department's doctors and nurses with staffIds.
+  async setMembers(departmentId: number, staffIds: number[]): Promise<void> {
+    try {
+      check(await db().from('department_staff').delete().eq('department_id', departmentId));
+      if (staffIds.length > 0) {
+        check(await db().from('department_staff').insert(staffIds.map(staffId => ({ department_id: departmentId, staff_id: staffId }))));
+      }
+    } finally { invalidate('departments:'); }
+  },
+};
 
 // Staff are read directly; creating, editing and deactivating logins goes through
 // /api/staff, which holds the service-role key needed to manage Supabase Auth users.
@@ -117,10 +211,12 @@ async function staffApi<T>(method: string, body?: unknown, query = ''): Promise<
   return result as T;
 }
 
-export const staff = {
-  async list(): Promise<StaffMember[]> {
-    const rows = check(await db().from('staff').select('id, name, phone_number, email, role, hire_date, salary').eq('active', true).order('name'));
-    return (rows as Row[]).map(r => fromRow<StaffMember>(r));
+export const staff = invalidatesOnWrite({
+  list(): Promise<StaffMember[]> {
+    return cached('staff:list', REFERENCE_TTL, async () => {
+      const rows = check(await db().from('staff').select('id, name, phone_number, email, role, hire_date, salary').eq('active', true).order('name'));
+      return (rows as Row[]).map(r => fromRow<StaffMember>(r));
+    });
   },
   async get(id: number): Promise<StaffMember | null> {
     const row = check(await db().from('staff').select('id, name, phone_number, email, role, hire_date, salary').eq('id', id).eq('active', true).maybeSingle());
@@ -136,7 +232,94 @@ export const staff = {
   async deactivate(id: number): Promise<void> {
     await staffApi('DELETE', undefined, `?id=${id}`);
   },
+}, ['createMany', 'update', 'deactivate'], ['staff:', 'summary:']);
+
+// ---------------------------------------------------------------------------
+// Duty roster (planned shifts) and attendance (actual time on duty)
+// ---------------------------------------------------------------------------
+
+const shiftTable = table<StaffShift>('staff_shifts', 'shift_date', ['created_at']);
+// Postgres returns times as HH:mm:ss.
+const shiftFromRow = (shift: StaffShift): StaffShift =>
+  ({ ...shift, startTime: shift.startTime.slice(0, 5), endTime: shift.endTime.slice(0, 5) });
+
+export const shifts = {
+  // Shifts dated from..to (yyyy-MM-dd, inclusive).
+  async list(from: string, to: string): Promise<StaffShift[]> {
+    const rows = check(await db().from('staff_shifts').select('*')
+      .gte('shift_date', from).lte('shift_date', to)
+      .order('shift_date').order('start_time'));
+    return (rows as Row[]).map(r => shiftFromRow(fromRow<StaffShift>(r)));
+  },
+  async create(fields: Omit<StaffShift, 'id'>): Promise<StaffShift> {
+    return shiftFromRow(await shiftTable.create(fields));
+  },
+  async createMany(list: Omit<StaffShift, 'id'>[]): Promise<StaffShift[]> {
+    return (await shiftTable.createMany(list)).map(shiftFromRow);
+  },
+  async update(id: number, changes: Partial<StaffShift>): Promise<StaffShift> {
+    return shiftFromRow(await shiftTable.update(id, changes));
+  },
+  remove: shiftTable.remove,
 };
+
+const attendanceTable = table<AttendanceEntry>('staff_attendance', 'clock_in', ['created_at', 'source', 'recorded_by_staff_id']);
+
+export const attendance = {
+  // Entries that overlap fromIso..toIso, including people still on duty.
+  // Staff without a manager role only get their own entries (row level security).
+  async list(fromIso: string, toIso: string): Promise<AttendanceEntry[]> {
+    const rows = check(await db().from('staff_attendance').select('*')
+      .lt('clock_in', toIso)
+      .or(`clock_out.gte.${fromIso},clock_out.is.null`)
+      .order('clock_in', { ascending: false }));
+    return (rows as Row[]).map(r => fromRow<AttendanceEntry>(r));
+  },
+  async openEntry(staffId: number): Promise<AttendanceEntry | null> {
+    const row = check(await db().from('staff_attendance').select('*')
+      .eq('staff_id', staffId).is('clock_out', null).maybeSingle());
+    return row ? fromRow<AttendanceEntry>(row as Row) : null;
+  },
+  // Clocking in and out uses the server's clock, not the device's.
+  async clockIn(note?: string): Promise<AttendanceEntry> {
+    return fromRow<AttendanceEntry>(check(await db().rpc('clock_in', { note: note ?? null })) as Row);
+  },
+  async clockOut(note?: string): Promise<AttendanceEntry> {
+    return fromRow<AttendanceEntry>(check(await db().rpc('clock_out', { note: note ?? null })) as Row);
+  },
+  // Manual entries and corrections (Super Admin, Admin).
+  create: (fields: Pick<AttendanceEntry, 'staffId' | 'clockIn' | 'clockOut' | 'notes'>) =>
+    attendanceTable.create(fields as Omit<AttendanceEntry, 'id'>),
+  update: (id: number, changes: Partial<Pick<AttendanceEntry, 'clockIn' | 'clockOut' | 'notes'>>) =>
+    attendanceTable.update(id, changes),
+  remove: attendanceTable.remove,
+};
+
+// ---------------------------------------------------------------------------
+// Financial Dashboard: totals worked out by the database (financial_summary in
+// supabase/migrations/20261012000000_dashboard_summary.sql)
+// ---------------------------------------------------------------------------
+
+export interface FinancialSummary {
+  billCount: number;
+  paymentCount: number;
+  totalBilled: number;
+  totalCollected: number;
+  totalSpent: number;
+  billStatusCounts: Record<string, number>;
+  billTypeAmounts: Record<string, number>;
+  paymentTypeAmounts: Record<string, number>;
+  monthly: Array<{ month: string; billed: number; collected: number; spent: number }>; // month = yyyy-MM
+  doctorFees: Array<{ doctorId: number; doctor: string; departments: string[]; cases: number; paid: number; pending: number }>;
+  referralFees: Array<{ doctorId: number; doctor: string; referrals: number; paid: number; pending: number; unpriced: number }>;
+}
+
+export function financialSummary(): Promise<FinancialSummary> {
+  return cached('summary:financial', DASHBOARD_TTL, async () => {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+    return check(await db().rpc('financial_summary', { tz: timeZone })) as FinancialSummary;
+  });
+}
 
 export async function countRows(tableName: 'patients' | 'staff'): Promise<number> {
   let query = db().from(tableName).select('id', { count: 'exact', head: true });
@@ -191,6 +374,10 @@ function patientFromRow(row: Row): Patient {
   const patient = fromRow<Patient>(rest);
   patient.assignedStaffIds = (patient.assignedStaffIds ?? []).map(Number);
   patient.condition = patient.condition || 'Unassigned';
+  patient.doctorFee = patient.doctorFee == null ? null : Number(patient.doctorFee);
+  patient.doctorFeeStatus = patient.doctorFeeStatus || 'Pending';
+  patient.referralFee = patient.referralFee == null ? null : Number(patient.referralFee);
+  patient.referralFeeStatus = patient.referralFeeStatus || 'Pending';
   patient.careNotes = ((care_notes as Row[] | undefined) ?? [])
     .map(r => fromRow<CareNote>(r))
     .map(n => ({ ...n, medicationsMentioned: n.medicationsMentioned ?? [], templateFieldsData: n.templateFieldsData ?? {} }))
@@ -208,11 +395,28 @@ function patientRow(fields: Partial<PatientFields>): Row {
   return row;
 }
 
-export const patients = {
-  // Includes care notes and tests, which the dashboards use for summaries.
-  async list(): Promise<Patient[]> {
-    const rows = check(await db().from('patients').select('*, care_notes(*), patient_tests(*)').order('id'));
-    return (rows as Row[]).map(patientFromRow);
+export const patients = invalidatesOnWrite({
+  // For the Patient Dashboard: patient records with only their latest care note, instead of
+  // every note and test. Cached briefly so going back and forth doesn't re-download it.
+  listForDashboard(): Promise<Patient[]> {
+    return cached('dashboard:patients', DASHBOARD_TTL, async () => {
+      const rows = check(await db().from('patients')
+        .select('id, first_name, last_name, condition, reason_for_visit, department_id, attending_doctor_id, attending_nurse_id, assigned_staff_ids, '
+          + 'care_notes(id, text, template_name, staff_id, staff_name, created_at)')
+        .order('id')
+        .order('created_at', { referencedTable: 'care_notes', ascending: false })
+        .limit(1, { referencedTable: 'care_notes' }));
+      return (rows as Row[]).map(patientFromRow);
+    });
+  },
+
+  // Just enough to show and pick patients by name, department and condition (payments list,
+  // bill form, departments). Much smaller than whole records; cached briefly.
+  listNames(): Promise<Patient[]> {
+    return cached('dashboard:names', DASHBOARD_TTL, async () => {
+      const rows = check(await db().from('patients').select('id, first_name, last_name, condition, department_id').order('id'));
+      return (rows as Row[]).map(patientFromRow);
+    });
   },
 
   // Patient records only, without notes and tests (for pickers and lookups).
@@ -246,6 +450,36 @@ export const patients = {
     checkDeleted(await db().from('patients').delete().eq('id', id).select('id'));
   },
 
+  // Cases the doctor attended whose fee is set but not yet paid.
+  async listUnpaidDoctorCases(doctorId: number): Promise<Patient[]> {
+    const rows = check(await db().from('patients').select('*')
+      .eq('attending_doctor_id', doctorId).eq('doctor_fee_status', 'Pending').not('doctor_fee', 'is', null).order('id'));
+    return (rows as Row[]).map(patientFromRow);
+  },
+
+  // Marks the cases' doctor fees as paid by paymentId (or back to Pending when paymentId is null).
+  async setDoctorFeePayment(patientIds: number[], paymentId: string | null): Promise<void> {
+    if (patientIds.length === 0) return;
+    check(await db().from('patients')
+      .update({ doctor_fee_status: paymentId ? 'Paid' : 'Pending', doctor_fee_payment_id: paymentId })
+      .in('id', patientIds));
+    for (const id of patientIds) {
+      await addAuditEntry('patient', id, paymentId ? 'Doctor Fee Paid' : 'Doctor Fee Reopened',
+        paymentId ? `Doctor's fee for this case paid in ${paymentId}.` : 'Doctor fee marked unpaid again.');
+    }
+  },
+
+  // Marks referral fees as paid by paymentId. fees gives the amount for patients whose
+  // fee wasn't set yet (the referring doctor's default), so the record shows what was paid.
+  async setReferralFeePayment(fees: Array<{ patientId: number; fee: number | null }>, paymentId: string): Promise<void> {
+    for (const { patientId, fee } of fees) {
+      check(await db().from('patients')
+        .update({ referral_fee_status: 'Paid', referral_fee_payment_id: paymentId, ...(fee != null ? { referral_fee: fee } : {}) })
+        .eq('id', patientId));
+      await addAuditEntry('patient', patientId, 'Referral Fee Paid', `Referral fee${fee != null ? ` of ₹${fee.toFixed(2)}` : ''} paid in ${paymentId}.`);
+    }
+  },
+
   async addCareNote(patientId: number, note: Omit<CareNote, 'id' | 'createdAt'>): Promise<CareNote> {
     const row = check(await db().from('care_notes').insert({ ...toRow(note), patient_id: patientId }).select().single());
     await addAuditEntry('patient', patientId, 'Care Note Added', `New care note added (Template: ${note.templateName || 'General Note'}).`);
@@ -259,7 +493,7 @@ export const patients = {
     const { patientId: _omit, ...saved } = fromRow<TestEntry & { patientId: number }>(row as Row);
     return saved;
   },
-};
+}, ['create', 'update', 'remove', 'setDoctorFeePayment', 'setReferralFeePayment', 'addCareNote', 'addTest'], ['dashboard:', 'summary:']);
 
 // ---------------------------------------------------------------------------
 // Bills
@@ -267,18 +501,26 @@ export const patients = {
 
 export type BillFields = Omit<Bill, 'id' | 'createdAt' | 'auditLog'>;
 
+// A date range for list filters: yyyy-MM-dd, both ends inclusive, either may be left open.
+export interface DateRange { from?: string; to?: string }
+
 function billFromRow(row: Row): Bill {
-  const bill = fromRow<Bill>(row);
+  // billed_on is worked out by the database from bill_date (for date filters); never written.
+  const { billed_on: _billedOn, ...rest } = row;
+  const bill = fromRow<Bill>(rest);
   bill.items = bill.items ?? [];
   bill.totalAmount = Number(bill.totalAmount);
   bill.auditLog = [];
   return bill;
 }
 
-export const bills = {
-  async list(filter?: { patientId?: number }): Promise<Bill[]> {
+export const bills = invalidatesOnWrite({
+  async list(filter?: { patientId?: number; status?: string } & DateRange): Promise<Bill[]> {
     let query = db().from('bills').select('*');
     if (filter?.patientId !== undefined) query = query.eq('patient_id', filter.patientId);
+    if (filter?.status) query = query.eq('payment_status', filter.status);
+    if (filter?.from) query = query.gte('billed_on', filter.from);
+    if (filter?.to) query = query.lte('billed_on', filter.to);
     const rows = check(await query.order('created_at', { ascending: false }));
     return (rows as Row[]).map(billFromRow);
   },
@@ -308,7 +550,7 @@ export const bills = {
   async remove(id: string): Promise<void> {
     checkDeleted(await db().from('bills').delete().eq('id', id).select('id'));
   },
-};
+}, ['create', 'update', 'remove'], ['summary:']);
 
 // ---------------------------------------------------------------------------
 // Payments (clinic expenses)
@@ -317,7 +559,9 @@ export const bills = {
 export type PaymentFields = Omit<Payment, 'id' | 'createdAt' | 'auditLog'>;
 
 function paymentFromRow(row: Row): Payment {
-  const payment = fromRow<Payment>(row);
+  // paid_on is worked out by the database from payment_date (for date filters); never written.
+  const { paid_on: _paidOn, ...rest } = row;
+  const payment = fromRow<Payment>(rest);
   payment.amount = Number(payment.amount);
   payment.associatedPatientIds = (payment.associatedPatientIds ?? []).map(Number);
   payment.purchasedMedications = payment.purchasedMedications ?? [];
@@ -326,9 +570,13 @@ function paymentFromRow(row: Row): Payment {
   return payment;
 }
 
-export const payments = {
-  async list(): Promise<Payment[]> {
-    const rows = check(await db().from('payments').select('*').order('created_at', { ascending: false }));
+export const payments = invalidatesOnWrite({
+  // Newest first. With a range, only payments dated within it (by their payment date).
+  async list(range?: DateRange): Promise<Payment[]> {
+    let query = db().from('payments').select('*');
+    if (range?.from) query = query.gte('paid_on', range.from);
+    if (range?.to) query = query.lte('paid_on', range.to);
+    const rows = check(await query.order('paid_on', { ascending: false }).order('created_at', { ascending: false }));
     return (rows as Row[]).map(paymentFromRow);
   },
 
@@ -357,4 +605,4 @@ export const payments = {
   async remove(id: string): Promise<void> {
     checkDeleted(await db().from('payments').delete().eq('id', id).select('id'));
   },
-};
+}, ['create', 'update', 'remove'], ['summary:']);

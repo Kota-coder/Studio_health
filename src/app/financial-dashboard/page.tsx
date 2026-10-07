@@ -1,19 +1,20 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Bill, BillType } from '@/types/billing';
-import { Payment, PaymentType } from '@/types/payment';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 import { ChartContainer, ChartTooltip as ShadCNChartTooltip, ChartTooltipContent as ShadCNChartTooltipContent, ChartLegend as ShadCNChartLegend, ChartLegendContent as ShadCNChartLegendContent, type ChartConfig } from "@/components/ui/chart";
 import { AreaChart, DollarSign, TrendingUp, TrendingDown, AlertTriangle, Receipt } from 'lucide-react'; // Added Receipt
-import { format, parseISO, startOfMonth, endOfMonth, eachMonthOfInterval, isWithinInterval, subMonths } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
-import { bills as billsRepo, payments as paymentsRepo } from '@/lib/data';
+import { financialSummary as loadFinancialSummary, type FinancialSummary } from '@/lib/data';
+import { cachedAt, invalidate } from '@/lib/data/cache';
+import { RefreshStamp } from '@/components/refresh-stamp';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.financialDashboard;
 
@@ -36,9 +37,12 @@ export default function FinancialDashboardPage() {
   const router = useRouter();
   const { currentUser, isLoading: authIsLoading } = useAuth();
 
-  const [bills, setBills] = useState<Bill[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
+  // Totals are worked out by the database (financial_summary), so the page downloads a
+  // small summary rather than every bill, payment and patient.
+  const [summary, setSummary] = useState<FinancialSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     if (!authIsLoading && currentUser && !ALLOWED_ROLES.includes(currentUser.role)) {
@@ -48,117 +52,55 @@ export default function FinancialDashboardPage() {
     }
   }, [authIsLoading, currentUser, router]);
 
+  const load = useCallback(async (refresh = false) => {
+    if (refresh) invalidate('summary:');
+    try {
+      setSummary(await loadFinancialSummary());
+      setLoadedAt(cachedAt('summary:financial'));
+    } catch (error) {
+      console.error("Error loading financial data:", error);
+    }
+  }, []);
+
   useEffect(() => {
     if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
       setIsLoading(true);
-      Promise.all([billsRepo.list(), paymentsRepo.list()])
-        .then(([billList, paymentList]) => {
-          setBills(billList);
-          setPayments(paymentList);
-        })
-        .catch(error => console.error("Error loading financial data:", error))
-        .finally(() => setIsLoading(false));
+      load().finally(() => setIsLoading(false));
     } else if (!currentUser && !authIsLoading) {
       setIsLoading(false);
     }
-  }, [currentUser, authIsLoading]);
+  }, [currentUser, authIsLoading, load]);
+
+  const handleRefresh = () => {
+    setIsRefreshing(true);
+    load(true).finally(() => setIsRefreshing(false));
+  };
 
   const financialSummary = useMemo(() => {
-    const totalBilled = bills.reduce((sum, bill) => sum + bill.totalAmount, 0);
-    const totalCollected = bills
-      .filter(bill => bill.paymentStatus === "Paid")
-      .reduce((sum, bill) => sum + bill.totalAmount, 0);
-    const totalPartiallyPaidAmount = bills
-      .filter(bill => bill.paymentStatus === "Partially Paid")
-      .reduce((sum, bill) => {
-         // A simple assumption: half is paid for "Partially Paid"
-         // This could be made more accurate if partial payment amounts were stored.
-         return sum + (bill.totalAmount / 2); 
-      },0);
-    const totalOutstanding = totalBilled - totalCollected - totalPartiallyPaidAmount;
-    
-    const totalSpent = payments.reduce((sum, payment) => sum + payment.amount, 0);
-
-    const billStatusCounts = bills.reduce((acc, bill) => {
-      acc[bill.paymentStatus] = (acc[bill.paymentStatus] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    const billStatusChartData = Object.entries(billStatusCounts).map(([name, count]) => ({
-      name,
-      count,
-      fill: chartColorMapping[name] || "hsl(var(--chart-3))",
-    }));
-    
-    const billTypeAmounts = bills.reduce((acc, bill) => {
-        const type = bill.billType || "Unknown";
-        acc[type] = (acc[type] || 0) + bill.totalAmount;
-        return acc;
-    }, {} as Record<BillType | "Unknown", number>);
-
-    const billTypeChartData = Object.entries(billTypeAmounts).map(([name, total]) => ({
+    const toChart = (values: Record<string, number> | undefined, key: 'count' | 'total') =>
+      Object.entries(values ?? {}).map(([name, value]) => ({
         name,
-        total,
+        [key]: Number(value),
         fill: chartColorMapping[name] || "hsl(var(--chart-3))",
-    }));
-
-
-    const paymentTypeAmounts = payments.reduce((acc, payment) => {
-      const type = payment.paymentType || "Unknown";
-      acc[type] = (acc[type] || 0) + payment.amount;
-      return acc;
-    }, {} as Record<PaymentType | "Unknown", number>);
-
-    const paymentTypeChartData = Object.entries(paymentTypeAmounts).map(([name, total]) => ({
-      name,
-      total,
-      fill: chartColorMapping[name] || "hsl(var(--chart-3))",
-    }));
-
-    // Monthly Data for Line Chart (last 6 months)
-    const sixMonthsAgo = startOfMonth(subMonths(new Date(), 5));
-    const today = endOfMonth(new Date());
-    const monthsInterval = eachMonthOfInterval({ start: sixMonthsAgo, end: today });
-
-    const monthlyBillingData = monthsInterval.map(monthStart => {
-        const monthEnd = endOfMonth(monthStart);
-        const monthLabel = format(monthStart, 'MMM yy');
-
-        const billedThisMonth = bills
-            .filter(b => {
-                try { return isWithinInterval(parseISO(b.createdAt), {start: monthStart, end: monthEnd}); }
-                catch { return false; }
-            })
-            .reduce((sum, b) => sum + b.totalAmount, 0);
-
-        const collectedThisMonth = bills
-            .filter(b => b.paymentStatus === 'Paid' && b.paymentDate && 
-                isWithinInterval(parseISO(b.createdAt), {start: monthStart, end: monthEnd}) // consider bills created in this month for collection
-            )
-            .reduce((sum, b) => sum + b.totalAmount, 0);
-        
-        const spentThisMonth = payments
-            .filter(p => {
-                try { return isWithinInterval(parseISO(p.createdAt), {start: monthStart, end: monthEnd}); }
-                catch { return false;}
-            })
-            .reduce((sum, p) => sum + p.amount, 0);
-
-        return { month: monthLabel, Billed: billedThisMonth, Collected: collectedThisMonth, Spent: spentThisMonth };
-    });
-
-
+      })) as Array<{ name: string; count: number; total: number; fill: string }>;
+    const totalBilled = Number(summary?.totalBilled ?? 0);
+    const totalCollected = Number(summary?.totalCollected ?? 0);
     return {
       totalBilled,
-      totalCollected: totalCollected + totalPartiallyPaidAmount, // More accurate collection
-      totalOutstanding,
-      totalSpent,
-      billStatusChartData,
-      billTypeChartData,
-      paymentTypeChartData,
-      monthlyBillingData,
+      totalCollected,
+      totalOutstanding: totalBilled - totalCollected,
+      totalSpent: Number(summary?.totalSpent ?? 0),
+      billStatusChartData: toChart(summary?.billStatusCounts, 'count'),
+      billTypeChartData: toChart(summary?.billTypeAmounts, 'total'),
+      paymentTypeChartData: toChart(summary?.paymentTypeAmounts, 'total'),
+      monthlyBillingData: (summary?.monthly ?? []).map(m => ({
+        month: format(parseISO(`${m.month}-01`), 'MMM yy'),
+        Billed: Number(m.billed),
+        Collected: Number(m.collected),
+        Spent: Number(m.spent),
+      })),
     };
-  }, [bills, payments]);
+  }, [summary]);
 
   const chartConfig: ChartConfig = useMemo(() => {
     const config: ChartConfig = {};
@@ -177,6 +119,11 @@ export default function FinancialDashboardPage() {
     return config;
   }, [financialSummary]);
 
+
+  // Doctor fees per attending doctor and referral fees per referring doctor (unpaid
+  // referrals without their own fee count at the doctor's default fee).
+  const doctorFeeRows = (summary?.doctorFees ?? []).map(row => ({ ...row, paid: Number(row.paid), pending: Number(row.pending) }));
+  const referralFeeRows = (summary?.referralFees ?? []).map(row => ({ ...row, paid: Number(row.paid), pending: Number(row.pending) }));
 
   if (authIsLoading || isLoading) {
     return <div className="flex justify-center items-center min-h-screen"><p>Loading financial dashboard...</p></div>;
@@ -224,8 +171,9 @@ export default function FinancialDashboardPage() {
         <AreaChart className="h-8 w-8 text-primary" />
         <h1 className="text-3xl font-bold text-foreground">Financial Dashboard</h1>
       </header>
+      <RefreshStamp loadedAt={loadedAt} onRefresh={handleRefresh} isRefreshing={isRefreshing} className="justify-end" />
 
-      {bills.length === 0 && payments.length === 0 ? (
+      {!summary || (summary.billCount === 0 && summary.paymentCount === 0) ? (
         <Card className="text-center shadow-lg">
           <CardHeader>
             <CardTitle>No Financial Data Yet</CardTitle>
@@ -387,6 +335,77 @@ export default function FinancialDashboardPage() {
                     </PieChart>
                 </ResponsiveContainer>
                 </ChartContainer>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg mt-6">
+            <CardHeader>
+              <CardTitle>Doctor Fees</CardTitle>
+              <CardDescription>Fees earned per case by each attending doctor. Pay pending fees from Payments → Record New Payment → Doctor Fee.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {doctorFeeRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No doctor fees set yet. Set them on a patient&apos;s page under Department &amp; Care Team.</p>
+              ) : (
+                <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-4 sm:[&_th]:px-4">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Doctor</TableHead>
+                      <TableHead className="hidden md:table-cell">Departments</TableHead>
+                      <TableHead className="text-right">Cases</TableHead>
+                      <TableHead className="text-right">Paid</TableHead>
+                      <TableHead className="text-right">Pending</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {doctorFeeRows.map(row => (
+                      <TableRow key={row.doctor}>
+                        <TableCell className="font-medium">{row.doctor}</TableCell>
+                        <TableCell className="hidden md:table-cell">{row.departments.join(', ') || '—'}</TableCell>
+                        <TableCell className="text-right">{row.cases}</TableCell>
+                        <TableCell className="text-right">₹{row.paid.toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-semibold">{row.pending > 0 ? `₹${row.pending.toFixed(2)}` : '—'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-lg mt-6">
+            <CardHeader>
+              <CardTitle>Referral Fees</CardTitle>
+              <CardDescription>Fees owed to referring doctors for the patients they referred. Pay them from Payments → Record New Payment → Referral/CC.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {referralFeeRows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No referred patients yet. Set the referring doctor on a patient&apos;s admission details.</p>
+              ) : (
+                <Table className="[&_td]:px-2 [&_th]:px-2 sm:[&_td]:px-4 sm:[&_th]:px-4">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Referring Doctor</TableHead>
+                      <TableHead className="text-right">Referrals</TableHead>
+                      <TableHead className="text-right">Paid</TableHead>
+                      <TableHead className="text-right">Pending</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {referralFeeRows.map(row => (
+                      <TableRow key={row.doctor}>
+                        <TableCell className="font-medium">{row.doctor}</TableCell>
+                        <TableCell className="text-right">{row.referrals}</TableCell>
+                        <TableCell className="text-right">₹{row.paid.toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-semibold">
+                          {row.pending > 0 ? `₹${row.pending.toFixed(2)}` : row.unpriced === 0 ? '—' : ''}
+                          {row.unpriced > 0 && <span className="block text-xs font-normal text-muted-foreground">{row.unpriced} with no fee set</span>}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </>

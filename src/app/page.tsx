@@ -22,6 +22,7 @@ import { compressImageFiles } from '@/lib/images';
 import { getSignedImageUrl, uploadNewImages } from '@/lib/storage';
 import { StoredImage } from '@/components/stored-image';
 import { Checkbox } from '@/components/ui/checkbox';
+import { cn } from '@/lib/utils';
 import { isAadhaarCard, maskAadhaarNumber } from '@/lib/aadhaar';
 import { patients as patientsRepo, type PatientFields } from '@/lib/data';
 
@@ -92,6 +93,7 @@ export default function Home() {
   const [dateOfBirthInput, setDateOfBirthInput] = useState<string>("");
   const [displayPatientId, setDisplayPatientId] = useState<string>("Assigned when saved");
   const [consentGiven, setConsentGiven] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [condition, setCondition] = useState<PatientCondition>("Unassigned");
   const [emailError, setEmailError] = useState<string | null>(null);
@@ -176,6 +178,7 @@ export default function Home() {
     setMobileError(null);
     setEmergencyContactMobileError(null);
     setConsentGiven(false);
+    setFieldErrors({});
 
     if (!isEditMode) {
         // New patients get their number from the database when saved.
@@ -355,56 +358,57 @@ export default function Home() {
   };
 
 
+  const clearFieldError = (field: string) =>
+    setFieldErrors(prev => (prev[field] ? { ...prev, [field]: "" } : prev));
+
   const validateAndCreatePatientObject = (): Pick<PatientFields, 'firstName' | 'lastName' | 'gender' | 'dateOfBirth' | 'mobileNumber' | 'emailAddress' | 'address' | 'idNumber' | 'emergencyContactName' | 'emergencyContactNumber' | 'condition' | 'idCardType'> | null => {
-    let hasError = false;
-    if (!firstName) { toast({ title: "Validation Error", description: "First Name is required.", variant: "destructive" }); hasError = true; }
-    if (!lastName) { toast({ title: "Validation Error", description: "Last Name is required.", variant: "destructive" }); hasError = true; }
-    if (!gender) { toast({ title: "Validation Error", description: "Gender is required.", variant: "destructive" }); hasError = true; }
-    if (!condition) { toast({ title: "Validation Error", description: "Patient Condition is required.", variant: "destructive" }); hasError = true; }
+    // Field id -> message, shown under the field and listed in the error message.
+    const errors: Record<string, string> = {};
+    if (!firstName.trim()) errors.firstName = "First Name is required.";
+    if (!lastName.trim()) errors.lastName = "Last Name is required.";
+    if (!gender) errors.gender = "Select a gender.";
 
     let finalDateOfBirthString = "";
     if (dateOfBirth) {
         finalDateOfBirthString = format(dateOfBirth, 'dd/MM/yyyy');
-    } else if (dateOfBirthInput) {
-         try {
-            const parsed = parse(dateOfBirthInput, 'dd/MM/yyyy', new Date());
-            if(!isValid(parsed) || format(parsed, 'dd/MM/yyyy') !== dateOfBirthInput) {
-                 toast({ title: "Validation Error", description: "Date of Birth must be in dd/MM/yyyy format.", variant: "destructive" }); hasError = true;
-            } else {
-              finalDateOfBirthString = dateOfBirthInput;
-            }
-        } catch {
-            toast({ title: "Validation Error", description: "Date of Birth must be in dd/MM/yyyy format.", variant: "destructive" }); hasError = true;
+    } else if (dateOfBirthInput.trim()) {
+        const parsed = parse(dateOfBirthInput.trim(), 'dd/MM/yyyy', new Date());
+        if (isValid(parsed) && format(parsed, 'dd/MM/yyyy') === dateOfBirthInput.trim()) {
+            finalDateOfBirthString = dateOfBirthInput.trim();
+        } else {
+            const parts = dateOfBirthInput.trim().split('/').map(Number);
+            errors.dateOfBirth = parts.length === 3 && parts[0] <= 12 && parts[1] > 12
+              ? `This looks like month/day/year. Enter the day first: ${String(parts[1]).padStart(2, '0')}/${String(parts[0]).padStart(2, '0')}/${parts[2]}.`
+              : "Enter the date as day/month/year, e.g. 25/12/1980, or use the calendar.";
         }
     } else {
-        toast({ title: "Validation Error", description: "Date of Birth is required.", variant: "destructive" }); hasError = true;
+        errors.dateOfBirth = "Date of Birth is required.";
     }
 
-    if (!isValidMobileNumber(mobileNumber)) {
-        setMobileError("Mobile number must be 10 digits."); hasError = true;
-    } else {
-        setMobileError(null);
-    }
-    if (emailAddress && !isValidEmail(emailAddress)) {
-        setEmailError("Please enter a valid email address."); hasError = true;
-    } else {
-        setEmailError(null);
-    }
-    if (!idNumber) { toast({ title: "Validation Error", description: "ID Number is required.", variant: "destructive" }); hasError = true; }
-    if (!emergencyContactName) { toast({ title: "Validation Error", description: "Emergency Contact Name is required.", variant: "destructive" }); hasError = true; }
-    if (!isEditMode && !consentGiven) { toast({ title: "Consent Required", description: "Record the patient's consent before saving.", variant: "destructive" }); hasError = true; }
-    if (!isValidMobileNumber(emergencyContactNumber)) {
-        setEmergencyContactMobileError("Emergency contact mobile must be 10 digits."); hasError = true;
-    } else {
-        setEmergencyContactMobileError(null);
-    }
+    if (!isValidMobileNumber(mobileNumber)) errors.mobileNumber = "Mobile number must be 10 digits.";
+    if (emailAddress && !isValidEmail(emailAddress)) errors.emailAddress = "Please enter a valid email address.";
+    if (!idNumber.trim()) errors.idNumber = "ID Number is required.";
+    if (!condition) errors.condition = "Select the patient's condition.";
+    if (!emergencyContactName.trim()) errors.emergencyContactName = "Emergency contact name is required.";
+    if (!isValidMobileNumber(emergencyContactNumber)) errors.emergencyContactNumber = "Emergency contact mobile must be 10 digits.";
+    if (!isEditMode && !consentGiven) errors.consent = "Tick the box to record the patient's consent.";
 
-    if (hasError) {
+    setFieldErrors(errors);
+    setMobileError(errors.mobileNumber ?? null);
+    setEmailError(errors.emailAddress ?? null);
+    setEmergencyContactMobileError(errors.emergencyContactNumber ?? null);
+
+    const messages = Object.values(errors);
+    if (messages.length > 0) {
       toast({
-            title: "Error",
-            description: "Please correct the highlighted fields.",
-            variant: "destructive",
-        });
+        title: messages.length === 1 ? "Please fix this field" : `Please fix ${messages.length} fields`,
+        description: messages.join(" "),
+        variant: "destructive",
+      });
+      // Bring the first problem into view (useful on phones where it may be off-screen).
+      const first = document.getElementById(Object.keys(errors)[0]);
+      first?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      first?.focus({ preventScroll: true });
       return null;
     }
 
@@ -634,19 +638,21 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="firstName">First Name *</Label>
-              <Input type="text" id="firstName" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+              <Input type="text" id="firstName" value={firstName} onChange={(e) => { setFirstName(e.target.value); clearFieldError("firstName"); }} aria-invalid={!!fieldErrors.firstName} className={fieldErrors.firstName ? "border-destructive" : undefined} required />
+              {fieldErrors.firstName && <p className="text-destructive text-sm mt-1">{fieldErrors.firstName}</p>}
             </div>
             <div>
               <Label htmlFor="lastName">Last Name *</Label>
-              <Input type="text" id="lastName" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+              <Input type="text" id="lastName" value={lastName} onChange={(e) => { setLastName(e.target.value); clearFieldError("lastName"); }} aria-invalid={!!fieldErrors.lastName} className={fieldErrors.lastName ? "border-destructive" : undefined} required />
+              {fieldErrors.lastName && <p className="text-destructive text-sm mt-1">{fieldErrors.lastName}</p>}
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="w-full">
                   <Label htmlFor="gender">Gender *</Label>
-                  <Select onValueChange={setGender} value={gender} required>
-                      <SelectTrigger className="w-full">
+                  <Select onValueChange={(value) => { setGender(value); clearFieldError("gender"); }} value={gender} required>
+                      <SelectTrigger id="gender" aria-invalid={!!fieldErrors.gender} className={cn("w-full", fieldErrors.gender && "border-destructive")}>
                           <SelectValue placeholder="Select Gender" />
                       </SelectTrigger>
                       <SelectContent>
@@ -657,6 +663,7 @@ export default function Home() {
                           ))}
                       </SelectContent>
                   </Select>
+                  {fieldErrors.gender && <p className="text-destructive text-sm mt-1">{fieldErrors.gender}</p>}
               </div>
               <div className="w-full">
                 <Label htmlFor="dateOfBirth">Date of Birth (dd/MM/yyyy) *</Label>
@@ -666,16 +673,21 @@ export default function Home() {
                         id="dateOfBirth"
                         placeholder="dd/MM/yyyy"
                         value={dateOfBirthInput}
-                        onChange={handleDateInputChange}
-                        className="rounded-r-none"
+                        onChange={(e) => { handleDateInputChange(e); clearFieldError("dateOfBirth"); }}
+                        aria-invalid={!!fieldErrors.dateOfBirth}
+                        className={cn("rounded-r-none", fieldErrors.dateOfBirth && "border-destructive")}
                         required
                     />
                     <Datepicker
                         selected={dateOfBirth}
-                        onDateChange={handleDateSelect}
+                        onDateChange={(date) => { handleDateSelect(date); clearFieldError("dateOfBirth"); }}
+                        defaultMonth={new Date(1980, 0, 1)}
                         triggerClassName="rounded-l-none border-l-0 w-auto p-2.5"
                     />
                 </div>
+                {fieldErrors.dateOfBirth
+                  ? <p className="text-destructive text-sm mt-1">{fieldErrors.dateOfBirth}</p>
+                  : dateOfBirth && <p className="text-xs text-muted-foreground mt-1">Reads as {format(dateOfBirth, 'd MMMM yyyy')}</p>}
               </div>
           </div>
 
@@ -684,6 +696,8 @@ export default function Home() {
              <Input
                 type="tel"
                 id="mobileNumber"
+                aria-invalid={!!mobileError}
+                className={mobileError ? "border-destructive" : undefined}
                 value={mobileNumber}
                 onChange={(e) => {
                     setMobileNumber(e.target.value);
@@ -724,14 +738,15 @@ export default function Home() {
 
           <div>
             <Label htmlFor="idNumber">ID Number (from card) *</Label>
-            <Input type="text" id="idNumber" value={idNumber} onChange={(e) => setIdNumber(e.target.value)} onBlur={() => { if (isAadhaarCard(idCardType)) setIdNumber(maskAadhaarNumber(idNumber)); }} required />
+            <Input type="text" id="idNumber" value={idNumber} onChange={(e) => { setIdNumber(e.target.value); clearFieldError("idNumber"); }} aria-invalid={!!fieldErrors.idNumber} className={fieldErrors.idNumber ? "border-destructive" : undefined} onBlur={() => { if (isAadhaarCard(idCardType)) setIdNumber(maskAadhaarNumber(idNumber)); }} required />
             {isAadhaarCard(idCardType) && <p className="text-xs text-muted-foreground mt-1">Saved masked as XXXX XXXX 1234.</p>}
+            {fieldErrors.idNumber && <p className="text-destructive text-sm mt-1">{fieldErrors.idNumber}</p>}
           </div>
 
           <div>
             <Label htmlFor="condition">Patient Condition *</Label>
-            <Select onValueChange={(value) => setCondition(value as PatientCondition)} value={condition} required>
-                <SelectTrigger className="w-full">
+            <Select onValueChange={(value) => { setCondition(value as PatientCondition); clearFieldError("condition"); }} value={condition} required>
+                <SelectTrigger id="condition" aria-invalid={!!fieldErrors.condition} className={cn("w-full", fieldErrors.condition && "border-destructive")}>
                     <SelectValue placeholder="Select Patient Condition" />
                 </SelectTrigger>
                 <SelectContent>
@@ -742,6 +757,7 @@ export default function Home() {
                     ))}
                 </SelectContent>
             </Select>
+            {fieldErrors.condition && <p className="text-destructive text-sm mt-1">{fieldErrors.condition}</p>}
           </div>
 
           <Card className="p-4 bg-muted">
@@ -749,13 +765,16 @@ export default function Home() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                 <Label htmlFor="emergencyContactName">Name *</Label>
-                <Input type="text" id="emergencyContactName" value={emergencyContactName} onChange={(e) => setEmergencyContactName(e.target.value)} required />
+                <Input type="text" id="emergencyContactName" value={emergencyContactName} onChange={(e) => { setEmergencyContactName(e.target.value); clearFieldError("emergencyContactName"); }} aria-invalid={!!fieldErrors.emergencyContactName} className={fieldErrors.emergencyContactName ? "border-destructive" : undefined} required />
+                {fieldErrors.emergencyContactName && <p className="text-destructive text-sm mt-1">{fieldErrors.emergencyContactName}</p>}
                 </div>
                 <div>
                 <Label htmlFor="emergencyContactNumber">Mobile *</Label>
                 <Input
                     type="tel"
                     id="emergencyContactNumber"
+                    aria-invalid={!!emergencyContactMobileError}
+                    className={emergencyContactMobileError ? "border-destructive" : undefined}
                     value={emergencyContactNumber}
                     onChange={(e) => {
                         setEmergencyContactNumber(e.target.value);
@@ -773,13 +792,14 @@ export default function Home() {
           </Card>
 
           {!isEditMode && (
-            <div className="flex items-start space-x-3 rounded-md border p-4">
-              <Checkbox id="consent" checked={consentGiven} onCheckedChange={(checked) => setConsentGiven(checked === true)} className="mt-0.5" />
+            <div className={cn("flex items-start space-x-3 rounded-md border p-4", fieldErrors.consent && "border-destructive")}>
+              <Checkbox id="consent" checked={consentGiven} onCheckedChange={(checked) => { setConsentGiven(checked === true); clearFieldError("consent"); }} className="mt-0.5 h-5 w-5" />
               <Label htmlFor="consent" className="text-sm font-normal leading-snug">
                 {CONSENT_TEXT} *
               </Label>
             </div>
           )}
+          {fieldErrors.consent && <p className="text-destructive text-sm -mt-2">{fieldErrors.consent}</p>}
 
            <Button onClick={handleSavePatient} disabled={isSaving} className="w-full bg-primary text-primary-foreground hover:bg-primary/90 text-lg py-3">
                 <Save className="mr-2 h-5 w-5" /> {isEditMode ? "Update Patient Record" : "Save Patient Record"}

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from 'next/link';
-import { Heart, UserPlus } from 'lucide-react';
+import { UserPlus } from 'lucide-react';
+import { SevaLogo } from '@/components/seva-logo';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
@@ -13,10 +14,10 @@ export default function SignupPage() {
       <Card className="w-full max-w-md shadow-2xl border-0 overflow-hidden">
         <CardHeader className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 sm:p-8">
           <div className="flex items-center justify-center gap-3">
-            <div className="bg-white/20 rounded-full p-3">
-              <Heart className="h-8 w-8 text-white fill-white" />
+            <div className="bg-white rounded-full p-2 shadow-sm">
+              <SevaLogo className="h-10 w-10" />
             </div>
-            <h1 className="text-3xl font-bold tracking-tight">CardioCare</h1>
+            <h1 className="text-3xl font-bold tracking-tight">Seva</h1>
           </div>
         </CardHeader>
         <CardContent className="p-6 sm:p-8 text-center space-y-4">
