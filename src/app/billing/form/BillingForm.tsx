@@ -1,0 +1,810 @@
+
+'use client';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import Datepicker from "@/components/ui/datepicker";
+import { Textarea } from '@/components/ui/textarea';
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { useToast } from "@/hooks/use-toast";
+import type { Patient } from '@/types/patient'; // Ensure correct path
+import type { Bill, BillItem, PaymentMethod, PaymentStatus, BillType, AuditLogEntry } from '@/types/billing'; // Ensure correct path
+import type { StaffMember } from '@/types/staff'; // Ensure correct path
+import { ArrowLeft, Save, PlusCircle, Trash2, DollarSign, Pill, Stethoscope, History, Camera as CameraIcon, UploadCloud, X } from 'lucide-react';
+import { format, parse, isValid, parseISO } from 'date-fns';
+import { useAuth } from '@/context/AuthContext'; // Ensure correct path
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+
+
+const PAYMENT_METHODS: PaymentMethod[] = ["Cash", "UPI", "Online/Card", "Arogyasree", "Insurance", "Other"];
+const PAYMENT_STATUSES: PaymentStatus[] = ["Paid", "Unpaid", "Partially Paid", "Cancelled"];
+const BILL_TYPES: { value: BillType; label: string; icon: React.ElementType }[] = [
+  { value: "Pharmacy", label: "Pharmacy Bill", icon: Pill },
+  { value: "Treatment", label: "Treatment/Consultation Bill", icon: Stethoscope },
+];
+
+// Helper function to add audit log entries for Bills
+function addBillAuditLogEntry(
+  billToUpdate: Bill,
+  actionType: string,
+  changeDetails: string,
+  currentUser: StaffMember | null
+): Bill {
+  if (!currentUser) return billToUpdate;
+
+  const newLogEntry: AuditLogEntry = {
+    id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
+    timestamp: new Date().toISOString(),
+    staffId: currentUser.id,
+    staffName: currentUser.name,
+    actionType,
+    changeDetails,
+  };
+
+  return {
+    ...billToUpdate,
+    auditLog: [...(billToUpdate.auditLog || []), newLogEntry],
+  };
+}
+
+export default function BillingForm() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { toast } = useToast();
+  const { currentUser, isLoading: authIsLoading } = useAuth();
+
+  const billIdToEdit = searchParams.get('billId');
+  const patientIdFromQuery = searchParams.get('patientId');
+  const isEditMode = Boolean(billIdToEdit);
+
+  const [billType, setBillType] = useState<BillType>("");
+  const [isBillTypeSelected, setIsBillTypeSelected] = useState(false);
+
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [selectedPatientId, setSelectedPatientId] = useState<string>("");
+  const [billDate, setBillDate] = useState<Date | null>(new Date());
+  const [billDateInput, setBillDateInput] = useState<string>(format(new Date(), 'dd/MM/yyyy'));
+  const [paymentDate, setPaymentDate] = useState<Date | null>(null);
+  const [paymentDateInput, setPaymentDateInput] = useState<string>("");
+
+  const [billItems, setBillItems] = useState<BillItem[]>([
+    { id: Date.now().toString(), description: "", quantity: 1, unitPrice: 0, originalUnitPrice: 0, total: 0 }
+  ]);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | "">("");
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus | "">("");
+  const [notes, setNotes] = useState<string>("");
+  const [currentBillId, setCurrentBillId] = useState<string | null>(null);
+  const [formIsLoading, setFormIsLoading] = useState(true);
+  const [currentBillAuditLog, setCurrentBillAuditLog] = useState<AuditLogEntry[]>([]);
+  
+  const [billAttachmentPreview, setBillAttachmentPreview] = useState<string | null>(null);
+  const [billAttachments, setBillAttachments] = useState<string[]>([]);
+  const billAttachmentInputRef = useRef<HTMLInputElement>(null);
+
+
+  useEffect(() => {
+    if (!authIsLoading && !currentUser) {
+      router.replace('/login');
+    }
+  }, [authIsLoading, currentUser, router]);
+
+  useEffect(() => {
+    if (!currentUser) {
+        setFormIsLoading(false);
+        return;
+    }
+    setFormIsLoading(true);
+    const storedPatients = localStorage.getItem('patients');
+    if (storedPatients) {
+      let rawPatients = JSON.parse(storedPatients);
+      const sanitizedPatients: Patient[] = rawPatients.map((p: any) => ({
+          ...p,
+          id: parseInt(p.id, 10),
+          careNotes: Array.isArray(p.careNotes) ? p.careNotes : [],
+          assignedStaffIds: Array.isArray(p.assignedStaffIds) ? p.assignedStaffIds : [],
+          tests: Array.isArray(p.tests) ? p.tests : [],
+          auditLog: Array.isArray(p.auditLog) ? p.auditLog : [],
+      }));
+      setPatients(sanitizedPatients);
+    }
+
+    if (patientIdFromQuery && !isEditMode) {
+      const unpaddedPatientId = parseInt(patientIdFromQuery, 10).toString();
+      setSelectedPatientId(unpaddedPatientId);
+    }
+
+    if (isEditMode && billIdToEdit) {
+      const storedBills = localStorage.getItem('bills');
+      if (storedBills) {
+        const bills: Bill[] = JSON.parse(storedBills).map((b: any) => ({
+            ...b,
+            auditLog: Array.isArray(b.auditLog) ? b.auditLog : [],
+            attachmentDataUrl: b.attachmentDataUrl || null,
+        }));
+        const billToEdit = bills.find(b => b.id === billIdToEdit);
+        if (billToEdit) {
+          setCurrentBillId(billToEdit.id);
+          setBillType(billToEdit.billType || "Treatment");
+          setIsBillTypeSelected(true);
+          setSelectedPatientId(billToEdit.patientId.toString());
+          setPaymentMethod(billToEdit.paymentMethod);
+          setPaymentStatus(billToEdit.paymentStatus);
+          setNotes(billToEdit.notes || "");
+          setBillItems(billToEdit.items.map(item => ({
+              ...item,
+              id: item.id || Date.now().toString() + Math.random(),
+              originalUnitPrice: item.originalUnitPrice !== undefined ? item.originalUnitPrice : item.unitPrice
+            })));
+          setCurrentBillAuditLog(billToEdit.auditLog || []);
+          setBillAttachmentPreview(billToEdit.attachmentDataUrl || null);
+          setBillAttachments(billToEdit.attachments || []);
+
+
+          try {
+            let parsedDate = parseISO(billToEdit.billDate);
+            if (!isValid(parsedDate)) {
+                parsedDate = parse(billToEdit.billDate, 'dd/MM/yyyy', new Date());
+            }
+             if (isValid(parsedDate)) {
+                setBillDate(parsedDate);
+                setBillDateInput(format(parsedDate, 'dd/MM/yyyy'));
+            } else {
+                setBillDate(null);
+                setBillDateInput(billToEdit.billDate);
+                 toast({ title: "Warning", description: "Could not parse bill date correctly. Please verify.", variant:"default" });
+            }
+          } catch (e) {
+             setBillDate(null);
+             setBillDateInput(billToEdit.billDate);
+             toast({ title: "Error", description: "Error parsing bill date.", variant:"destructive" });
+          }
+          
+          if (billToEdit.paymentStatus === "Paid" && billToEdit.paymentDate) {
+             try {
+                let parsedPDate = parse(billToEdit.paymentDate, 'dd/MM/yyyy', new Date());
+                if (isValid(parsedPDate)) {
+                    setPaymentDate(parsedPDate);
+                    setPaymentDateInput(format(parsedPDate, 'dd/MM/yyyy'));
+                } else {
+                    setPaymentDate(null);
+                    setPaymentDateInput(billToEdit.paymentDate);
+                }
+             } catch (e) {
+                setPaymentDate(null);
+                setPaymentDateInput(billToEdit.paymentDate);
+             }
+          } else {
+            setPaymentDate(null);
+            setPaymentDateInput("");
+          }
+
+        } else {
+          toast({ title: "Error", description: "Bill not found.", variant: "destructive" });
+          router.push('/billing');
+        }
+      }
+    } else {
+        setIsBillTypeSelected(false);
+        setCurrentBillAuditLog([]);
+        setBillAttachmentPreview(null);
+        setPaymentDate(null);
+        setPaymentDateInput("");
+    }
+    setFormIsLoading(false);
+  }, [isEditMode, billIdToEdit, patientIdFromQuery, router, toast, currentUser]);
+
+  const handleBillTypeSelectionContinue = () => {
+    if (!billType) {
+        toast({ title: "Selection Required", description: "Please select a bill type to continue.", variant: "destructive" });
+        return;
+    }
+    setIsBillTypeSelected(true);
+  };
+
+  const handleBillDateChange = (selectedDate: Date | undefined) => {
+    setBillDate(selectedDate || null);
+    if (selectedDate) {
+      setBillDateInput(format(selectedDate, 'dd/MM/yyyy'));
+    } else {
+      setBillDateInput("");
+    }
+  };
+
+  const handleBillDateInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setBillDateInput(val);
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(val)) {
+        try {
+            const parsedDate = parse(val, 'dd/MM/yyyy', new Date());
+            if (isValid(parsedDate)) {
+                setBillDate(parsedDate);
+            } else {
+                setBillDate(null);
+            }
+        } catch {
+            setBillDate(null);
+        }
+    } else {
+        setBillDate(null);
+    }
+  };
+  
+  const handlePaymentDateChange = (selectedDate: Date | undefined) => {
+    setPaymentDate(selectedDate || null);
+    if (selectedDate) {
+      setPaymentDateInput(format(selectedDate, 'dd/MM/yyyy'));
+    } else {
+      setPaymentDateInput("");
+    }
+  };
+
+  const handlePaymentDateInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setPaymentDateInput(val);
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(val)) {
+        try {
+            const parsedDate = parse(val, 'dd/MM/yyyy', new Date());
+            if (isValid(parsedDate)) {
+                setPaymentDate(parsedDate);
+            } else {
+                setPaymentDate(null);
+            }
+        } catch {
+            setPaymentDate(null);
+        }
+    } else {
+        setPaymentDate(null);
+    }
+  };
+  
+  const handlePaymentStatusChange = (status: PaymentStatus) => {
+    setPaymentStatus(status);
+    if (status === "Paid") {
+      if (!paymentDate) { 
+        const today = new Date();
+        setPaymentDate(today);
+        setPaymentDateInput(format(today, 'dd/MM/yyyy'));
+      }
+    } else {
+      setPaymentDate(null);
+      setPaymentDateInput("");
+    }
+  };
+
+
+  const handleItemChange = (index: number, field: keyof Omit<BillItem, 'originalUnitPrice' | 'id' | 'total'>, value: string | number) => {
+    const newItems = [...billItems];
+    const item = { ...newItems[index] };
+
+    if (field === 'quantity' || field === 'unitPrice') {
+        const numValue = Number(value);
+        (item as any)[field] = numValue < 0 ? 0 : numValue;
+    } else if (field === 'description') {
+        item[field] = value as string;
+    }
+
+    item.total = item.quantity * item.unitPrice;
+    newItems[index] = item;
+    setBillItems(newItems);
+  };
+
+  const addItem = () => {
+    setBillItems([...billItems, {
+        id: Date.now().toString(),
+        description: "",
+        quantity: 1,
+        originalUnitPrice: 0,
+        unitPrice: 0,
+        total: 0
+    }]);
+  };
+
+  const removeItem = (index: number) => {
+    if (billItems.length > 1) {
+      const newItems = billItems.filter((_, i) => i !== index);
+      setBillItems(newItems);
+    } else {
+        toast({title: "Info", description: "At least one service item is required.", variant: "default"});
+    }
+  };
+
+  const calculateGrandTotal = useCallback(() => {
+    return billItems.reduce((sum, item) => sum + item.total, 0);
+  }, [billItems]);
+
+  const handleBillFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+        const fileArray = Array.from(files);
+        const oversizedFiles = fileArray.filter(f => f.size > 2 * 1024 * 1024);
+        
+        if (oversizedFiles.length > 0) {
+            toast({ title: "File Too Large", description: `${oversizedFiles.length} file(s) exceed 2MB limit.`, variant: "destructive" });
+            if(event.target) event.target.value = "";
+            return;
+        }
+
+        const readers = fileArray.map(file => {
+            return new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    resolve(reader.result as string);
+                };
+                reader.readAsDataURL(file);
+            });
+        });
+
+        Promise.all(readers).then(results => {
+            setBillAttachments(prev => [...prev, ...results]);
+        });
+    }
+    if (event.target) event.target.value = "";
+  };
+
+  const removeBillAttachment = (index: number) => {
+    setBillAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const clearBillAttachment = () => {
+    setBillAttachmentPreview(null);
+    setBillAttachments([]);
+    if (billAttachmentInputRef.current) {
+      billAttachmentInputRef.current.value = "";
+    }
+  };
+
+
+  const handleSubmit = async () => {
+    if (!currentUser) {
+        toast({ title: "Auth Error", description: "User not logged in.", variant: "destructive" });
+        return;
+    }
+    if (!isBillTypeSelected || !billType) {
+        toast({ title: "Validation Error", description: "Bill Type must be selected.", variant: "destructive" }); return;
+    }
+    if (!selectedPatientId) { toast({ title: "Validation Error", description: "Please select a patient.", variant: "destructive" }); return; }
+
+    let finalBillDateString = "";
+    if (billDate) {
+        finalBillDateString = format(billDate, 'dd/MM/yyyy');
+    } else if (billDateInput) {
+         try {
+            const parsed = parse(billDateInput, 'dd/MM/yyyy', new Date());
+            if(!isValid(parsed) || format(parsed, 'dd/MM/yyyy') !== billDateInput) {
+                 toast({ title: "Validation Error", description: "Bill Date must be in dd/MM/yyyy format.", variant: "destructive" }); return;
+            }
+            finalBillDateString = billDateInput;
+        } catch {
+            toast({ title: "Validation Error", description: "Bill Date must be in dd/MM/yyyy format.", variant: "destructive" }); return;
+        }
+    } else {
+        toast({ title: "Validation Error", description: "Bill Date is required.", variant: "destructive" }); return;
+    }
+
+    if (billItems.some(item => !item.description.trim() || item.quantity <= 0 || item.unitPrice < 0)) {
+      toast({ title: "Validation Error", description: "All service items must have a description, positive quantity, and non-negative unit price.", variant: "destructive" });
+      return;
+    }
+    if (!paymentMethod) { toast({ title: "Validation Error", description: "Payment Method is required.", variant: "destructive" }); return; }
+    if (!paymentStatus) { toast({ title: "Validation Error", description: "Payment Status is required.", variant: "destructive" }); return; }
+
+    let finalPaymentDateString: string | undefined = undefined;
+    if (paymentStatus === "Paid") {
+        if (paymentDate) {
+            finalPaymentDateString = format(paymentDate, 'dd/MM/yyyy');
+        } else if (paymentDateInput) {
+            try {
+                const parsed = parse(paymentDateInput, 'dd/MM/yyyy', new Date());
+                if(!isValid(parsed) || format(parsed, 'dd/MM/yyyy') !== paymentDateInput) {
+                    toast({ title: "Validation Error", description: "Payment Date must be in dd/MM/yyyy format if status is Paid.", variant: "destructive" }); return;
+                }
+                finalPaymentDateString = paymentDateInput;
+            } catch {
+                toast({ title: "Validation Error", description: "Payment Date must be in dd/MM/yyyy format if status is Paid.", variant: "destructive" }); return;
+            }
+        } else {
+            finalPaymentDateString = format(new Date(), 'dd/MM/yyyy');
+        }
+    }
+
+
+    const patient = patients.find(p => p.id.toString() === selectedPatientId);
+    if (!patient) {
+        toast({ title: "Error", description: "Selected patient not found. Please ensure the patient is correctly selected.", variant: "destructive" });
+        return;
+    }
+
+    const billData: Omit<Bill, 'id' | 'createdAt' | 'auditLog' | 'attachmentDataUrl'> & { attachmentDataUrl?: string | null } = {
+      patientId: parseInt(selectedPatientId, 10),
+      patientName: `${patient.firstName} ${patient.lastName}`,
+      billDate: finalBillDateString,
+      billType: billType,
+      items: billItems.map(({id, description, quantity, unitPrice, originalUnitPrice, total}) => ({
+        id, description, quantity, unitPrice, originalUnitPrice, total
+      })),
+      totalAmount: calculateGrandTotal(),
+      paymentMethod,
+      paymentStatus,
+      paymentDate: finalPaymentDateString,
+      notes: notes.trim(),
+      attachmentDataUrl: billAttachments.length > 0 ? billAttachments[0] : null,
+      attachments: billAttachments.length > 0 ? billAttachments : undefined,
+    };
+
+    try {
+      const billsJSON = localStorage.getItem('bills');
+      let allBills: Bill[] = billsJSON ? JSON.parse(billsJSON).map((b: any) => ({...b, auditLog: Array.isArray(b.auditLog) ? b.auditLog : [], attachmentDataUrl: b.attachmentDataUrl || null})) : [];
+      let auditActionType = "";
+      let auditDetails = "";
+
+      if (isEditMode && currentBillId) {
+        let billToUpdate = allBills.find(b => b.id === currentBillId);
+        if (billToUpdate) {
+            let updatedBill = { ...billToUpdate, ...billData, auditLog: billToUpdate.auditLog || [] };
+            auditActionType = "Bill Updated";
+            auditDetails = `Bill ${currentBillId} details updated. Status: ${paymentStatus}.`;
+            if (paymentStatus === "Paid" && billToUpdate.paymentStatus !== "Paid") {
+                auditDetails += ` Marked as Paid on ${finalPaymentDateString}.`;
+            }
+            updatedBill = addBillAuditLogEntry(updatedBill, auditActionType, auditDetails, currentUser);
+            allBills = allBills.map(b => b.id === currentBillId ? updatedBill : b);
+            toast({ title: "Success", description: `Bill ${currentBillId} updated.` });
+        } else {
+             toast({ title: "Error", description: "Could not find bill to update.", variant: "destructive" });
+             return;
+        }
+      } else {
+        const nextBillIdNumberJSON = localStorage.getItem('nextBillIdNumber');
+        let nextBillIdNumber = nextBillIdNumberJSON ? parseInt(nextBillIdNumberJSON, 10) : 1;
+        const newBillId = `BILL-${String(nextBillIdNumber).padStart(3, '0')}`;
+        let newBill: Bill = { ...billData, id: newBillId, createdAt: new Date().toISOString(), auditLog: [] };
+        auditActionType = "Bill Created";
+        auditDetails = `Bill ${newBillId} created with status ${paymentStatus}.`;
+         if (paymentStatus === "Paid") {
+            auditDetails += ` Marked as Paid on ${finalPaymentDateString}.`;
+        }
+        newBill = addBillAuditLogEntry(newBill, auditActionType, auditDetails, currentUser);
+        allBills.push(newBill);
+        localStorage.setItem('nextBillIdNumber', (nextBillIdNumber + 1).toString());
+        toast({ title: "Success", description: `New bill ${newBillId} created.` });
+      }
+
+      localStorage.setItem('bills', JSON.stringify(allBills));
+      router.push('/billing');
+
+    } catch (e: any) {
+      console.error("Failed to save bill to localStorage", e);
+      if (e.name === 'QuotaExceededError') {
+        toast({
+          title: "Storage Full",
+          description: "Cannot save bill data. Local storage is full, likely due to image attachments.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+            title: "Storage Error",
+            description: "Could not save bill data. An unexpected error occurred.",
+            variant: "destructive",
+        });
+      }
+    }
+  };
+
+  if (authIsLoading || formIsLoading) {
+    return <div className="flex justify-center items-center min-h-screen"><p>Loading form...</p></div>;
+  }
+
+  if (!currentUser) {
+    return <div className="flex justify-center items-center min-h-screen"><p>Redirecting to login...</p></div>;
+  }
+
+  if (!isEditMode && !isBillTypeSelected) {
+    return (
+      <div className="container mx-auto p-4 sm:p-6 lg:p-8 flex flex-col items-center">
+        <Card className="w-full max-w-md mt-10 shadow-xl">
+          <CardHeader>
+            <CardTitle className="text-2xl flex items-center"><DollarSign className="mr-3 h-7 w-7 text-primary"/>Select Bill Type</CardTitle>
+            <CardDescription>Choose the type of bill you want to create.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RadioGroup value={billType} onValueChange={(value: BillType) => setBillType(value)}>
+              {BILL_TYPES.map((type) => {
+                const Icon = type.icon;
+                return (
+                  <Label
+                    key={type.value}
+                    htmlFor={`billType-${type.value}`}
+                    className="flex items-center space-x-3 p-4 border rounded-md hover:bg-muted/50 cursor-pointer has-[:checked]:bg-primary/10 has-[:checked]:border-primary"
+                  >
+                    <RadioGroupItem value={type.value} id={`billType-${type.value}`} className="h-5 w-5" />
+                    <Icon className="h-6 w-6 text-primary" />
+                    <span className="font-medium">{type.label}</span>
+                  </Label>
+                );
+              })}
+            </RadioGroup>
+          </CardContent>
+          <CardFooter className="flex justify-between mt-6">
+            <Button variant="outline" onClick={() => router.push('/billing')}>
+                <ArrowLeft className="mr-2 h-4 w-4" /> Cancel
+            </Button>
+            <Button onClick={handleBillTypeSelectionContinue} disabled={!billType}>Continue</Button>
+          </CardFooter>
+        </Card>
+      </div>
+    );
+  }
+
+
+  return (
+    <div className="container mx-auto p-4 sm:p-6 lg:p-8 flex flex-col items-center">
+      <Card className="w-full max-w-2xl mt-6 shadow-xl">
+        <CardHeader>
+          <CardTitle className="text-2xl flex items-center">
+            <DollarSign className="mr-3 h-7 w-7 text-primary"/>
+            {isEditMode ? `Edit Bill: ${currentBillId}` : (billType === "Pharmacy" ? "Create Pharmacy Bill" : "Create Treatment Bill")}
+          </CardTitle>
+          <CardDescription>
+            {isEditMode ? "Update the details for this bill." : "Fill in the details to generate a new bill."}
+            {billType && !isEditMode && <span className="block text-sm text-muted-foreground mt-1">Selected Bill Type: {billType}</span>}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="patient">Patient *</Label>
+              <Select
+                onValueChange={setSelectedPatientId}
+                value={selectedPatientId}
+                disabled={isEditMode || Boolean(patientIdFromQuery)}
+              >
+                <SelectTrigger id="patient">
+                  <SelectValue placeholder="Select Patient" />
+                </SelectTrigger>
+                <SelectContent>
+                  {patients.length > 0 ? (
+                    patients.map(p => (
+                      <SelectItem key={p.id} value={p.id.toString()}>
+                        {p.firstName} {p.lastName} (ID: {p.id.toString().padStart(3,'0')})
+                      </SelectItem>
+                    ))
+                  ) : (
+                     <div className="p-2 text-sm text-muted-foreground text-center">No patients found. <Link href="/" className="underline text-primary">Add a patient first</Link>.</div>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="billDate">Bill Date *</Label>
+              <div className="flex items-center">
+                <Input
+                    type="text"
+                    id="billDate"
+                    placeholder="dd/MM/yyyy"
+                    value={billDateInput}
+                    onChange={handleBillDateInputChange}
+                    className="rounded-r-none"
+                    required
+                />
+                <Datepicker
+                    selected={billDate}
+                    onDateChange={handleBillDateChange}
+                    triggerClassName="rounded-l-none border-l-0 w-auto p-2.5"
+                />
+              </div>
+            </div>
+          </div>
+
+          <Card className="p-4 bg-muted/50">
+             <CardTitle className="text-lg mb-3">{billType === "Pharmacy" ? "Pharmacy Items" : "Services/Treatments Rendered"}</CardTitle>
+            {billItems.map((item, index) => (
+              <div key={item.id} className="grid grid-cols-[1fr_auto_auto_auto_auto] items-end gap-2 mb-3 pb-3 border-b last:border-b-0 last:mb-0 last:pb-0">
+                <div className="col-span-5 md:col-span-1">
+                  <Label htmlFor={`itemDesc-${index}`}>Description *</Label>
+                  <Input
+                    id={`itemDesc-${index}`}
+                    value={item.description}
+                    onChange={(e) => handleItemChange(index, 'description', e.target.value)}
+                    placeholder={billType === "Pharmacy" ? "Medication Name" : "Service / Item Name"}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor={`itemQty-${index}`}>Qty *</Label>
+                  <Input
+                    id={`itemQty-${index}`}
+                    type="number"
+                    value={item.quantity}
+                    onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
+                    className="w-16 text-center"
+                    min="1"
+                  />
+                </div>
+                <div>
+                    <Label htmlFor={`itemPrice-${index}`} className="block">
+                        Unit Price *
+                        {(billType === "Pharmacy" && typeof item.originalUnitPrice === 'number' && item.originalUnitPrice > 0) && (
+                        <span className="text-xs text-muted-foreground ml-1">
+                            {item.originalUnitPrice !== item.unitPrice
+                            ? `(₹${item.originalUnitPrice.toFixed(2)})`
+                            : `(Original)`
+                            }
+                        </span>
+                        )}
+                    </Label>
+                  <Input
+                    id={`itemPrice-${index}`}
+                    type="number"
+                    value={item.unitPrice}
+                    onChange={(e) => handleItemChange(index, 'unitPrice', e.target.value)}
+                    className="w-32 text-right"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+                <div className="text-right">
+                  <Label>Amount</Label>
+                  <Input value={`₹${item.total.toFixed(2)}`} readOnly className="w-28 text-right bg-muted" />
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => removeItem(index)} className="text-destructive hover:bg-destructive/10 self-end mb-1" title="Remove Item">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+            <Button variant="outline" onClick={addItem} className="mt-2 w-full md:w-auto">
+              <PlusCircle className="mr-2 h-4 w-4" /> Add {billType === "Pharmacy" ? "Medication Item" : "Service Item"}
+            </Button>
+          </Card>
+
+          <div className="text-right mt-2">
+            <Label className="text-lg font-semibold">Grand Total:</Label>
+            <span className="text-xl font-bold ml-2">₹{calculateGrandTotal().toFixed(2)}</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="paymentMethod">Payment Method *</Label>
+              <Select onValueChange={(value) => setPaymentMethod(value as PaymentMethod)} value={paymentMethod}>
+                <SelectTrigger id="paymentMethod">
+                  <SelectValue placeholder="Select Payment Method" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_METHODS.map(method => <SelectItem key={method} value={method}>{method}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="paymentStatus">Payment Status *</Label>
+              <Select onValueChange={(value) => handlePaymentStatusChange(value as PaymentStatus)} value={paymentStatus}>
+                <SelectTrigger id="paymentStatus">
+                  <SelectValue placeholder="Select Payment Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_STATUSES.map(status => <SelectItem key={status} value={status}>{status}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {paymentStatus === "Paid" && (
+            <div>
+              <Label htmlFor="paymentDate">Payment Date *</Label>
+               <div className="flex items-center">
+                <Input
+                    type="text"
+                    id="paymentDate"
+                    placeholder="dd/MM/yyyy"
+                    value={paymentDateInput}
+                    onChange={handlePaymentDateInputChange}
+                    className="rounded-r-none"
+                    required
+                />
+                <Datepicker
+                    selected={paymentDate}
+                    onDateChange={handlePaymentDateChange}
+                    triggerClassName="rounded-l-none border-l-0 w-auto p-2.5"
+                />
+              </div>
+            </div>
+          )}
+
+          <div>
+            <Label htmlFor="notes">Notes / Remarks</Label>
+            <Textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any additional notes for this bill..." />
+          </div>
+
+           <div>
+            <Label htmlFor="billAttachment">Attachments (Optional, max 2MB each)</Label>
+            <div className="flex items-center gap-3 mt-1">
+                <input 
+                    type="file" 
+                    accept="image/*"
+                    multiple
+                    onChange={handleBillFileUpload} 
+                    ref={billAttachmentInputRef} 
+                    className="hidden"
+                />
+                <Button type="button" variant="outline" onClick={() => billAttachmentInputRef.current?.click()} className="flex-1">
+                    <UploadCloud className="mr-2 h-4 w-4"/> {billAttachments.length > 0 ? `Add More (${billAttachments.length})` : "Upload Files"}
+                </Button>
+                {billAttachments.length > 0 && (
+                    <Button type="button" variant="ghost" size="sm" onClick={clearBillAttachment} className="text-xs text-destructive">
+                        Clear All
+                    </Button>
+                )}
+            </div>
+
+            {billAttachments.length > 0 && (
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                    {billAttachments.map((attachment, index) => (
+                        <div key={index} className="relative border rounded-md p-1">
+                            <img src={attachment} alt={`Bill Attachment ${index + 1}`} className="rounded-md w-full h-20 object-cover" data-ai-hint="invoice document"/>
+                            <Button
+                                variant="destructive"
+                                size="icon"
+                                className="absolute -top-2 -right-2 h-5 w-5 rounded-full"
+                                onClick={() => removeBillAttachment(index)}
+                            >
+                                <X className="h-3 w-3" />
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+            )}
+          </div>
+
+
+          {isEditMode && currentBillAuditLog.length > 0 && (
+            <Accordion type="single" collapsible className="w-full mt-4">
+                <AccordionItem value="bill-audit-log">
+                    <AccordionTrigger className="text-sm hover:no-underline flex items-center">
+                        <History className="mr-2 h-4 w-4 text-muted-foreground"/> Bill History / Audit Log ({currentBillAuditLog.length})
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2">
+                        <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                            {currentBillAuditLog.sort((a,b) => parseISO(b.timestamp).getTime() - parseISO(a.timestamp).getTime()).map((log) => (
+                                <Card key={log.id} className="bg-muted/30 p-3 text-sm shadow-sm">
+                                    <p className="text-xs text-muted-foreground mb-1">
+                                    {format(parseISO(log.timestamp), "dd/MM/yyyy, HH:mm:ss")}
+                                    {log.staffName && (
+                                        <>
+                                        {' by '}
+                                        <span className="font-semibold text-foreground">{log.staffName}</span>
+                                        </>
+                                    )}
+                                    </p>
+                                    <p><span className="font-medium">{log.actionType}:</span> {log.changeDetails}</p>
+                                </Card>
+                            ))}
+                        </div>
+                    </AccordionContent>
+                </AccordionItem>
+            </Accordion>
+          )}
+
+
+        </CardContent>
+        <CardFooter className="flex justify-between mt-4">
+          <Button variant="outline" onClick={() => router.push('/billing')}>
+            <ArrowLeft className="mr-2 h-4 w-4" /> Cancel
+          </Button>
+          <Button onClick={handleSubmit}>
+            <Save className="mr-2 h-4 w-4" /> {isEditMode ? "Save Changes" : "Save Bill"}
+          </Button>
+        </CardFooter>
+      </Card>
+    </div>
+  );
+}
