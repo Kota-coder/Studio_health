@@ -6,6 +6,7 @@ import { Clock, LogIn, LogOut } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useT } from '@/components/language-provider';
 import { useToast } from '@/hooks/use-toast';
 import { attendance as attendanceRepo, shifts as shiftsRepo } from '@/lib/data';
 import { GRACE_MINUTES, dateKey, formatHours, formatMinutes, shiftWindow } from '@/lib/duty';
@@ -14,6 +15,7 @@ import type { StaffMember } from '@/types/staff';
 
 // Clock in / out for the signed-in person, with their current or next shift.
 export function MyDutyCard({ currentUser, refreshKey, onChange }: { currentUser: StaffMember; refreshKey: number; onChange: () => void }) {
+  const t = useT();
   const { toast } = useToast();
   const [openEntry, setOpenEntry] = useState<AttendanceEntry | null>(null);
   const [myShifts, setMyShifts] = useState<StaffShift[]>([]);
@@ -68,19 +70,19 @@ export function MyDutyCard({ currentUser, refreshKey, onChange }: { currentUser:
   const lateMinutes = current && !openEntry ? differenceInMinutes(now, shiftWindow(current).start) : 0;
 
   return (
-    <Card className="shadow-md">
+    <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg"><Clock className="h-5 w-5 text-primary" /> My Duty</CardTitle>
-        <CardDescription>Clock in when you start work and clock out when you leave. The server&apos;s clock is used.</CardDescription>
+        <CardTitle className="flex items-center gap-2 text-lg"><Clock className="h-5 w-5 text-primary" /> {t('My Duty')}</CardTitle>
+        <CardDescription>{t("Clock in when you start work and clock out when you leave. The server's clock is used.")}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1 text-sm">
-          {isLoading ? <p className="text-muted-foreground">Loading…</p> : (
+          {isLoading ? <p className="text-muted-foreground">{t('Loading...')}</p> : (
             <>
               <p className="flex flex-wrap items-center gap-2">
                 {openEntry
-                  ? <><Badge className="bg-emerald-600 hover:bg-emerald-600">On duty</Badge> since {format(new Date(openEntry.clockIn), 'EEE d MMM, HH:mm')} ({formatHours(Math.max(0, differenceInMinutes(now, new Date(openEntry.clockIn))) / 60)})</>
-                  : <><Badge variant="secondary">Off duty</Badge> You are not clocked in.</>}
+                  ? <><Badge className="bg-emerald-600 hover:bg-emerald-600">{t('On duty')}</Badge> since {format(new Date(openEntry.clockIn), 'EEE d MMM, HH:mm')} ({formatHours(Math.max(0, differenceInMinutes(now, new Date(openEntry.clockIn))) / 60)})</>
+                  : <><Badge variant="secondary">{t('Off duty')}</Badge> You are not clocked in.</>}
               </p>
               {current && <p>Current shift: <span className="font-medium">{describe(current)}</span>{lateMinutes > GRACE_MINUTES && <span className="text-destructive"> — started {formatMinutes(lateMinutes)} ago</span>}</p>}
               {!current && next && <p>Next shift: <span className="font-medium">{format(shiftWindow(next).start, 'EEE d MMM')} · {describe(next)}</span></p>}
@@ -90,7 +92,7 @@ export function MyDutyCard({ currentUser, refreshKey, onChange }: { currentUser:
         </div>
         <Button size="lg" onClick={handleClock} disabled={isLoading || isSaving}
           variant={openEntry ? 'outline' : 'default'} className="w-full sm:w-auto">
-          {openEntry ? <><LogOut className="mr-2 h-4 w-4" /> Clock Out</> : <><LogIn className="mr-2 h-4 w-4" /> Clock In</>}
+          {openEntry ? <><LogOut className="mr-2 h-4 w-4" /> {t('Clock Out')}</> : <><LogIn className="mr-2 h-4 w-4" /> {t('Clock In')}</>}
         </Button>
       </CardContent>
     </Card>

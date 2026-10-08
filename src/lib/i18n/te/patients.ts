@@ -1,3 +1,22 @@
 // Telugu: patient dashboard, registration, patient pages, care team, treatment summary.
 export const PATIENTS: Record<string, string> = {
+  'Edit Patient': 'రోగి వివరాలు మార్చండి',
+  'ID Card Details': 'గుర్తింపు కార్డు వివరాలు',
+  'Emergency Contact': 'అత్యవసర సంప్రదింపు',
+  'Save Patient Record': 'రోగి రికార్డు సేవ్ చేయండి',
+  'Update Patient Record': 'రోగి రికార్డు నవీకరించండి',
+  'Save & Add Admission Notes': 'సేవ్ చేసి అడ్మిషన్ నోట్స్ జోడించండి',
+  'Update & View Admission Notes': 'నవీకరించి అడ్మిషన్ నోట్స్ చూడండి',
+  'Critical Patients': 'తీవ్రమైన రోగులు',
+  'Medium Priority Patients': 'మధ్యస్థ ప్రాధాన్య రోగులు',
+  'Low Priority Patients': 'తక్కువ ప్రాధాన్య రోగులు',
+  'Discharged Patients': 'డిశ్చార్జ్ అయిన రోగులు',
+  'Condition Unassigned': 'స్థితి కేటాయించలేదు',
+  'Filters & Search': 'ఫిల్టర్లు & శోధన',
+  'No Patients Found': 'రోగులు ఎవరూ లేరు',
+  'No Patients Match Criteria': 'ఈ ఫిల్టర్లకు సరిపోయే రోగులు లేరు',
+  'Confirm Discharge': 'డిశ్చార్జ్ నిర్ధారించండి',
+  'Proceed with Discharge': 'డిశ్చార్జ్ చేయండి',
+  "Set up your hospital's name and logo": 'మీ ఆసుపత్రి పేరు మరియు లోగోను సెటప్ చేయండి',
+  'Set up Hospital Profile': 'ఆసుపత్రి ప్రొఫైల్ సెటప్ చేయండి',
 };

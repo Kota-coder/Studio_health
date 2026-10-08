@@ -1,0 +1,194 @@
+"use client";
+
+import { useState } from 'react';
+import { ClipboardList, Pill, PlusCircle, ShoppingCart } from 'lucide-react';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useFormat, useT } from '@/components/language-provider';
+import { AttachmentList } from '@/components/patient/attachment-picker';
+import { CareNoteForm } from '@/components/patient/care-note-form';
+import { loadMedications, loadTreatmentTemplates, useLoadOnce } from '@/components/patient/use-load-once';
+import { useStaff } from '@/context/AuthContext';
+import { useFeatures } from '@/hooks/use-features';
+import { useToast } from '@/hooks/use-toast';
+import { bills as billsRepo } from '@/lib/data';
+import { formatDate, toDMY } from '@/lib/format';
+import type { TreatmentTemplate } from '@/config/treatmentTemplates';
+import type { BillItem } from '@/types/billing';
+import type { CareNote, Patient } from '@/types/patient';
+
+const newestFirst = (a: CareNote, b: CareNote) => Date.parse(b.createdAt) - Date.parse(a.createdAt);
+
+// Care notes: the form to add one (templates and medicines load when it opens), the list,
+// and "Bill Meds" to turn a note's medicines into a pharmacy bill.
+export function CareNotesSection({ patient, onSaved, onBilled }: {
+  patient: Patient;
+  onSaved: () => Promise<void>;
+  onBilled: () => Promise<void>;
+}) {
+  const t = useT();
+  const { toast } = useToast();
+  const { isOn } = useFeatures();
+  const currentUser = useStaff();
+  const templates = useLoadOnce(loadTreatmentTemplates);
+  const medications = useLoadOnce(loadMedications);
+  const [showForm, setShowForm] = useState(false);
+
+  const notes = [...(patient.careNotes ?? [])].sort(newestFirst);
+  const loadFailed = (what: string) => () => toast({ title: 'Could not load', description: `Could not load ${what}.`, variant: 'destructive' });
+  const ensureTemplates = () => { templates.ensure().catch(loadFailed('care note templates')); };
+
+  const openForm = () => { ensureTemplates(); setShowForm(true); };
+
+  const billMedications = async (note: CareNote) => {
+    const mentioned = note.medicationsMentioned ?? [];
+    try {
+      const priceList = await medications.ensure();
+      const items: BillItem[] = mentioned.map(mention => {
+        const medication = priceList.find(m => m.id === mention.medicationId);
+        const price = medication?.listPrice ?? 0;
+        return {
+          id: `${mention.medicationId}-${Date.now()}`,
+          description: mention.medicationName,
+          medicationId: medication?.id,
+          quantity: 1,
+          originalUnitPrice: price,
+          unitPrice: price,
+          total: price,
+        };
+      });
+      if (items.some(item => item.originalUnitPrice === 0)) {
+        toast({ title: 'Check prices', description: 'Some medications could not be priced or have a list price of 0. Please check the medication list.' });
+      }
+      const bill = await billsRepo.create({
+        patientId: patient.id,
+        patientName: `${patient.firstName} ${patient.lastName}`,
+        billDate: toDMY(new Date()),
+        billType: 'Pharmacy',
+        items,
+        totalAmount: items.reduce((sum, item) => sum + item.total, 0),
+        paymentMethod: '',
+        paymentStatus: 'Unpaid',
+        notes: `Pharmacy items from care note dated ${formatDate(note.createdAt, 'dd/MM/yyyy')}. Dosages: ${mentioned.map(m => `${m.medicationName} - ${m.dosage || 'N/A'}`).join('; ')}`,
+      }, 'Pharmacy bill created from care note.');
+      await onBilled();
+      toast({ title: 'Bill created', description: `Pharmacy bill ${bill.id} created.` });
+    } catch (e) {
+      console.error('Failed to create pharmacy bill:', e);
+      toast({ title: 'Could not create the bill', description: 'Could not create pharmacy bill.', variant: 'destructive' });
+    }
+  };
+
+  return (
+    <Card className="shadow-lg">
+      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
+        <div className="space-y-1.5">
+          <CardTitle className="flex items-center"><ClipboardList className="mr-2 h-5 w-5 text-primary" />{t('Care Notes')}</CardTitle>
+          <CardDescription>Notes are attributed to you ({currentUser.name}).</CardDescription>
+        </div>
+        {!showForm && (
+          <Button variant="outline" size="sm" onClick={openForm}><PlusCircle className="mr-2 h-4 w-4" /> {t('Add Care Note')}</Button>
+        )}
+      </CardHeader>
+      <CardContent>
+        {showForm && (
+          <CareNoteForm patient={patient} templates={templates.data} medications={medications.data}
+            loadMedications={() => { medications.ensure().catch(loadFailed('medications')); }}
+            onSaved={async () => { await onSaved(); setShowForm(false); }} onCancel={() => setShowForm(false)} />
+        )}
+        {notes.length === 0 ? (
+          <p className="text-sm italic text-muted-foreground">No care notes added yet.</p>
+        ) : (
+          <Accordion type="single" collapsible className="w-full"
+            onValueChange={value => { if (value && notes.some(n => n.templateId)) ensureTemplates(); }}>
+            <AccordionItem value="care-notes">
+              <AccordionTrigger className="py-2 text-sm hover:no-underline">View Recorded Notes ({notes.length})</AccordionTrigger>
+              <AccordionContent className="pt-2">
+                <div className="max-h-96 space-y-3 overflow-y-auto pr-2">
+                  {notes.map(note => (
+                    <NoteCard key={note.id} note={note} templates={templates.data}
+                      onBill={isOn('billing') && note.medicationsMentioned?.length ? () => billMedications(note) : undefined} />
+                  ))}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function NoteCard({ note, templates, onBill }: { note: CareNote; templates: TreatmentTemplate[] | null; onBill?: () => void }) {
+  const t = useT();
+  const { date } = useFormat();
+  const templateFields = note.templateId && note.templateFieldsData
+    ? templates?.find(tpl => tpl.id === note.templateId)?.careNoteFields.flatMap(field => {
+      const value = note.templateFieldsData?.[field.fieldId];
+      if (value === undefined || String(value).trim() === '') return [];
+      const shown = field.fieldType === 'select' ? field.options?.find(o => o.value === value)?.label ?? String(value) : String(value);
+      return [{ id: field.fieldId, label: field.label, value: shown }];
+    }) ?? []
+    : [];
+  const medications = note.medicationsMentioned ?? [];
+
+  return (
+    <Card className="break-words bg-muted/50 p-3 text-sm">
+      <div className="flex items-start justify-between gap-2">
+        <p className="mb-1 text-xs text-muted-foreground">
+          {date(note.createdAt, 'dd MMM yyyy, HH:mm')}
+          {note.staffName && <> by <span className="font-semibold text-foreground">{note.staffName}</span></>}
+        </p>
+        {onBill && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" className="shrink-0"><ShoppingCart className="mr-2 h-3 w-3" /> {t('Bill Meds')}</Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Create Pharmacy Bill?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will create a new bill for the medications listed in this care note: {medications.map(m => m.medicationName).join(', ')}.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('Cancel')}</AlertDialogCancel>
+                <AlertDialogAction onClick={onBill}>{t('Create Bill')}</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
+      </div>
+      {note.templateName && <p className="mb-1 font-semibold">Template: {note.templateName}</p>}
+      {note.text && <p className="mb-1 whitespace-pre-wrap"><span className="font-medium">General Note:</span> {note.text}</p>}
+      {templateFields.length > 0 && (
+        <div className="mt-1.5 space-y-0.5">
+          <p className="text-xs font-medium">Template Specific Data:</p>
+          {templateFields.map(field => (
+            <p key={field.id} className="pl-2 text-xs"><span className="font-medium">{field.label}:</span> {field.value}</p>
+          ))}
+        </div>
+      )}
+      {medications.length > 0 && (
+        <div className="mt-2">
+          <p className="flex items-center text-xs font-medium"><Pill className="mr-1 h-3 w-3 text-blue-600" />Medications Mentioned:</p>
+          <ul className="list-inside list-disc space-y-0.5 pl-4 text-xs">
+            {medications.map((med, index) => (
+              <li key={index}>
+                <span className="font-semibold">{med.medicationName}</span>
+                {med.dosage && <span className="text-muted-foreground"> - Dosage: {med.dosage}</span>}
+                {med.notes && <span className="text-muted-foreground"> - Notes: {med.notes}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <AttachmentList paths={note.attachments} />
+    </Card>
+  );
+}

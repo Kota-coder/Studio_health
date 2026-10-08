@@ -1,10 +1,10 @@
-
 import { Suspense } from 'react';
-import BillingForm from './BillingForm'; // This will be your client component
+import { PageLoading } from '@/components/page';
+import BillingForm from './BillingForm';
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="flex justify-center items-center min-h-screen"><p>Loading form details...</p></div>}>
+    <Suspense fallback={<PageLoading />}>
       <BillingForm />
     </Suspense>
   );

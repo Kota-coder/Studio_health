@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { format } from 'date-fns';
 import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useFormat } from '@/components/language-provider';
 import { useToast } from '@/hooks/use-toast';
 import { inventory } from '@/lib/data';
+import { formatINR } from '@/lib/format';
 import { REASON_LABELS, formatQty } from '@/lib/inventory';
 import type { InventoryItem, StockMovement } from '@/types/inventory';
 
@@ -21,6 +22,7 @@ export function StockHistoryDialog({ item, open, onOpenChange, canDelete, onChan
   onChanged: () => void;
 }) {
   const { toast } = useToast();
+  const { date } = useFormat();
   const [movements, setMovements] = useState<StockMovement[] | null>(null);
 
   const load = useCallback(async () => {
@@ -72,10 +74,10 @@ export function StockHistoryDialog({ item, open, onOpenChange, canDelete, onChan
                   <div className="min-w-0">
                     <p className="font-medium">{REASON_LABELS[m.reason]}</p>
                     <p className="text-xs text-muted-foreground break-words">
-                      {format(new Date(`${m.movedOn}T00:00`), 'd MMM yyyy')}
+                      {date(m.movedOn, 'd MMM yyyy')}
                       {m.note ? <> · {link ? <Link href={link} className="text-primary underline">{m.note}</Link> : m.note}</> : null}
                       {m.recordedByStaffName ? ` · ${m.recordedByStaffName}` : ''}
-                      {m.unitCost != null && m.quantity > 0 ? ` · ₹${m.unitCost.toFixed(2)} each` : ''}
+                      {m.unitCost != null && m.quantity > 0 ? ` · ${formatINR(m.unitCost)} each` : ''}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">

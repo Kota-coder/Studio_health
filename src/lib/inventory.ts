@@ -31,5 +31,3 @@ export const REASON_LABELS: Record<StockReason, string> = {
 };
 
 export const formatQty = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
-export const formatRupees = (n: number) =>
-  `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

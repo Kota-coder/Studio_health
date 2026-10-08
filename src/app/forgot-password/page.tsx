@@ -1,50 +1,33 @@
-
 "use client";
 
 import { useState } from 'react';
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { ArrowLeft, Mail, CheckCircle } from 'lucide-react';
+import Link from 'next/link';
+import { ArrowLeft, CheckCircle, Mail } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { AuthBrandHeader } from '@/components/auth-brand-header';
-import { useRouter } from 'next/navigation';
+import { useT } from '@/components/language-provider';
 import { useToast } from '@/hooks/use-toast';
 import { getSupabase } from '@/lib/supabase/client';
 
+// Emails a link to set a new password. Public page.
 export default function ForgotPasswordPage() {
+  const t = useT();
+  const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
-  const router = useRouter();
-  const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedEmail = email.trim();
-    
-    if (!trimmedEmail) {
-      toast({ 
-        title: "Email Required", 
-        description: "Please enter your email address.", 
-        variant: "destructive" 
-      });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      toast({ title: 'Please enter a valid email address', variant: 'destructive' });
       return;
     }
-
-    // Email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(trimmedEmail)) {
-      toast({ 
-        title: "Invalid Email", 
-        description: "Please enter a valid email address.", 
-        variant: "destructive" 
-      });
-      return;
-    }
-
     setIsLoading(true);
-
     try {
       // Supabase emails a reset link (if the address belongs to a staff login).
       // The link lands on /auth/confirm, which signs the user in and opens /set-password.
@@ -54,87 +37,56 @@ export default function ForgotPasswordPage() {
       if (error) throw error;
       setEmailSent(true);
     } catch (error) {
-      console.error("Error during password reset request:", error);
-      toast({ 
-        title: "Error", 
-        description: error instanceof Error ? error.message : "An error occurred. Please try again.", 
-        variant: "destructive" 
-      });
+      toast({ title: 'Could not send the link', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
-      <Card className="w-full max-w-md shadow-2xl border-0 overflow-hidden">
-        <CardHeader className="bg-primary text-primary-foreground p-6 pb-10 sm:p-8 sm:pb-12 relative">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
+      <Card className="w-full max-w-md overflow-hidden border-0 shadow-2xl">
+        <CardHeader className="relative bg-primary p-6 pb-10 text-primary-foreground sm:p-8 sm:pb-12">
           <AuthBrandHeader />
         </CardHeader>
 
-        <CardContent className="pt-8 pb-8 px-4 sm:px-8 -mt-6 relative">
-          <div className="bg-white rounded-lg shadow-sm border p-6">
+        <CardContent className="relative -mt-6 px-4 pb-8 pt-8 sm:px-8">
+          <div className="rounded-lg border bg-card p-6 shadow-sm">
             {!emailSent ? (
               <>
-                <div className="flex items-center justify-center mb-4">
-                  <div className="bg-primary/10 rounded-full p-3">
-                    <Mail className="h-8 w-8 text-primary" />
-                  </div>
+                <div className="mb-4 flex justify-center">
+                  <div className="rounded-full bg-primary/10 p-3"><Mail className="h-8 w-8 text-primary" /></div>
                 </div>
-                
-                <h2 className="text-2xl font-semibold text-gray-800 mb-2 text-center">Forgot Password?</h2>
-                <p className="text-gray-500 text-sm mb-6 text-center">
-                  Enter your staff email address and we'll email you a link to set a new password.
+                <h2 className="mb-2 text-center text-2xl font-semibold">{t('Forgot password?')}</h2>
+                <p className="mb-6 text-center text-sm text-muted-foreground">
+                  {t("Enter your staff email address and we'll email you a link to set a new password.")}
                 </p>
-                
                 <form onSubmit={handleSubmit} className="space-y-5">
                   <div className="space-y-2">
-                    <Label htmlFor="email" className="text-gray-700 font-medium">
-                      Email Address
-                    </Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="Enter your registered email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      className="h-12 px-4 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
-                    />
+                    <Label htmlFor="email" className="font-medium">Email Address</Label>
+                    <Input id="email" type="email" autoComplete="email" inputMode="email" placeholder="Enter your registered email"
+                      value={email} onChange={e => setEmail(e.target.value)} required className="h-12 px-4" />
                   </div>
-
-                  <Button 
-                    type="submit" 
-                    className="w-full h-12 bg-primary hover:bg-primary/90 text-white font-semibold text-base transition-colors" 
-                    disabled={isLoading}
-                  >
-                    {isLoading ? 'Sending...' : 'Send Reset Link'}
+                  <Button type="submit" className="h-12 w-full text-base font-semibold" disabled={isLoading}>
+                    {isLoading ? t('Sending…') : t('Send reset link')}
                   </Button>
                 </form>
-
                 <div className="mt-6 text-center">
-                  <button 
-                    type="button" 
-                    onClick={() => router.push('/login')}
-                    className="text-sm text-gray-600 hover:text-gray-800 font-medium transition-colors inline-flex items-center gap-2"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Back to Login
-                  </button>
+                  <Link href="/login" className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+                    <ArrowLeft className="h-4 w-4" /> {t('Back to Login')}
+                  </Link>
                 </div>
               </>
             ) : (
-              <div className="text-center py-4">
-                <div className="flex items-center justify-center mb-4">
-                  <div className="bg-green-100 rounded-full p-3">
-                    <CheckCircle className="h-12 w-12 text-green-600" />
-                  </div>
+              <div className="py-4 text-center">
+                <div className="mb-4 flex justify-center">
+                  <div className="rounded-full bg-green-100 p-3"><CheckCircle className="h-12 w-12 text-green-600" /></div>
                 </div>
-                <h2 className="text-2xl font-semibold text-gray-800 mb-2">Check Your Email</h2>
-                <p className="text-gray-500 text-sm mb-4">
-                  If <strong>{email}</strong> belongs to a staff account, a link to set a new password is on its way.
+                <h2 className="mb-2 text-2xl font-semibold">{t('Check your email')}</h2>
+                <p className="mb-4 break-words text-sm text-muted-foreground">
+                  If <strong>{email.trim()}</strong> belongs to a staff account, a link to set a new password is on its way.
                 </p>
-                <Button variant="outline" onClick={() => router.push('/login')}>Back to Login</Button>
+                <Button variant="outline" asChild><Link href="/login">{t('Back to Login')}</Link></Button>
               </div>
             )}
           </div>

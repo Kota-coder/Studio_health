@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { useT } from '@/components/language-provider';
 import { useToast } from '@/hooks/use-toast';
 import { attendance as attendanceRepo, shifts as shiftsRepo } from '@/lib/data';
 import { dateKey, entryWindow, formatHours, overlaps, shiftHours, shiftStatus, shiftWindow, weekStartOf, type ShiftStatusTone } from '@/lib/duty';
@@ -50,6 +51,7 @@ interface AttendanceLogProps {
 
 // Planned shifts compared with clock-ins, hours per person, and every time record.
 export function AttendanceLog({ staff, currentUser, canSeeAll, canManage, refreshKey, onChange }: AttendanceLogProps) {
+  const t = useT();
   const { toast } = useToast();
   const [from, setFrom] = useState(() => dateKey(weekStartOf(new Date())));
   const [to, setTo] = useState(() => dateKey(new Date()));
@@ -74,7 +76,7 @@ export function AttendanceLog({ staff, currentUser, canSeeAll, canManage, refres
       setShiftList(shiftRows);
       setEntries(entryRows);
     } catch (error) {
-      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Could not load attendance.', variant: 'destructive' });
+      toast({ title: 'Could not load attendance', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -142,7 +144,7 @@ export function AttendanceLog({ staff, currentUser, canSeeAll, canManage, refres
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not save the entry.';
       toast({
-        title: 'Save Error',
+        title: 'Could not save the entry',
         description: message.includes('one_open') ? 'This person is already clocked in. Add a clock-out time, or close their open entry first.' : message,
         variant: 'destructive',
       });
@@ -161,7 +163,7 @@ export function AttendanceLog({ staff, currentUser, canSeeAll, canManage, refres
       await load();
       onChange();
     } catch (error) {
-      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Could not delete the entry.', variant: 'destructive' });
+      toast({ title: 'Could not delete the entry', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
@@ -194,15 +196,15 @@ export function AttendanceLog({ staff, currentUser, canSeeAll, canManage, refres
         )}
         {canManage && (
           <Button variant="outline" onClick={openAdd} className="col-span-2 sm:col-span-1">
-            <Plus className="mr-2 h-4 w-4" /> Add entry
+            <Plus className="mr-2 h-4 w-4" /> {t('Add entry')}
           </Button>
         )}
       </div>
 
-      {isLoading ? <p className="text-muted-foreground">Loading attendance…</p> : (
+      {isLoading ? <p className="text-muted-foreground">{t('Loading...')}</p> : (
         <>
           <section className="space-y-2">
-            <h3 className="font-semibold">Hours by person</h3>
+            <h3 className="font-semibold">{t('Hours by person')}</h3>
             {summary.length === 0 ? <p className="text-sm text-muted-foreground">No shifts or time on duty in this period.</p> : (
               <div className="overflow-x-auto rounded-md border">
                 <Table>
@@ -234,7 +236,7 @@ export function AttendanceLog({ staff, currentUser, canSeeAll, canManage, refres
           </section>
 
           <section className="space-y-2">
-            <h3 className="font-semibold">Shifts: planned vs actual</h3>
+            <h3 className="font-semibold">{t('Shifts: planned vs actual')}</h3>
             {shiftRows.length === 0 ? <p className="text-sm text-muted-foreground">No shifts planned in this period.</p> : (
               <div className="overflow-x-auto rounded-md border">
                 <Table className="min-w-[640px]">
@@ -252,13 +254,13 @@ export function AttendanceLog({ staff, currentUser, canSeeAll, canManage, refres
                       <TableRow key={shift.id}>
                         <TableCell className="whitespace-nowrap">{format(parseISO(shift.shiftDate), 'EEE d MMM')}</TableCell>
                         <TableCell>{nameOf(shift.staffId)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{shift.shiftType} {shift.startTime}–{shift.endTime}</TableCell>
+                        <TableCell className="whitespace-nowrap">{t(shift.shiftType)} {shift.startTime}–{shift.endTime}</TableCell>
                         <TableCell className="text-sm">
                           {status.matched.length === 0 ? '—' : status.matched.map(e => (
                             <span key={e.id} className="block whitespace-nowrap">{format(new Date(e.clockIn), 'HH:mm')}–{e.clockOut ? format(new Date(e.clockOut), 'HH:mm') : 'now'}</span>
                           ))}
                         </TableCell>
-                        <TableCell><Badge variant={status.tone === 'neutral' ? 'secondary' : 'default'} className={cn('whitespace-nowrap', TONE_CLASSES[status.tone])}>{status.label}</Badge></TableCell>
+                        <TableCell><Badge variant={status.tone === 'neutral' ? 'secondary' : 'default'} className={cn('whitespace-nowrap', TONE_CLASSES[status.tone])}>{t(status.label)}</Badge></TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -268,7 +270,7 @@ export function AttendanceLog({ staff, currentUser, canSeeAll, canManage, refres
           </section>
 
           <section className="space-y-2">
-            <h3 className="font-semibold">Time records</h3>
+            <h3 className="font-semibold">{t('Time records')}</h3>
             {visibleEntries.length === 0 ? <p className="text-sm text-muted-foreground">Nobody clocked in during this period.</p> : (
               <div className="overflow-x-auto rounded-md border">
                 <Table className="min-w-[640px]">
@@ -287,13 +289,13 @@ export function AttendanceLog({ staff, currentUser, canSeeAll, canManage, refres
                       <TableRow key={entry.id}>
                         <TableCell>{nameOf(entry.staffId)}</TableCell>
                         <TableCell className="whitespace-nowrap">{fmt(entry.clockIn)}</TableCell>
-                        <TableCell className="whitespace-nowrap">{entry.clockOut ? fmt(entry.clockOut) : <Badge className="bg-sky-600 hover:bg-sky-600">On duty</Badge>}</TableCell>
+                        <TableCell className="whitespace-nowrap">{entry.clockOut ? fmt(entry.clockOut) : <Badge className="bg-sky-600 hover:bg-sky-600">{t('On duty')}</Badge>}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatHours(workedHours(entry))}</TableCell>
                         <TableCell className="text-sm">
                           <div className="flex flex-wrap gap-1">
-                            {!matchedIds.has(entry.id) && <Badge variant="outline" className="border-amber-500 text-amber-700 dark:text-amber-400">Not on roster</Badge>}
-                            {entry.source === 'Manual' && <Badge variant="outline" title={entry.recordedByStaffId ? `Entered by ${nameOf(entry.recordedByStaffId)}` : undefined}>Manual{entry.recordedByStaffId ? ` · ${nameOf(entry.recordedByStaffId)}` : ''}</Badge>}
-                            {!entry.clockOut && workedHours(entry) > 16 && <Badge variant="destructive">Open over 16h</Badge>}
+                            {!matchedIds.has(entry.id) && <Badge variant="outline" className="border-amber-500 text-amber-700 dark:text-amber-400">{t('Not on roster')}</Badge>}
+                            {entry.source === 'Manual' && <Badge variant="outline" title={entry.recordedByStaffId ? `Entered by ${nameOf(entry.recordedByStaffId)}` : undefined}>{t('Manual')}{entry.recordedByStaffId ? ` · ${nameOf(entry.recordedByStaffId)}` : ''}</Badge>}
+                            {!entry.clockOut && workedHours(entry) > 16 && <Badge variant="destructive">{t('Open over 16h')}</Badge>}
                           </div>
                           {entry.notes && <p className="mt-1 text-muted-foreground">{entry.notes}</p>}
                         </TableCell>
@@ -315,7 +317,7 @@ export function AttendanceLog({ staff, currentUser, canSeeAll, canManage, refres
       <Dialog open={!!draft} onOpenChange={open => { if (!open) setDraft(null); }}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{draft?.id ? 'Correct attendance' : 'Add attendance'}</DialogTitle>
+            <DialogTitle>{draft?.id ? t('Correct attendance') : t('Add attendance')}</DialogTitle>
             <DialogDescription>For when someone forgot to clock in or out. Saved as a manual entry with your name.</DialogDescription>
           </DialogHeader>
           {draft && (
@@ -346,11 +348,11 @@ export function AttendanceLog({ staff, currentUser, canSeeAll, canManage, refres
           )}
           <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-between">
             {draft?.id
-              ? <Button variant="ghost" className="text-destructive" onClick={handleDelete} disabled={isSaving}><Trash2 className="mr-2 h-4 w-4" /> Delete</Button>
+              ? <Button variant="ghost" className="text-destructive" onClick={handleDelete} disabled={isSaving}><Trash2 className="mr-2 h-4 w-4" /> {t('Delete')}</Button>
               : <span />}
             <div className="flex flex-col-reverse gap-2 sm:flex-row">
-              <Button variant="outline" onClick={() => setDraft(null)}>Cancel</Button>
-              <Button onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving…' : 'Save'}</Button>
+              <Button variant="outline" onClick={() => setDraft(null)}>{t('Cancel')}</Button>
+              <Button onClick={handleSave} disabled={isSaving}>{isSaving ? t('Saving…') : t('Save')}</Button>
             </div>
           </DialogFooter>
         </DialogContent>

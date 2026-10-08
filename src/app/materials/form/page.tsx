@@ -1,236 +1,161 @@
-
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Package, Save } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
-import { Material } from '@/types/material';
-import { TreatmentTemplate, TREATMENT_TEMPLATES } from '@/config/treatmentTemplates'; // For treatment template selection
-import { ArrowLeft, Save, Archive } from 'lucide-react';
+import { PageBody, PageHeader, PageLoading } from '@/components/page';
+import { useT } from '@/components/language-provider';
+import { useToast } from '@/hooks/use-toast';
+import { TREATMENT_TEMPLATES } from '@/config/treatmentTemplates';
 import { materials as materialsRepo, treatmentTemplates as templatesRepo } from '@/lib/data';
-import { useAuth } from '@/context/AuthContext';
-import type { StaffRole } from '@/types/staff';
-import { PAGE_ROLES } from '@/config/permissions';
+import type { Material } from '@/types/material';
 
-const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.materials;
-const NO_TEMPLATE_OPTION_VALUE = "__NO_TEMPLATE_OPTION_VALUE__"; // Unique value for the "None" option
+const NO_TEMPLATE = '__none__'; // the "None" option (Select items cannot have an empty value)
 
+// Add or edit a material. Access is checked by PageGuard.
 export default function MaterialFormPage() {
+  const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const { currentUser, isLoading: authIsLoading } = useAuth();
+  const editId = searchParams.get('id');
 
-  const materialIdToEdit = searchParams.get('id');
-  const isEditMode = Boolean(materialIdToEdit);
-
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState("");
-  const [unitOfMeasure, setUnitOfMeasure] = useState("");
-  const [listPrice, setListPrice] = useState<number | string>("");
-  const [associatedTreatmentTemplateName, setAssociatedTreatmentTemplateName] = useState<string>("");
-  const [notes, setNotes] = useState("");
-  const [reorderLevel, setReorderLevel] = useState("");
-  
-  const [allTreatmentTemplates, setAllTreatmentTemplates] = useState<TreatmentTemplate[]>([]);
-  const [currentMaterialId, setCurrentMaterialId] = useState<string | null>(null);
-  const [formIsLoading, setFormIsLoading] = useState(true);
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('');
+  const [unitOfMeasure, setUnitOfMeasure] = useState('');
+  const [listPrice, setListPrice] = useState('');
+  const [templateName, setTemplateName] = useState('');
+  const [notes, setNotes] = useState('');
+  const [reorderLevel, setReorderLevel] = useState('');
+  const [templateNames, setTemplateNames] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    if (!authIsLoading && currentUser && !ALLOWED_ROLES.includes(currentUser.role)) {
-      toast({ title: "Access Denied", description: "You do not have permission to access this page.", variant: "destructive" });
-      router.replace('/dashboard');
-    } else if (!authIsLoading && !currentUser) {
-      router.replace('/login');
-    }
-  }, [authIsLoading, currentUser, router, toast]);
-
-  useEffect(() => {
-    if (!currentUser || (currentUser && !ALLOWED_ROLES.includes(currentUser.role) && !authIsLoading )) {
-        setFormIsLoading(false);
-        return;
-    }
-    setFormIsLoading(true);
-
-    const load = async () => {
-      try {
-        const userTemplates = await templatesRepo.list();
-        setAllTreatmentTemplates([...TREATMENT_TEMPLATES, ...userTemplates]);
-      } catch (e) {
-        console.error("Error loading user-defined treatment templates:", e);
-        setAllTreatmentTemplates([...TREATMENT_TEMPLATES]);
-        toast({ title: "Warning", description: "Could not load custom treatment templates.", variant: "default" });
-      }
-
-      if (isEditMode && materialIdToEdit) {
-        try {
-          const matToEdit = await materialsRepo.get(materialIdToEdit);
-          if (matToEdit) {
-            setCurrentMaterialId(matToEdit.id);
-            setName(matToEdit.name);
-            setCategory(matToEdit.category || "");
-            setUnitOfMeasure(matToEdit.unitOfMeasure);
-            setListPrice(matToEdit.listPrice !== undefined ? String(matToEdit.listPrice) : "");
-            setAssociatedTreatmentTemplateName(matToEdit.associatedTreatmentTemplateName || "");
-            setNotes(matToEdit.notes || "");
-            setReorderLevel(matToEdit.reorderLevel != null ? String(matToEdit.reorderLevel) : "");
-          } else {
-            toast({ title: "Error", description: "Material not found.", variant: "destructive" });
+    // "General Note (No Template)" is left out: "None" covers it.
+    const named = (list: { id: string; name: string }[]) => [...new Set(list.filter(tpl => tpl.id !== 'none').map(tpl => tpl.name))];
+    const loadTemplates = templatesRepo.list()
+      .then(custom => setTemplateNames(named([...TREATMENT_TEMPLATES, ...custom])))
+      .catch(() => {
+        setTemplateNames(named(TREATMENT_TEMPLATES));
+        toast({ title: 'Could not load custom treatment templates' });
+      });
+    const loadItem = editId
+      ? materialsRepo.get(editId).then(mat => {
+          if (!mat) {
+            toast({ title: 'Material not found', variant: 'destructive' });
             router.push('/materials');
+            return;
           }
-        } catch (e) {
-          console.error("Error loading material:", e);
-          toast({ title: "Error", description: "Could not load material.", variant: "destructive" });
-        }
-      }
-      setFormIsLoading(false);
-    };
-    load();
-  }, [isEditMode, materialIdToEdit, router, toast, currentUser, authIsLoading]);
+          setName(mat.name);
+          setCategory(mat.category || '');
+          setUnitOfMeasure(mat.unitOfMeasure);
+          setListPrice(mat.listPrice != null ? String(mat.listPrice) : '');
+          setTemplateName(mat.associatedTreatmentTemplateName || '');
+          setNotes(mat.notes || '');
+          setReorderLevel(mat.reorderLevel != null ? String(mat.reorderLevel) : '');
+        }).catch(() => toast({ title: 'Could not load the material', variant: 'destructive' }))
+      : Promise.resolve();
+    Promise.all([loadTemplates, loadItem]).finally(() => setIsLoading(false));
+  }, [editId, router, toast]);
+
+  const invalid = (title: string, description: string) => toast({ title, description, variant: 'destructive' });
 
   const handleSubmit = async () => {
-    if (!name.trim()) { toast({ title: "Validation Error", description: "Material Name is required.", variant: "destructive" }); return; }
-    if (!unitOfMeasure.trim()) { toast({ title: "Validation Error", description: "Unit of Measure is required.", variant: "destructive" }); return; }
-    
-    let numListPrice: number | undefined = undefined;
-    if (String(listPrice).trim() !== "") {
-        numListPrice = parseFloat(String(listPrice));
-        if (isNaN(numListPrice) || numListPrice < 0) {
-            toast({ title: "Validation Error", description: "List Price must be a valid non-negative number if provided.", variant: "destructive" }); return;
-        }
+    if (!name.trim()) return invalid('Enter the name', 'Material name is required.');
+    if (!unitOfMeasure.trim()) return invalid('Enter the unit', 'Unit of measure is required.');
+    let price: number | undefined;
+    if (listPrice.trim() !== '') {
+      price = Number(listPrice);
+      if (!Number.isFinite(price) || price < 0) return invalid('Check the price', 'List price must be 0 or more, or left empty.');
     }
+    const reorderValue = reorderLevel.trim() === '' ? null : Number(reorderLevel);
+    if (reorderValue !== null && (!Number.isFinite(reorderValue) || reorderValue < 0)) return invalid('Check the refill level', 'Enter 0 or more, or leave it empty.');
 
-    const reorderValue = reorderLevel.trim() === "" ? null : Number(reorderLevel);
-    if (reorderValue !== null && (!Number.isFinite(reorderValue) || reorderValue < 0)) {
-      toast({ title: "Validation Error", description: "The refill level must be 0 or more, or left empty.", variant: "destructive" }); return;
-    }
-
-    const materialData: Omit<Material, 'id'> = {
+    const data: Omit<Material, 'id'> = {
       name: name.trim(),
       category: category.trim() || undefined,
       unitOfMeasure: unitOfMeasure.trim(),
-      listPrice: numListPrice,
-      associatedTreatmentTemplateName: associatedTreatmentTemplateName || undefined,
+      listPrice: price,
+      associatedTreatmentTemplateName: templateName || undefined,
       notes: notes.trim() || undefined,
       reorderLevel: reorderValue,
     };
-
+    setIsSaving(true);
     try {
-      if (isEditMode && currentMaterialId) {
-        await materialsRepo.update(currentMaterialId, materialData);
-        toast({ title: "Success", description: "Material updated." });
-      } else {
-        await materialsRepo.create(materialData);
-        toast({ title: "Success", description: "New material added." });
-      }
+      if (editId) await materialsRepo.update(editId, data);
+      else await materialsRepo.create(data);
+      toast({ title: 'Saved', description: editId ? 'Material updated.' : 'Material added.' });
       router.push('/materials');
-    } catch (e) {
-      console.error("Failed to save material", e);
-      toast({
-        title: "Save Error",
-        description: "Could not save material data. Please check your connection and try again.",
-        variant: "destructive",
-      });
+    } catch {
+      toast({ title: 'Could not save the material', description: 'Please check your connection and try again.', variant: 'destructive' });
+      setIsSaving(false);
     }
   };
-  
-  if (authIsLoading || formIsLoading) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Loading material form...</p></div>;
-  }
 
-  if (!currentUser || (currentUser && !ALLOWED_ROLES.includes(currentUser.role))) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Access Denied. Redirecting...</p></div>;
-  }
+  if (isLoading) return <PageLoading />;
+
+  const templateOptions = templateName && !templateNames.includes(templateName) ? [templateName, ...templateNames] : templateNames;
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8 flex flex-col items-center">
-      <Card className="w-full max-w-lg mt-6 shadow-xl">
-        <CardHeader>
-          <CardTitle className="text-2xl flex items-center">
-            <Archive className="mr-3 h-7 w-7 text-primary"/>
-            {isEditMode ? "Edit Material" : "Add New Material"}
-          </CardTitle>
-          <CardDescription>
-            {isEditMode ? "Update the details for this material." : "Fill in the details to add a new material to the catalog."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-5">
+    <PageBody width="narrow">
+      <PageHeader icon={Package} back={{ href: '/materials', label: t('Materials') }}
+        title={editId ? t('Edit Material') : t('Add Material')}
+        description={editId ? t('Update the details of this material.') : t('Fill in the details of the new material.')} />
+      <Card>
+        <CardContent className="grid gap-5 pt-6">
           <div>
-            <Label htmlFor="name">Material Name *</Label>
-            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required 
-                   placeholder="e.g., Sutures 3-0 Silk, Gauze Pads Large" />
+            <Label htmlFor="name">Material name *</Label>
+            <Input id="name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g., Sutures 3-0 Silk, Gauze Pads Large" />
           </div>
           <div>
-            <Label htmlFor="category">Category (Optional)</Label>
-            <Input id="category" value={category} onChange={(e) => setCategory(e.target.value)} 
-                   placeholder="e.g., Surgical Supplies, Consumables, Disposables" />
+            <Label htmlFor="category">Category (optional)</Label>
+            <Input id="category" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g., Surgical Supplies, Consumables" />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-                <Label htmlFor="unitOfMeasure">Unit of Measure *</Label>
-                <Input id="unitOfMeasure" value={unitOfMeasure} onChange={(e) => setUnitOfMeasure(e.target.value)} required 
-                       placeholder="e.g., pack, box, each, roll"/>
+              <Label htmlFor="unitOfMeasure">Unit of measure *</Label>
+              <Input id="unitOfMeasure" value={unitOfMeasure} onChange={e => setUnitOfMeasure(e.target.value)} placeholder="e.g., pack, box, each, roll" />
             </div>
             <div>
-                <Label htmlFor="listPrice">List Price (₹) per Unit (Optional)</Label>
-                <Input id="listPrice" type="number" value={String(listPrice)} 
-                       onChange={(e) => setListPrice(e.target.value)} 
-                       placeholder="e.g., 250.00" min="0" step="0.01"/>
+              <Label htmlFor="listPrice">List price (₹) per unit (optional)</Label>
+              <Input id="listPrice" type="number" inputMode="decimal" value={listPrice} onChange={e => setListPrice(e.target.value)} placeholder="e.g., 250.00" min="0" step="0.01" />
             </div>
           </div>
           <div>
-            <Label htmlFor="reorderLevel">Refill when stock falls to (Optional)</Label>
-            <Input id="reorderLevel" type="number" inputMode="decimal" min="0" step="any" value={reorderLevel}
-                   onChange={(e) => setReorderLevel(e.target.value)} placeholder="e.g., 10" />
-            <p className="text-xs text-muted-foreground mt-1">In the unit above. The Inventory page lists the item under &quot;Needs refill&quot; at or below this.</p>
+            <Label htmlFor="reorderLevel">Refill when stock falls to (optional)</Label>
+            <Input id="reorderLevel" type="number" inputMode="decimal" min="0" step="any" value={reorderLevel} onChange={e => setReorderLevel(e.target.value)} placeholder="e.g., 10" />
+            <p className="mt-1 text-xs text-muted-foreground">In the unit above. The Inventory page lists the item under &quot;Needs refill&quot; at or below this.</p>
           </div>
           <div>
-            <Label htmlFor="associatedTreatmentTemplateName">Associated Treatment Template (Optional)</Label>
-            <Select 
-              onValueChange={(value) => {
-                if (value === NO_TEMPLATE_OPTION_VALUE) {
-                  setAssociatedTreatmentTemplateName("");
-                } else {
-                  setAssociatedTreatmentTemplateName(value);
-                }
-              }} 
-              value={associatedTreatmentTemplateName}
-            >
-                <SelectTrigger id="associatedTreatmentTemplateName">
-                    <SelectValue placeholder="Select Associated Treatment Template" />
-                </SelectTrigger>
-                <SelectContent>
-                    <SelectItem value={NO_TEMPLATE_OPTION_VALUE}>None</SelectItem> 
-                    {allTreatmentTemplates.filter(t => t.id !== 'none').map(template => ( // Exclude "General Note"
-                        <SelectItem key={template.id} value={template.name}>
-                            {template.name}
-                        </SelectItem>
-                    ))}
-                </SelectContent>
+            <Label htmlFor="templateName">Treatment template (optional)</Label>
+            <Select value={templateName || NO_TEMPLATE} onValueChange={v => setTemplateName(v === NO_TEMPLATE ? '' : v)}>
+              <SelectTrigger id="templateName"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NO_TEMPLATE}>None</SelectItem>
+                {templateOptions.map(option => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+              </SelectContent>
             </Select>
           </div>
           <div>
-            <Label htmlFor="notes">Additional Notes (Optional)</Label>
-            <Textarea id="notes" value={notes} 
-                      onChange={(e) => setNotes(e.target.value)} 
-                      placeholder="e.g., Specific supplier, storage instructions, reorder point, etc."/>
+            <Label htmlFor="notes">Additional notes (optional)</Label>
+            <Textarea id="notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g., Supplier, storage instructions" />
           </div>
         </CardContent>
-        <CardFooter className="flex justify-between mt-4">
-          <Button variant="outline" onClick={() => router.push('/materials')}>
-            <ArrowLeft className="mr-2 h-4 w-4" /> Cancel
-          </Button>
-          <Button onClick={handleSubmit}>
-            <Save className="mr-2 h-4 w-4" /> {isEditMode ? "Save Changes" : "Add Material"}
+        <CardFooter className="flex justify-between gap-2">
+          <Button variant="outline" asChild><Link href="/materials">{t('Cancel')}</Link></Button>
+          <Button onClick={handleSubmit} disabled={isSaving}>
+            <Save className="mr-2 h-4 w-4" /> {isSaving ? t('Saving…') : editId ? t('Save Changes') : t('Add Material')}
           </Button>
         </CardFooter>
       </Card>
-    </div>
+    </PageBody>
   );
 }

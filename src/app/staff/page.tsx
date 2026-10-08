@@ -28,7 +28,7 @@ export default function StaffPage() {
     staffRepo.listWithSalaries()
       .then(setStaffMembers)
       .catch(() => {
-        toast({ title: t('Error'), description: t('Could not load staff.'), variant: 'destructive' });
+        toast({ title: 'Could not load staff', variant: 'destructive' });
         setStaffMembers([]);
       });
   }, [toast, t]);
@@ -50,7 +50,7 @@ export default function StaffPage() {
     if (valid.length) {
       const result = await staffRepo.createMany(valid);
       created = result.created.length;
-      if (result.failures.length) toast({ title: t('Some staff were not added'), description: result.failures.join(' '), variant: 'destructive' });
+      if (result.failures.length) toast({ title: 'Some staff were not added', description: result.failures.join(' '), variant: 'destructive' });
       setStaffMembers(await staffRepo.listWithSalaries());
     }
     return { imported: created, skipped: rows.length - created };

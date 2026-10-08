@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { AlertTriangle, ArrowLeft, Boxes, Download, History, PackagePlus, Search } from 'lucide-react';
+import { format } from 'date-fns';
+import { AlertTriangle, Boxes, Download, History, PackagePlus, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,22 +13,27 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DEFAULT_DATE_FILTER, DateRangeFilter, dateFilterRange, describeDateFilter, type DateFilterValue } from '@/components/date-range-filter';
+import { PageBody, PageHeader, PageLoading } from '@/components/page';
 import { RefreshStamp } from '@/components/refresh-stamp';
-import { RecordStockDialog } from '@/components/inventory/record-stock-dialog';
-import { StockHistoryDialog } from '@/components/inventory/stock-history-dialog';
-import { useAuth } from '@/context/AuthContext';
+import { useT } from '@/components/language-provider';
+import { useStaff } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
 import { useToast } from '@/hooks/use-toast';
-import { PAGE_ROLES } from '@/config/permissions';
+import { PAGE_ROLES, STOCK_CORRECTION_ROLES } from '@/config/permissions';
+import { downloadCsv } from '@/lib/csv';
 import { inventory } from '@/lib/data';
 import { cachedAt, invalidate } from '@/lib/data/cache';
-import { STATUS_LABELS, formatQty, formatRupees, stockStatus, stockValue, suggestedOrder, type StockStatus } from '@/lib/inventory';
+import { formatINR } from '@/lib/format';
+import { STATUS_LABELS, formatQty, stockStatus, stockValue, suggestedOrder, type StockStatus } from '@/lib/inventory';
 import { cn } from '@/lib/utils';
 import type { InventoryItem, InventoryKind } from '@/types/inventory';
 import type { StaffRole } from '@/types/staff';
 
-const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.inventory;
-const DELETE_ROLES: StaffRole[] = ['Super Admin', 'Admin'];
+// The dialogs only open on click, so they load then.
+const RecordStockDialog = dynamic(() => import('@/components/inventory/record-stock-dialog').then(m => m.RecordStockDialog));
+const StockHistoryDialog = dynamic(() => import('@/components/inventory/stock-history-dialog').then(m => m.StockHistoryDialog));
+
+const PAYMENT_ROLES: readonly StaffRole[] = PAGE_ROLES.payments;
 const STATUS_STYLES: Record<StockStatus, string> = {
   out: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-200 dark:border-red-900',
   low: 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-900',
@@ -35,11 +41,11 @@ const STATUS_STYLES: Record<StockStatus, string> = {
 };
 
 // Pharmacy and material stock: what is on hand and what it is worth, what came in and went
-// out in a period, and what needs refilling.
+// out in a period, and what needs refilling. Access is checked by PageGuard.
 export default function InventoryPage() {
-  const router = useRouter();
+  const t = useT();
   const { toast } = useToast();
-  const { currentUser, isLoading: authIsLoading } = useAuth();
+  const currentUser = useStaff();
   const { isOn } = useFeatures();
   const [items, setItems] = useState<InventoryItem[] | null>(null);
   const [dateFilter, setDateFilter] = useState<DateFilterValue>(DEFAULT_DATE_FILTER);
@@ -51,14 +57,8 @@ export default function InventoryPage() {
   const [recordItem, setRecordItem] = useState<InventoryItem | null>(null);
   const [historyItem, setHistoryItem] = useState<InventoryItem | null>(null);
 
-  const allowed = !!currentUser && ALLOWED_ROLES.includes(currentUser.role);
   const showPharmacy = isOn('medications');
   const showMaterials = isOn('materials');
-
-  useEffect(() => {
-    if (!authIsLoading && !currentUser) router.replace('/login');
-    else if (!authIsLoading && currentUser && !allowed) router.replace('/dashboard');
-  }, [authIsLoading, currentUser, allowed, router]);
 
   const load = useCallback(async (refresh = false) => {
     if (refresh) invalidate('summary:inventory:');
@@ -72,7 +72,7 @@ export default function InventoryPage() {
     }
   }, [dateFilter, toast]);
 
-  useEffect(() => { if (allowed) load(); }, [allowed, load]);
+  useEffect(() => { load(); }, [load]);
 
   const visible = useMemo(() => (items ?? []).filter(i => (i.kind === 'pharmacy' ? showPharmacy : showMaterials)), [items, showPharmacy, showMaterials]);
   const shown = useMemo(() => {
@@ -105,80 +105,60 @@ export default function InventoryPage() {
     load(true).finally(() => setIsRefreshing(false));
   };
 
-  const downloadCsv = () => {
-    const quote = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
-    const rows = [['Type', 'Item', 'Category', 'Unit', 'On hand', 'Refill at', 'Status', 'Cost per unit', 'Value', `In (${describeDateFilter(dateFilter)})`, `Out (${describeDateFilter(dateFilter)})`]];
-    for (const i of shown) {
-      rows.push([i.kind === 'pharmacy' ? 'Pharmacy' : 'Material', i.name, i.category, i.unit, formatQty(i.onHand), i.reorderLevel != null ? formatQty(i.reorderLevel) : '',
-        STATUS_LABELS[stockStatus(i)], i.unitCost.toFixed(2), stockValue(i).toFixed(2), formatQty(i.qtyIn), formatQty(i.qtyOut)].map(String));
-    }
-    const blob = new Blob([rows.map(r => r.map(quote).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `inventory_${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+  const exportCsv = () => {
+    const period = describeDateFilter(dateFilter);
+    downloadCsv([
+      ['Type', 'Item', 'Category', 'Unit', 'On hand', 'Refill at', 'Status', 'Cost per unit', 'Value', `In (${period})`, `Out (${period})`],
+      ...shown.map(i => [i.kind === 'pharmacy' ? 'Pharmacy' : 'Material', i.name, i.category, i.unit, formatQty(i.onHand), i.reorderLevel != null ? formatQty(i.reorderLevel) : '',
+        STATUS_LABELS[stockStatus(i)], i.unitCost.toFixed(2), stockValue(i).toFixed(2), formatQty(i.qtyIn), formatQty(i.qtyOut)]),
+    ], `inventory_${format(new Date(), 'yyyy-MM-dd')}.csv`);
   };
 
-  if (authIsLoading || (allowed && items === null)) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Loading inventory...</p></div>;
-  }
-  if (!allowed) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Access Denied. Redirecting...</p></div>;
-  }
+  if (items === null) return <PageLoading />;
 
-  const canDelete = DELETE_ROLES.includes(currentUser.role);
-  const purchaseLink = isOn('payments') && (PAGE_ROLES.payments as StaffRole[]).includes(currentUser.role);
+  const canDelete = STOCK_CORRECTION_ROLES.includes(currentUser.role);
+  const purchaseLink = isOn('payments') && PAYMENT_ROLES.includes(currentUser.role);
+  const kindLabel = (i: InventoryItem) => (i.kind === 'pharmacy' ? 'Pharmacy' : 'Material');
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-      <header className="flex flex-col sm:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-3">
-          <Boxes className="h-8 w-8 text-primary" />
-          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Inventory</h1>
-        </div>
-        <div className="flex flex-wrap items-center justify-center gap-2">
+    <PageBody>
+      <PageHeader icon={Boxes} title={t('Inventory')}
+        description={t('Stock goes up when a Pharmacy or Material purchase is recorded under Payments, and down when a pharmacy bill is made. Record anything else here: items used on wards, expired stock, opening stock and stock counts. Stock is valued at its average purchase cost.')}
+        actions={<>
           <RefreshStamp loadedAt={loadedAt} onRefresh={handleRefresh} isRefreshing={isRefreshing} />
-          <Button variant="outline" onClick={downloadCsv}><Download className="mr-2 h-4 w-4" /> Download CSV</Button>
-          <Button variant="outline" onClick={() => router.push('/dashboard')}><ArrowLeft className="mr-2 h-4 w-4" /> Dashboard</Button>
-        </div>
-      </header>
-      <p className="text-sm text-muted-foreground max-w-4xl">
-        Stock goes up when a Pharmacy or Material purchase is recorded under Payments, and down when a pharmacy bill is
-        made. Record anything else here: items used on wards, expired stock, opening stock and stock counts. Stock is valued
-        at its average purchase cost.
-      </p>
+          <Button variant="outline" onClick={exportCsv}><Download className="mr-2 h-4 w-4" /> {t('Download CSV')}</Button>
+        </>} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Stock value</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t('Stock value')}</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold tabular-nums">{formatRupees(totals.value)}</p>
+            <p className="text-2xl font-bold tabular-nums">{formatINR(totals.value)}</p>
             <p className="text-xs text-muted-foreground">
-              {[showPharmacy && `Pharmacy ${formatRupees(totals.pharmacyValue)}`, showMaterials && `Materials ${formatRupees(totals.materialValue)}`].filter(Boolean).join(' · ')}
+              {[showPharmacy && `Pharmacy ${formatINR(totals.pharmacyValue)}`, showMaterials && `Materials ${formatINR(totals.materialValue)}`].filter(Boolean).join(' · ')}
             </p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Needs refill</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t('Needs refill')}</CardTitle></CardHeader>
           <CardContent>
             <p className={cn('text-2xl font-bold tabular-nums', totals.out + totals.low > 0 && 'text-amber-700 dark:text-amber-400')}>{totals.out + totals.low} items</p>
             <p className="text-xs text-muted-foreground">{totals.out} out of stock · {totals.low} low</p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Came in</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t('Came in')}</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold tabular-nums">{formatRupees(totals.inValue)}</p>
+            <p className="text-2xl font-bold tabular-nums">{formatINR(totals.inValue)}</p>
             <p className="text-xs text-muted-foreground">{describeDateFilter(dateFilter)}, at cost</p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Went out</CardTitle></CardHeader>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">{t('Went out')}</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold tabular-nums">{formatRupees(totals.outValue)}</p>
+            <p className="text-2xl font-bold tabular-nums">{formatINR(totals.outValue)}</p>
             <p className="text-xs text-muted-foreground">
-              {describeDateFilter(dateFilter)}, at cost{totals.expiredValue > 0 ? ` · ${formatRupees(totals.expiredValue)} expired/damaged` : ''}
+              {describeDateFilter(dateFilter)}, at cost{totals.expiredValue > 0 ? ` · ${formatINR(totals.expiredValue)} expired/damaged` : ''}
             </p>
           </CardContent>
         </Card>
@@ -195,7 +175,7 @@ export default function InventoryPage() {
       {refill.length > 0 && (
         <Card className="border-amber-300 dark:border-amber-900">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg"><AlertTriangle className="h-5 w-5 text-amber-600" /> Needs refill</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-lg"><AlertTriangle className="h-5 w-5 text-amber-600" /> {t('Needs refill')}</CardTitle>
             <CardDescription>
               At or below the refill level, or out of stock. The suggested order brings stock back to twice the refill level.
               {purchaseLink && <> Record the purchase under <Link href="/payments/form" className="text-primary underline">Payments → Record New Payment</Link> (type Pharmacy or Material) and stock goes up automatically.</>}
@@ -207,9 +187,9 @@ export default function InventoryPage() {
                 <TableRow>
                   <TableHead>Item</TableHead>
                   <TableHead className="text-right">On hand</TableHead>
-                  <TableHead className="text-right hidden sm:table-cell">Refill at</TableHead>
+                  <TableHead className="hidden text-right sm:table-cell">Refill at</TableHead>
                   <TableHead className="text-right">Order</TableHead>
-                  <TableHead className="text-right hidden sm:table-cell">Approx. cost</TableHead>
+                  <TableHead className="hidden text-right sm:table-cell">Approx. cost</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -219,12 +199,12 @@ export default function InventoryPage() {
                     <TableRow key={`${i.kind}-${i.id}`}>
                       <TableCell>
                         <span className="font-medium">{i.name}</span>
-                        <span className="block text-xs text-muted-foreground">{i.kind === 'pharmacy' ? 'Pharmacy' : 'Material'}{i.unit ? ` · ${i.unit}` : ''}</span>
+                        <span className="block text-xs text-muted-foreground">{kindLabel(i)}{i.unit ? ` · ${i.unit}` : ''}</span>
                       </TableCell>
-                      <TableCell className={cn('text-right tabular-nums', i.onHand <= 0 && 'text-destructive font-semibold')}>{formatQty(i.onHand)}</TableCell>
-                      <TableCell className="text-right tabular-nums hidden sm:table-cell">{i.reorderLevel != null ? formatQty(i.reorderLevel) : '—'}</TableCell>
+                      <TableCell className={cn('text-right tabular-nums', i.onHand <= 0 && 'font-semibold text-destructive')}>{formatQty(i.onHand)}</TableCell>
+                      <TableCell className="hidden text-right tabular-nums sm:table-cell">{i.reorderLevel != null ? formatQty(i.reorderLevel) : '—'}</TableCell>
                       <TableCell className="text-right tabular-nums">{order > 0 ? formatQty(order) : <button type="button" className="text-xs text-primary underline" onClick={() => setRecordItem(i)}>Set level</button>}</TableCell>
-                      <TableCell className="text-right tabular-nums hidden sm:table-cell">{order > 0 ? formatRupees(order * i.unitCost) : '—'}</TableCell>
+                      <TableCell className="hidden text-right tabular-nums sm:table-cell">{order > 0 ? formatINR(order * i.unitCost) : '—'}</TableCell>
                     </TableRow>
                   );
                 })}
@@ -237,16 +217,16 @@ export default function InventoryPage() {
       <Card>
         <CardHeader className="space-y-4">
           <div>
-            <CardTitle className="text-lg">Stock</CardTitle>
+            <CardTitle className="text-lg">{t('Stock')}</CardTitle>
             <CardDescription>On hand now; &quot;In&quot; and &quot;Out&quot; for {describeDateFilter(dateFilter)}.</CardDescription>
           </div>
           <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
             {showPharmacy && showMaterials && (
               <Tabs value={kind} onValueChange={v => setKind(v as typeof kind)}>
                 <TabsList>
-                  <TabsTrigger value="all">All</TabsTrigger>
-                  <TabsTrigger value="pharmacy">Pharmacy</TabsTrigger>
-                  <TabsTrigger value="material">Materials</TabsTrigger>
+                  <TabsTrigger value="all">{t('All')}</TabsTrigger>
+                  <TabsTrigger value="pharmacy">{t('Pharmacy')}</TabsTrigger>
+                  <TabsTrigger value="material">{t('Materials')}</TabsTrigger>
                 </TabsList>
               </Tabs>
             )}
@@ -274,40 +254,41 @@ export default function InventoryPage() {
                   <TableHead>Item</TableHead>
                   <TableHead className="text-right">On hand</TableHead>
                   <TableHead className="hidden md:table-cell">Status</TableHead>
-                  <TableHead className="text-right hidden lg:table-cell">Cost / unit</TableHead>
-                  <TableHead className="text-right hidden sm:table-cell">Value</TableHead>
-                  <TableHead className="text-right hidden md:table-cell">In</TableHead>
-                  <TableHead className="text-right hidden md:table-cell">Out</TableHead>
+                  <TableHead className="hidden text-right lg:table-cell">Cost / unit</TableHead>
+                  <TableHead className="hidden text-right sm:table-cell">Value</TableHead>
+                  <TableHead className="hidden text-right md:table-cell">In</TableHead>
+                  <TableHead className="hidden text-right md:table-cell">Out</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {shown.map(i => {
                   const status = stockStatus(i);
+                  const badge = t(STATUS_LABELS[status]);
                   return (
                     <TableRow key={`${i.kind}-${i.id}`}>
                       <TableCell>
                         <span className="font-medium">{i.name}</span>
                         <span className="block text-xs text-muted-foreground">
-                          {i.kind === 'pharmacy' ? 'Pharmacy' : 'Material'}{i.category ? ` · ${i.category}` : ''}{i.unit ? ` · ${i.unit}` : ''}
+                          {kindLabel(i)}{i.category ? ` · ${i.category}` : ''}{i.unit ? ` · ${i.unit}` : ''}
                         </span>
-                        <Badge variant="outline" className={cn('mt-1 md:hidden', STATUS_STYLES[status])}>{STATUS_LABELS[status]}</Badge>
+                        <Badge variant="outline" className={cn('mt-1 md:hidden', STATUS_STYLES[status])}>{badge}</Badge>
                       </TableCell>
-                      <TableCell className={cn('text-right tabular-nums', i.onHand < 0 && 'text-destructive font-semibold')}>
+                      <TableCell className={cn('text-right tabular-nums', i.onHand < 0 && 'font-semibold text-destructive')}>
                         {formatQty(i.onHand)}
                         {i.reorderLevel != null && <span className="block text-xs text-muted-foreground">refill at {formatQty(i.reorderLevel)}</span>}
                       </TableCell>
-                      <TableCell className="hidden md:table-cell"><Badge variant="outline" className={STATUS_STYLES[status]}>{STATUS_LABELS[status]}</Badge></TableCell>
-                      <TableCell className="text-right tabular-nums hidden lg:table-cell" title={i.costFromList ? 'No recorded purchase price yet; using the list price' : 'Average purchase price'}>
-                        {formatRupees(i.unitCost)}{i.costFromList && <span className="text-muted-foreground">*</span>}
+                      <TableCell className="hidden md:table-cell"><Badge variant="outline" className={STATUS_STYLES[status]}>{badge}</Badge></TableCell>
+                      <TableCell className="hidden text-right tabular-nums lg:table-cell" title={i.costFromList ? 'No recorded purchase price yet; using the list price' : 'Average purchase price'}>
+                        {formatINR(i.unitCost)}{i.costFromList && <span className="text-muted-foreground">*</span>}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums hidden sm:table-cell">{formatRupees(stockValue(i))}</TableCell>
-                      <TableCell className="text-right tabular-nums hidden md:table-cell">{i.qtyIn ? `+${formatQty(i.qtyIn)}` : '—'}</TableCell>
-                      <TableCell className="text-right tabular-nums hidden md:table-cell">{i.qtyOut ? `−${formatQty(i.qtyOut)}` : '—'}</TableCell>
+                      <TableCell className="hidden text-right tabular-nums sm:table-cell">{formatINR(stockValue(i))}</TableCell>
+                      <TableCell className="hidden text-right tabular-nums md:table-cell">{i.qtyIn ? `+${formatQty(i.qtyIn)}` : '—'}</TableCell>
+                      <TableCell className="hidden text-right tabular-nums md:table-cell">{i.qtyOut ? `−${formatQty(i.qtyOut)}` : '—'}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
                           <Button size="sm" variant="outline" onClick={() => setRecordItem(i)} aria-label={`Record stock for ${i.name}`}>
-                            <PackagePlus className="h-4 w-4 sm:mr-1" /><span className="hidden sm:inline">Record</span>
+                            <PackagePlus className="h-4 w-4 sm:mr-1" /><span className="hidden sm:inline">{t('Record')}</span>
                           </Button>
                           <Button size="icon" variant="ghost" className="h-9 w-9" onClick={() => setHistoryItem(i)} aria-label={`History of ${i.name}`} title="History">
                             <History className="h-4 w-4" />
@@ -326,8 +307,8 @@ export default function InventoryPage() {
         </CardContent>
       </Card>
 
-      <RecordStockDialog item={recordItem} open={!!recordItem} onOpenChange={o => { if (!o) setRecordItem(null); }} onSaved={() => load()} />
-      <StockHistoryDialog item={historyItem} open={!!historyItem} onOpenChange={o => { if (!o) setHistoryItem(null); }} canDelete={canDelete} onChanged={() => load()} />
-    </div>
+      {recordItem && <RecordStockDialog item={recordItem} open onOpenChange={o => { if (!o) setRecordItem(null); }} onSaved={() => load()} />}
+      {historyItem && <StockHistoryDialog item={historyItem} open onOpenChange={o => { if (!o) setHistoryItem(null); }} canDelete={canDelete} onChanged={() => load()} />}
+    </PageBody>
   );
 }
