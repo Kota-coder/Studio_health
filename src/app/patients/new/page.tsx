@@ -258,13 +258,13 @@ export default function RegisterPatientPage() {
           <div>
             <Label>Patient Photo(s)</Label>
             <div className="mt-1">
-              <ImageAttachments images={patientPhotos} onChange={setPatientPhotos} addLabel="Upload Photos" moreLabel="Add More"
+              <ImageAttachments images={patientPhotos} onChange={setPatientPhotos}
                 itemLabel="Patient Photo" uploadedTitle="Patient photos added" />
             </div>
           </div>
 
           <h2 className="mt-4 font-semibold">{t('ID Card Details')}</h2>
-          <ImageAttachments images={idCardImages} onChange={setIdCardImages} addLabel="Upload ID Images" moreLabel="Add More ID Images"
+          <ImageAttachments images={idCardImages} onChange={setIdCardImages}
             itemLabel="ID Card" uploadedTitle="ID card images added" large />
 
           {aadhaar && (
