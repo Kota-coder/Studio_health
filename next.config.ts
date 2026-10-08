@@ -14,22 +14,15 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '5mb',
     },
   },
-  // "Medications" was renamed "Pharmacy"; keep old bookmarks working.
+  // Renamed pages; keep old bookmarks working.
   async redirects() {
     return [
       { source: '/medications', destination: '/pharmacy', permanent: true },
       { source: '/medications/:path*', destination: '/pharmacy/:path*', permanent: true },
+      // Old addresses.
+      { source: '/reset-password', destination: '/set-password', permanent: true },
+      { source: '/signup', destination: '/login', permanent: true },
     ];
-  },
-  images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'picsum.photos',
-        port: '',
-        pathname: '/**',
-      },
-    ],
   },
 };
 

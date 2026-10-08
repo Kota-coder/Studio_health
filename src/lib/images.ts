@@ -39,11 +39,6 @@ export async function compressImageFile(file: File): Promise<string> {
   }
 }
 
-// Captures the current camera frame as a compressed JPEG data URL.
-export function captureVideoFrame(video: HTMLVideoElement): string {
-  return drawScaled(video, video.videoWidth, video.videoHeight);
-}
-
 export function dataUrlToBlob(dataUrl: string): Blob {
   const [header, base64] = dataUrl.split(',');
   const mime = /data:([^;]+)/.exec(header)?.[1] ?? 'image/jpeg';

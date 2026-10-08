@@ -814,7 +814,7 @@ export default function PatientDetailPage() {
                 <CardHeader className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 space-y-0">
                     <CardTitle className="flex items-center"><User className="mr-2 h-5 w-5 text-primary"/>Patient Details</CardTitle>
                     <div className="flex flex-wrap gap-2">
-                        <Link href={`/?editPatientId=${patient.id.toString().padStart(3,'0')}`} passHref>
+                        <Link href={`/patients/new?editPatientId=${patient.id.toString().padStart(3,'0')}`} passHref>
                             <Button variant="outline" size="sm">
                                 <Edit3Icon className="mr-2 h-3 w-3" /> Edit Basic Info
                             </Button>

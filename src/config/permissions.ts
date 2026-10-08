@@ -1,5 +1,7 @@
 import type { StaffRole } from '@/types/staff';
 
+export const ALL_ROLES: StaffRole[] = ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accounts'];
+
 /**
  * Which roles may open each section. Used by both the header menu and the pages
  * themselves, so a menu link never leads to an "Access Denied" screen.
@@ -30,3 +32,7 @@ export const PAGE_ROLES = {
 export const DUTY_MANAGER_ROLES: StaffRole[] = ["Super Admin", "Admin"];
 // Who can see everyone's attendance (Accounts for salaries); others see their own.
 export const ATTENDANCE_VIEW_ROLES: StaffRole[] = ["Super Admin", "Admin", "Accounts"];
+// Who may set and settle doctor and referral fees (the database enforces the same).
+export const FEE_ROLES: StaffRole[] = ["Super Admin", "Admin", "Accounts"];
+// Who may delete a mistaken manual stock entry (the database enforces the same).
+export const STOCK_CORRECTION_ROLES: StaffRole[] = ["Super Admin", "Admin"];

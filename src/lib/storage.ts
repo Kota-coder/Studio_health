@@ -44,11 +44,6 @@ export function getSignedImageUrl(path: string): Promise<string | null> {
   });
 }
 
-export async function deleteImage(path: string): Promise<void> {
-  const { error } = await getSupabase().storage.from(PATIENT_FILES_BUCKET).remove([path]);
-  if (error) console.error('Could not delete image', error);
-}
-
 // Uploads the new (data URL) images in a list and returns the list as storage paths.
 export async function uploadNewImages(values: string[] | null | undefined, folder: string): Promise<string[]> {
   if (!values?.length) return [];

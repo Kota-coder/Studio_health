@@ -563,7 +563,7 @@ export default function BillingForm() {
                       </SelectItem>
                     ))
                   ) : (
-                     <div className="p-2 text-sm text-muted-foreground text-center">No patients found. <Link href="/" className="underline text-primary">Add a patient first</Link>.</div>
+                     <div className="p-2 text-sm text-muted-foreground text-center">No patients found. <Link href="/patients/new" className="underline text-primary">Add a patient first</Link>.</div>
                   )}
                 </SelectContent>
               </Select>

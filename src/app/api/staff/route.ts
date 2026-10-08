@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { ALL_ROLES } from '@/config/permissions';
 import { getAdminSupabase, getCurrentStaff } from '@/lib/supabase/server';
 import type { StaffMember, StaffRole } from '@/types/staff';
 
@@ -6,7 +7,6 @@ import type { StaffMember, StaffRole } from '@/types/staff';
 // service-role key, which must never reach the browser.
 
 const MANAGER_ROLES: StaffRole[] = ['Super Admin', 'Admin', 'Doctor'];
-const ALL_ROLES: StaffRole[] = ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accounts'];
 
 type StaffInput = Omit<StaffMember, 'id'>;
 

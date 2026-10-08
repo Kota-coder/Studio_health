@@ -10,7 +10,8 @@ import { Patient, PatientCondition, AuditLogEntry } from '@/types/patient';
 import { StaffMember } from '@/types/staff';
 import { Bill } from '@/types/billing';
 import { ArrowRight, UserPlus, AlertTriangle, ShieldCheck, Activity, HelpCircle, BriefcaseMedical, ClipboardList, Users as UsersIcon, CheckCircle2, Trash2, PlusCircle, ArrowLeft, Building2 } from 'lucide-react';
-import { bills as billsRepo, departments as departmentsRepo, patients as patientsRepo, staff as staffRepo } from '@/lib/data';
+import { bills as billsRepo, departments as departmentsRepo, homeSummary, patients as patientsRepo, staff as staffRepo, type HomeSummary } from '@/lib/data';
+import { RoleSummary } from '@/components/role-summary';
 import { cachedAt, invalidate } from '@/lib/data/cache';
 import { RefreshStamp } from '@/components/refresh-stamp';
 import { useBranding } from '@/components/branding-provider';
@@ -63,6 +64,8 @@ export default function DashboardPage() {
   const [filterCondition, setFilterCondition] = useState<PatientCondition | "All">("All");
   const [filterDepartment, setFilterDepartment] = useState<string>("All");
   const [departmentList, setDepartmentList] = useState<Department[]>([]);
+  const [summary, setSummary] = useState<HomeSummary | null>(null);
+  const [filterChosen, setFilterChosen] = useState(false);
 
   useEffect(() => {
     if (!authIsLoading && !currentUser) {
@@ -76,7 +79,9 @@ export default function DashboardPage() {
   // Patients, staff and departments come from a short-lived cache (see lib/data/cache.ts);
   // Refresh fetches them again.
   const loadDashboard = useCallback(async (refresh = false) => {
-    if (refresh) invalidate('dashboard:', 'staff:', 'departments:');
+    if (refresh) invalidate('dashboard:', 'staff:', 'departments:', 'summary:home');
+    // The summary is optional: the patient list still shows if it fails.
+    homeSummary().then(setSummary).catch(error => console.error('Could not load the summary', error));
     try {
       const [patientList, staffList, departmentsLoaded] = await Promise.all([patientsRepo.listForDashboard(), staffRepo.list(), departmentsRepo.list()]);
       setDepartmentList(departmentsLoaded);
@@ -99,6 +104,19 @@ export default function DashboardPage() {
       setIsLoading(false);
     }
   }, [currentUser, loadDashboard]);
+
+  // Doctors and nurses start on their own patients, if they have any.
+  useEffect(() => {
+    if (filterChosen || !summary || !currentUser) return;
+    if ((currentUser.role === 'Doctor' || currentUser.role === 'Nurse') && summary.patients.mine > 0) setFilterDepartment('mine');
+    setFilterChosen(true);
+  }, [summary, currentUser, filterChosen]);
+
+  const showMyPatients = () => {
+    setFilterDepartment('mine');
+    setFilterChosen(true);
+    document.getElementById('patient-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const handleRefresh = () => {
     setIsRefreshing(true);
@@ -273,7 +291,7 @@ export default function DashboardPage() {
       <header className="mb-8 flex flex-col sm:flex-row justify-between items-center gap-4">
         <h1 className="text-3xl font-bold text-foreground">Patient Dashboard</h1>
         <div className="flex flex-wrap justify-center sm:justify-end gap-2">
-          <Link href="/" passHref>
+          <Link href="/patients/new" passHref>
             <Button>
               <UserPlus className="mr-2 h-4 w-4" />
               Add New Patient
@@ -293,8 +311,9 @@ export default function DashboardPage() {
         </Card>
       )}
       <RefreshStamp loadedAt={loadedAt} onRefresh={handleRefresh} isRefreshing={isRefreshing} className="-mt-6 mb-2 justify-end" />
+      {summary && <div className="mb-6"><RoleSummary summary={summary} user={currentUser} onShowMine={showMyPatients} /></div>}
 
-      <Card className="mb-6 shadow-md">
+      <Card id="patient-list" className="mb-6 shadow-md scroll-mt-20">
         <CardHeader>
           <CardTitle className="text-lg">Filters & Search</CardTitle>
         </CardHeader>
@@ -312,7 +331,7 @@ export default function DashboardPage() {
           </div>
           <div className="w-full sm:w-auto min-w-[200px]">
             <Label htmlFor="filterDepartment">Department</Label>
-            <Select value={filterDepartment} onValueChange={setFilterDepartment}>
+            <Select value={filterDepartment} onValueChange={v => { setFilterDepartment(v); setFilterChosen(true); }}>
               <SelectTrigger id="filterDepartment" className="mt-1">
                 <SelectValue placeholder="All Departments" />
               </SelectTrigger>

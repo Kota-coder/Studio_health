@@ -35,6 +35,7 @@ create table if not exists public.staff (
   hire_date     text default '',
   salary        numeric(12, 2),
   active        boolean not null default true,
+  preferred_language text not null default 'en',  -- 'en' or 'te' (Telugu)
   created_at    timestamptz not null default now()
 );
 alter table public.staff drop constraint if exists staff_role_check;
@@ -509,6 +510,9 @@ update public.bills b
 -- Replaced by financial_summary(text, date, date) below.
 drop function if exists public.financial_summary(text);
 
+-- Each person's language for the app (English or Telugu).
+alter table public.staff add column if not exists preferred_language text not null default 'en';
+
 -- Inventory: reorder levels.
 alter table public.medications add column if not exists reorder_level numeric(12, 2);
 alter table public.materials   add column if not exists reorder_level numeric(12, 2);
@@ -526,6 +530,8 @@ alter table public.patients add constraint patients_referral_fee_status_check
 alter table public.referring_doctors drop constraint if exists referring_doctors_default_referral_percent_check;
 alter table public.referring_doctors add constraint referring_doctors_default_referral_percent_check
   check (default_referral_percent is null or (default_referral_percent >= 0 and default_referral_percent <= 100));
+alter table public.staff drop constraint if exists staff_preferred_language_check;
+alter table public.staff add constraint staff_preferred_language_check check (preferred_language in ('en', 'te'));
 alter table public.stock_movements drop constraint if exists stock_movements_item_check;
 alter table public.stock_movements add constraint stock_movements_item_check
   check ((medication_id is null) <> (material_id is null));
@@ -1030,6 +1036,125 @@ language sql stable security invoker set search_path = public as $$
   left join totals t on t.item_id = i.id
 $$;
 
+-- Home dashboard: a short summary for the signed-in person, containing only what their
+-- role may see (the role lists match PAGE_ROLES in src/config/permissions.ts). One call,
+-- about 1 KB. Sections a role may not see are left out, not zeroed.
+create or replace function public.home_summary(tz text default 'Asia/Kolkata')
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  me bigint := public.current_staff_id();
+  today date := (now() at time zone tz)::date;
+  now_time time := (now() at time zone tz)::time;
+  result jsonb;
+begin
+  if me is null then
+    return null;
+  end if;
+
+  -- Everyone: patients in care, and their own patients and duty.
+  select jsonb_build_object('patients', jsonb_build_object(
+           'inCare', count(*) filter (where condition <> 'Discharged'),
+           'critical', count(*) filter (where condition = 'Critical'),
+           'newToday', count(*) filter (where coalesce(
+                         case when admission_date ~ '^\d{4}-\d{2}-\d{2}T' then (admission_date::timestamptz at time zone tz)::date end,
+                         public.parse_dmy(admission_date), (created_at at time zone tz)::date) = today),
+           'mine', count(*) filter (where condition <> 'Discharged'
+                                      and (attending_doctor_id = me or attending_nurse_id = me or me = any (assigned_staff_ids))),
+           'myCritical', count(*) filter (where condition = 'Critical'
+                                            and (attending_doctor_id = me or attending_nurse_id = me or me = any (assigned_staff_ids)))))
+    into result
+    from public.patients;
+
+  result := result || jsonb_build_object('duty', jsonb_build_object(
+    'clockedInSince', (select clock_in from public.staff_attendance where staff_id = me and clock_out is null),
+    'onDutyNow', (select count(*) from public.staff_attendance where clock_out is null),
+    'nextShift', (select jsonb_build_object('date', shift_date, 'type', shift_type,
+                                            'start', to_char(start_time, 'HH24:MI'), 'end', to_char(end_time, 'HH24:MI'))
+                  from public.staff_shifts
+                  where staff_id = me
+                    and (shift_date > today or (shift_date = today and (end_time > now_time or end_time <= start_time)))
+                  order by shift_date, start_time
+                  limit 1)));
+
+  -- Billing (every role that opens Billing).
+  if public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accounts']) then
+    result := result || (select jsonb_build_object('billing', jsonb_build_object(
+      'todayCount', count(*) filter (where billed_on = today and payment_status <> 'Cancelled'),
+      'todayAmount', coalesce(sum(total_amount) filter (where billed_on = today and payment_status <> 'Cancelled'), 0),
+      'unpaidCount', count(*) filter (where payment_status in ('Unpaid', 'Partially Paid')),
+      'unpaidAmount', coalesce(sum(total_amount) filter (where payment_status in ('Unpaid', 'Partially Paid')), 0)))
+      from public.bills);
+  end if;
+
+  -- Money in and out (the Financial Dashboard roles).
+  if public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Accounts']) then
+    result := result || jsonb_build_object('money', jsonb_build_object(
+      'collectedToday', (select coalesce(sum(total_amount), 0) from public.bills
+                         where payment_status = 'Paid' and public.parse_dmy(payment_date) = today),
+      'collectedMonth', (select coalesce(sum(total_amount), 0) from public.bills
+                         where payment_status = 'Paid' and public.parse_dmy(payment_date) >= date_trunc('month', today)::date),
+      'paidOutToday', (select coalesce(sum(amount), 0) from public.payments where paid_on = today),
+      'paidOutMonth', (select coalesce(sum(amount), 0) from public.payments where paid_on >= date_trunc('month', today)::date)));
+  end if;
+
+  -- Fees the hospital owes (the roles that settle them).
+  if public.has_role(array['Super Admin', 'Admin', 'Accounts']) then
+    result := result || (select jsonb_build_object('feesOwed', jsonb_build_object(
+      'doctorAmount', coalesce(sum(doctor_fee) filter (where doctor_fee_status = 'Pending' and attending_doctor_id is not null), 0),
+      'doctorCases', count(*) filter (where doctor_fee is not null and doctor_fee_status = 'Pending' and attending_doctor_id is not null),
+      'referralAmount', coalesce(sum(referral_fee) filter (where referral_fee_status = 'Pending' and referred_doctor_id is not null), 0),
+      'referralCases', count(*) filter (where referred_doctor_id is not null and referral_fee_status = 'Pending')))
+      from public.patients);
+  end if;
+
+  -- A doctor's own fees still to be paid.
+  if public.has_role(array['Doctor']) then
+    result := result || (select jsonb_build_object('myFees', jsonb_build_object(
+      'pendingAmount', coalesce(sum(doctor_fee), 0), 'pendingCases', count(*)))
+      from public.patients
+      where attending_doctor_id = me and doctor_fee is not null and doctor_fee_status = 'Pending');
+  end if;
+
+  -- Stock needing a refill (the Inventory roles).
+  if public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Accounts']) then
+    result := result || (with items as (
+        select m.id, m.reorder_level, coalesce(sum(s.quantity), 0) as on_hand
+        from public.medications m left join public.stock_movements s on s.medication_id = m.id group by m.id
+        union all
+        select m.id, m.reorder_level, coalesce(sum(s.quantity), 0)
+        from public.materials m left join public.stock_movements s on s.material_id = m.id group by m.id
+      )
+      select jsonb_build_object('stock', jsonb_build_object(
+        'outOfStock', count(*) filter (where on_hand <= 0 and (reorder_level is not null or exists (
+                          select 1 from public.stock_movements x where x.medication_id = items.id or x.material_id = items.id))),
+        'low', count(*) filter (where on_hand > 0 and reorder_level is not null and on_hand <= reorder_level)))
+      from items);
+  end if;
+
+  return result;
+end
+$$;
+
+-- Anyone signed in can choose the language the app shows them.
+create or replace function public.set_my_language(lang text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if lang not in ('en', 'te') then
+    raise exception 'Unsupported language: %', lang;
+  end if;
+  update public.staff set preferred_language = lang where id = public.current_staff_id();
+end
+$$;
+
+-- Salaries, for the roles that open Staff Management (PAGE_ROLES.staff).
+create or replace function public.staff_salaries()
+returns table (id bigint, salary numeric)
+language sql stable security definer set search_path = public as $$
+  select s.id, s.salary from public.staff s
+  where public.has_role(array['Super Admin', 'Admin', 'Doctor'])
+$$;
+
 revoke all on function public.clock_in(text) from public;
 revoke all on function public.clock_out(text) from public;
 revoke all on function public.financial_summary(text, date, date) from public;
@@ -1038,6 +1163,12 @@ grant execute on function public.clock_out(text) to authenticated;
 grant execute on function public.financial_summary(text, date, date) to authenticated;
 revoke all on function public.inventory_summary(date, date) from public;
 grant execute on function public.inventory_summary(date, date) to authenticated;
+revoke all on function public.home_summary(text) from public;
+grant execute on function public.home_summary(text) to authenticated;
+revoke all on function public.set_my_language(text) from public;
+grant execute on function public.set_my_language(text) to authenticated;
+revoke all on function public.staff_salaries() from public;
+grant execute on function public.staff_salaries() to authenticated;
 
 -- -----------------------------------------------------------------------------
 -- Row level security
@@ -1057,8 +1188,12 @@ begin
 end
 $$;
 
--- Staff: everyone signed in sees the roster (names on notes, assignments). Creating and
--- changing staff goes through /api/staff (role-checked, service key), so no write policies.
+-- Staff: everyone signed in sees the roster (names on notes, assignments), but not salaries:
+-- those come from staff_salaries() for the roles that manage staff. Creating and changing
+-- staff goes through /api/staff (role-checked, service key), so no write policies.
+revoke select on public.staff from anon, authenticated;
+grant select (id, auth_user_id, name, phone_number, email, role, hire_date, active, preferred_language, created_at)
+  on public.staff to authenticated;
 drop policy if exists staff_select on public.staff;
 create policy staff_select on public.staff for select to authenticated
   using ((select public.is_active_staff()));

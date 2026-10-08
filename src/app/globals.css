@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 body {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: Arial, Helvetica, var(--font-telugu), 'Noto Sans Telugu', 'Nirmala UI', Gautami, sans-serif;
 }
 
 @layer base {
