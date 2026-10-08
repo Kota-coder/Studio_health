@@ -94,4 +94,8 @@ export const STAFF_SETUP: Record<string, string> = {
   'Set your password': 'మీ పాస్‌వర్డ్ సెట్ చేయండి',
   'Choose a password for your staff account.': 'మీ సిబ్బంది ఖాతాకు పాస్‌వర్డ్ ఎంచుకోండి.',
   'Set password': 'పాస్‌వర్డ్ సెట్ చేయండి',
+  'Other hospitals': 'ఇతర ఆసుపత్రులు',
+  'Switch hospital': 'ఆసుపత్రి మార్చండి',
+  'Manage hospitals': 'ఆసుపత్రులను నిర్వహించండి',
+  'Add another hospital': 'మరో ఆసుపత్రిని జోడించండి',
 };

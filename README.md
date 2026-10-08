@@ -66,6 +66,13 @@ Vercel Pro about $20) and about **$10/month** for each further hospital. Check c
 new Vercel project from the same repository with that hospital's keys and address. No code
 changes.
 
+**Switching between hospitals (Super Admin):** in each hospital, open **Setup → Hospital Profile →
+Other hospitals** and add the other hospitals' names and web addresses. They then appear under
+**Switch hospital** at the bottom of the menu, only for the Super Admin. Switching opens the other
+hospital's own address; sign in there once with that hospital's login (the browser keeps both
+logins, so after that switching is one click). The hospitals still share nothing: the list only
+holds links.
+
 **Updates:** merging to `main` redeploys every hospital's app automatically. When an update
 changes the database it adds or updates a file in `supabase/migrations`; every file there is safe
 to run again. Run them on every hospital at once:

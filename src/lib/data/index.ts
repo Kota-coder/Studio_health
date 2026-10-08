@@ -18,6 +18,7 @@ import type { Department, DepartmentMembers } from '@/types/department';
 import type { AttendanceEntry, StaffShift } from '@/types/duty';
 import type { PaymentMethodOption } from '@/types/paymentMethod';
 import type { InventoryItem, InventoryKind, NewStockMovement, StockMovement } from '@/types/inventory';
+import type { HospitalLink } from '@/types/hospitalLink';
 import { DEFAULT_PROFILE, type HospitalProfile } from '@/lib/branding';
 
 type Row = Record<string, unknown>;
@@ -159,6 +160,8 @@ export const materials = {
   async get(id: string) { const m = await materialTable.get(id); return m && { ...m, reorderLevel: numberOrNull(m.reorderLevel) }; },
 };
 export const vendors = table<Vendor>('vendors', 'name', [], REFERENCE_TTL);
+// The Super Admin's other hospitals (links only; see hospital_links in the schema).
+export const hospitalLinks = table<HospitalLink>('hospital_links', 'sort_order', ['created_at'], REFERENCE_TTL);
 export const testCatalog = table<MedicalTestCatalogItem>('medical_test_catalog', 'name', [], REFERENCE_TTL);
 export const treatmentTemplates = table<TreatmentTemplate>('treatment_templates', 'name', [], REFERENCE_TTL);
 // Managed by the Super Admin (Organization Setup → Payment Methods); in display order.

@@ -179,6 +179,18 @@ create table if not exists public.hospital_profile (
   constraint hospital_profile_color_check check (brand_color ~ '^#[0-9a-fA-F]{6}$')
 );
 
+-- The Super Admin's other hospitals (each a separate Seva copy at its own address), listed
+-- under "Switch hospital" in the menu. Only links: no data is shared between hospitals.
+create table if not exists public.hospital_links (
+  id          bigint generated always as identity primary key,
+  name        text not null,
+  url         text not null,
+  sort_order  integer not null default 100,
+  created_at  timestamptz not null default now(),
+  constraint hospital_links_name_check check (length(trim(name)) between 1 and 80),
+  constraint hospital_links_url_check check (url ~ '^https?://[^\s/$.?#][^\s]*$' and length(url) <= 300)
+);
+
 -- -----------------------------------------------------------------------------
 -- Departments and care teams
 -- -----------------------------------------------------------------------------
@@ -1183,7 +1195,7 @@ begin
     'staff', 'referring_doctors', 'medical_test_catalog', 'medications', 'materials', 'vendors',
     'treatment_templates', 'payment_methods', 'hospital_profile', 'departments', 'department_staff',
     'patients', 'care_notes', 'patient_tests', 'bills', 'payments', 'staff_shifts', 'staff_attendance', 'audit_log',
-    'payment_transactions', 'stock_movements'
+    'payment_transactions', 'stock_movements', 'hospital_links'
   ] loop
     execute format('alter table public.%I enable row level security', t);
   end loop;
@@ -1270,6 +1282,12 @@ drop policy if exists payment_methods_write on public.payment_methods;
 create policy payment_methods_select on public.payment_methods for select to authenticated
   using ((select public.is_active_staff()));
 create policy payment_methods_write on public.payment_methods for all to authenticated
+  using ((select public.has_role(array['Super Admin'])))
+  with check ((select public.has_role(array['Super Admin'])));
+
+-- Links to the other hospitals: the Super Admin only.
+drop policy if exists hospital_links_all on public.hospital_links;
+create policy hospital_links_all on public.hospital_links for all to authenticated
   using ((select public.has_role(array['Super Admin'])))
   with check ((select public.has_role(array['Super Admin'])));
 
