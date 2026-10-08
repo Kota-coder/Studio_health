@@ -1,6 +1,6 @@
 "use client";
 
-import Link from 'next/link';
+import Link from '@/components/app-link';
 import { format, parseISO } from 'date-fns';
 import { AlertTriangle, Boxes, CalendarClock, HandCoins, IndianRupee, Receipt, Stethoscope, Users } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';

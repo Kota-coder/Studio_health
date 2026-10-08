@@ -1,6 +1,6 @@
 "use client";
 
-import Link from 'next/link';
+import Link from '@/components/app-link';
 import { Activity, BriefcaseMedical, CalendarDays, Edit, Edit3, FileText, Home, Mail, Phone, User, UserCircle, Users, UserSquare2 } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';

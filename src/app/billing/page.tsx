@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import Link from '@/components/app-link';
 import { CreditCard, Download, Eye, Pill, PlusCircle, Printer, Stethoscope, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -56,6 +56,7 @@ export default function BillingPage() {
     let live = true;
     setIsFiltering(true);
     billsRepo.list({
+      brief: true,
       ...dateFilterRange(dateFilter),
       status: filterStatus === 'All' ? undefined : filterStatus,
       method: filterMethod === 'All' ? undefined : filterMethod,

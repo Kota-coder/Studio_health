@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
+import Link from '@/components/app-link';
 import { Archive, Briefcase, List, Pill, PlusCircle, Receipt, Save, Trash2, Truck, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -48,13 +48,13 @@ interface Lists {
 type ListKey = keyof Lists;
 interface CatalogItem { id: string; name: string; listPrice?: number }
 
-const LOADERS: Record<ListKey, () => Promise<Lists[ListKey]>> = {
+const LOADERS: Record<ListKey, (includeIds: number[]) => Promise<Lists[ListKey]>> = {
   doctors: () => referringDoctorsRepo.list(),
   staff: () => staffRepo.list(),
   vendors: () => vendorsRepo.list(),
   medications: () => medicationsRepo.list(),
   materials: () => materialsRepo.list(),
-  feeCases: () => patientsRepo.listFeeCases(),
+  feeCases: includeIds => patientsRepo.listFeeCases(includeIds),
 };
 
 function listsFor(type: PaymentType, isEditMode: boolean): ListKey[] {
@@ -120,7 +120,7 @@ export default function PaymentFormPage() {
     for (const key of keys) {
       if (requested.current.has(key)) continue;
       requested.current.add(key);
-      LOADERS[key]()
+      LOADERS[key](originalPatientIds)
         .then(list => setLists(prev => ({ ...prev, [key]: list })))
         .catch(error => {
           requested.current.delete(key);
@@ -128,7 +128,7 @@ export default function PaymentFormPage() {
           toast({ title: t('Error'), description: 'Could not load the lists for this payment type.', variant: 'destructive' });
         });
     }
-  }, [paymentType, isEditMode, canAssignProcessor, toast, t]);
+  }, [paymentType, isEditMode, canAssignProcessor, originalPatientIds, toast, t]);
 
   useEffect(() => {
     if (!paymentIdToEdit) return;

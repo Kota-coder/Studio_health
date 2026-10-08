@@ -46,6 +46,7 @@ export async function brandingFiles(logoSrc: string, brandColor: string): Promis
   const img = await loadImage(logoSrc);
   return {
     'logo.png': await render(img, 512, 1),
+    'logo-96.png': await render(img, 96, 1), // header and letterhead (shown at 32–56 px)
     'icon-192.png': await render(img, 192, 0.82, '#ffffff', 40),
     'icon-512.png': await render(img, 512, 0.82, '#ffffff', 104),
     'maskable-512.png': await render(img, 512, 0.6, tint(brandColor, 0.9)),

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
+import Link from '@/components/app-link';
 import { useParams, useRouter } from 'next/navigation';
 import { ClipboardPlus, Save, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';

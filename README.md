@@ -92,8 +92,8 @@ database enforces the same rules with row level security.
   (Super Admin, Admin, Accounts), a doctor's own pending fees, and stock needing a refill.
 - **English / తెలుగు:** the EN/తె switch in the header (also on the login page) changes the menu,
   page titles, main buttons, statuses and the dashboard tiles to Telugu; details stay in English.
-  The choice is saved to the person's profile, so it follows them to any device. The Telugu font
-  is only downloaded when Telugu is chosen. Translations are in `src/lib/i18n/te/` (one file per
+  The choice is saved to the person's profile, so it follows them to any device. The Telugu text
+  is only downloaded when Telugu is chosen, and the device's own Telugu font is used. Translations are in `src/lib/i18n/te/` (one file per
   area); have a Telugu-speaking colleague review them.
 
 - **Patients:** registration (with consent capture and ID-card scanning), care notes with
@@ -164,9 +164,19 @@ the flow without an account: set `SEVA_TEST_GATEWAY_SECRET` in development only.
 Supabase and Vercel bill mainly for data transferred and compute, not per request, and the
 included amounts are generous for a hospital. The app still keeps traffic small:
 
-- **Pages are static:** built once and served from Vercel's CDN, rebuilt at most every 5 minutes
-  or when the hospital profile changes. Logins are checked locally from the session token
+- **Pages are static:** built once and served from Vercel's CDN, rebuilt when the hospital profile
+  is saved (and otherwise once a day). Logins are checked locally from the session token
   (`getClaims`), not with a call to Supabase on each page.
+- **No prefetching of unopened pages:** links fetch a page only when hovered or touched, just
+  before the click (`src/components/app-link.tsx`), instead of every link on screen; patient pages
+  are the only server-rendered pages, so this also avoids server calls on Vercel.
+- **Lists that stay small as records grow:** the Patient Dashboard loads patients in care and those
+  discharged in the last 30 days (older ones on request, or found by name); the bill form offers
+  the same patients; the payment form lists only fee cases still to pay; Billing loads only the
+  columns a row shows; Payments looks up only the patients it names.
+- **Loaded when opened:** charts, the ID-card scanner, sample data, stock dialogs, a patient's
+  audit trail and the patient page's catalogs (tests, templates, medicines).
+- **No web fonts:** the device's own fonts (Telugu included); the header logo uses a 96 px copy.
 - **Totals in the database:** the Financial Dashboard calls `financial_summary()` and receives a
   2 KB summary instead of every bill and payment.
 - **Only what each screen shows:** the Patient Dashboard loads names, care teams and the latest
