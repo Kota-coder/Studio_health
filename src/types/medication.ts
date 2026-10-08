@@ -7,4 +7,5 @@ export interface Medication {
   quantityInPackage?: number; // e.g., 10, 100.5. This is the "number of units" that can be decimal.
   unitOfMeasure: string; // e.g., "tablet", "ml", "bottle", "strip". This is the old 'units' field, renamed.
   additionalNotes?: string;
+  reorderLevel?: number | null; // warn on the Inventory page when stock falls to this
 }

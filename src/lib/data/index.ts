@@ -17,6 +17,7 @@ import type { TreatmentTemplate } from '@/config/treatmentTemplates';
 import type { Department, DepartmentMembers } from '@/types/department';
 import type { AttendanceEntry, StaffShift } from '@/types/duty';
 import type { PaymentMethodOption } from '@/types/paymentMethod';
+import type { InventoryItem, InventoryKind, NewStockMovement, StockMovement } from '@/types/inventory';
 import { DEFAULT_PROFILE, type HospitalProfile } from '@/lib/branding';
 
 type Row = Record<string, unknown>;
@@ -144,8 +145,19 @@ export const referringDoctors = {
     return doctor ? referringDoctorFromRow(doctor) : null;
   },
 };
-export const medications = table<Medication>('medications', 'name', [], REFERENCE_TTL);
-export const materials = table<Material>('materials', 'name', [], REFERENCE_TTL);
+const numberOrNull = (value: unknown) => (value == null ? null : Number(value));
+const medicationTable = table<Medication>('medications', 'name', [], REFERENCE_TTL);
+const materialTable = table<Material>('materials', 'name', [], REFERENCE_TTL);
+export const medications = {
+  ...medicationTable,
+  async list() { return (await medicationTable.list()).map(m => ({ ...m, listPrice: Number(m.listPrice), reorderLevel: numberOrNull(m.reorderLevel) })); },
+  async get(id: string) { const m = await medicationTable.get(id); return m && { ...m, listPrice: Number(m.listPrice), reorderLevel: numberOrNull(m.reorderLevel) }; },
+};
+export const materials = {
+  ...materialTable,
+  async list() { return (await materialTable.list()).map(m => ({ ...m, reorderLevel: numberOrNull(m.reorderLevel) })); },
+  async get(id: string) { const m = await materialTable.get(id); return m && { ...m, reorderLevel: numberOrNull(m.reorderLevel) }; },
+};
 export const vendors = table<Vendor>('vendors', 'name', [], REFERENCE_TTL);
 export const testCatalog = table<MedicalTestCatalogItem>('medical_test_catalog', 'name', [], REFERENCE_TTL);
 export const treatmentTemplates = table<TreatmentTemplate>('treatment_templates', 'name', [], REFERENCE_TTL);
@@ -354,6 +366,52 @@ export const hospitalProfile = {
       if (error) throw new Error(error.message);
     }
     return folder;
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Inventory: pharmacy and material stock. Bills and payments update it in the database
+// (see stock_movements in the schema); their saves clear 'summary:' so this re-reads.
+// ---------------------------------------------------------------------------
+
+function stockMovementFromRow(row: Row): StockMovement {
+  const movement = fromRow<StockMovement>(row);
+  movement.quantity = Number(movement.quantity);
+  movement.unitCost = numberOrNull(movement.unitCost);
+  return movement;
+}
+
+export const inventory = {
+  // Every item with stock on hand, value and what came in and went out in the range.
+  summary(range: DateRange = {}): Promise<InventoryItem[]> {
+    return cached(`summary:inventory:${range.from ?? ''}:${range.to ?? ''}`, DASHBOARD_TTL, async () =>
+      check(await db().rpc('inventory_summary', { from_date: range.from ?? null, to_date: range.to ?? null })) as InventoryItem[]);
+  },
+  // The latest changes to one item's stock, newest first.
+  async history(kind: InventoryKind, itemId: string, limit = 50): Promise<StockMovement[]> {
+    const rows = check(await db().from('stock_movements').select('*')
+      .eq(kind === 'pharmacy' ? 'medication_id' : 'material_id', itemId)
+      .order('moved_on', { ascending: false }).order('id', { ascending: false }).limit(limit));
+    return (rows as Row[]).map(stockMovementFromRow);
+  },
+  async record(entries: NewStockMovement[]): Promise<void> {
+    if (entries.length === 0) return;
+    try {
+      check(await db().from('stock_movements').insert(entries.map(e => ({
+        medication_id: e.kind === 'pharmacy' ? e.itemId : null,
+        material_id: e.kind === 'material' ? e.itemId : null,
+        quantity: e.quantity,
+        unit_cost: e.unitCost ?? null,
+        reason: e.reason,
+        note: e.note?.trim() || null,
+        ...(e.movedOn ? { moved_on: e.movedOn } : {}),
+      }))));
+    } finally { invalidate('summary:'); }
+  },
+  async remove(id: number): Promise<void> {
+    try {
+      checkDeleted(await db().from('stock_movements').delete().eq('id', id).select('id'));
+    } finally { invalidate('summary:'); }
   },
 };
 

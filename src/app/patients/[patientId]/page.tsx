@@ -18,7 +18,7 @@ import { Medication } from '@/types/medication';
 import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 import { useToast } from '@/hooks/use-toast';
 import { format, parse, parseISO, isValid as isValidDate } from 'date-fns';
-import { ArrowLeft, Download, PlusCircle, Users, ChevronsUpDown, Edit, Paperclip, FlaskConical, CalendarDays, UserCircle as UserCircleIcon, CreditCard, Eye, Activity, Edit3Icon, AlertTriangle, Files, ClipboardList, BriefcaseMedical, CheckCircle2, HelpCircle, Info, Phone, Mail, Home, User, UserSquare2, FileText, CheckCircle, AlertCircle, Pill, Trash2, ShoppingCart, ShieldCheck, History, Camera as CameraIcon, UploadCloud, X } from 'lucide-react';
+import { ArrowLeft, Download, PlusCircle, Users, ChevronsUpDown, Edit, Paperclip, FlaskConical, CalendarDays, UserCircle as UserCircleIcon, CreditCard, Eye, Printer, Activity, Edit3Icon, AlertTriangle, Files, ClipboardList, BriefcaseMedical, CheckCircle2, HelpCircle, Info, Phone, Mail, Home, User, UserSquare2, FileText, CheckCircle, AlertCircle, Pill, Trash2, ShoppingCart, ShieldCheck, History, Camera as CameraIcon, UploadCloud, X } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -365,6 +365,7 @@ export default function PatientDetailPage() {
       return {
         id: `${medMention.medicationId}-${Date.now()}`,
         description: medMention.medicationName,
+        medicationId: medicationInfo?.id,
         quantity: 1,
         originalUnitPrice: originalPrice,
         unitPrice: originalPrice,
@@ -975,7 +976,7 @@ export default function PatientDetailPage() {
                                                 <SelectContent>
                                                     {availableMedications.length > 0 ? availableMedications.map(med => (
                                                         <SelectItem key={med.id} value={med.id}>{med.name}</SelectItem>
-                                                    )) : <div className="p-2 text-sm text-muted-foreground text-center">No medications found. <Link href="/medications/form" className="underline">Add one?</Link></div>}
+                                                    )) : <div className="p-2 text-sm text-muted-foreground text-center">No medications found. <Link href="/pharmacy/form" className="underline">Add one?</Link></div>}
                                                 </SelectContent>
                                             </Select>
                                         </div>
@@ -1526,6 +1527,11 @@ export default function PatientDetailPage() {
                                                         <Link href={`/billing/form?billId=${bill.id}`} passHref>
                                                             <Button variant="ghost" size="sm">
                                                                 <Eye className="mr-1 h-4 w-4" /> View/Edit
+                                                            </Button>
+                                                        </Link>
+                                                        <Link href={`/billing/print?billId=${bill.id}`} passHref>
+                                                            <Button variant="ghost" size="sm" aria-label={`Print ${bill.id}`}>
+                                                                <Printer className="mr-1 h-4 w-4" /> Print
                                                             </Button>
                                                         </Link>
                                                     </TableCell>

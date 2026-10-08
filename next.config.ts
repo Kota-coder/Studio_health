@@ -14,6 +14,13 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '5mb',
     },
   },
+  // "Medications" was renamed "Pharmacy"; keep old bookmarks working.
+  async redirects() {
+    return [
+      { source: '/medications', destination: '/pharmacy', permanent: true },
+      { source: '/medications/:path*', destination: '/pharmacy/:path*', permanent: true },
+    ];
+  },
   images: {
     remotePatterns: [
       {

@@ -789,8 +789,8 @@ export default function PaymentFormPage() {
           {paymentType === "Pharmacy" && (
             <Card className="p-4 bg-muted/50">
               <CardHeader className="p-0 mb-3 flex flex-row justify-between items-center">
-                <CardTitle className="text-md">Purchased Medications</CardTitle>
-                 <Link href="/medications/form" passHref>
+                <CardTitle className="text-md">Pharmacy Items Purchased</CardTitle>
+                 <Link href="/pharmacy/form" passHref>
                     <Button variant="outline" size="sm">
                         <PillIcon className="mr-2 h-4 w-4" /> Add New to Catalog
                     </Button>

@@ -12,7 +12,7 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Menu as MenuIcon, LayoutDashboard, FileText, CreditCard, Receipt, Pill, Archive, Truck, Users, FlaskConical, HeartHandshake, LogIn, LogOut, UserCircle, AreaChart, Database, Building2, CalendarClock, Wallet, Hospital } from 'lucide-react';
+import { Menu as MenuIcon, LayoutDashboard, FileText, CreditCard, Receipt, Pill, Archive, Truck, Users, FlaskConical, HeartHandshake, LogIn, LogOut, UserCircle, AreaChart, Database, Building2, CalendarClock, Wallet, Hospital, Boxes } from 'lucide-react';
 import React from 'react';
 import type { StaffRole } from '@/types/staff';
 import { PAGE_ROLES } from '@/config/permissions';
@@ -43,12 +43,13 @@ const allMenuItems: MenuItemConfig[] = [
   { href: '/billing', label: 'Billing', icon: CreditCard, allowedRoles: PAGE_ROLES.billing, isPrimary: true , module: 'billing' },
   { href: '/payments', label: 'Payments', icon: Receipt, allowedRoles: PAGE_ROLES.payments, isPrimary: true , module: 'payments' },
   { href: '/financial-dashboard', label: 'Financial Dashboard', icon: AreaChart, allowedRoles: PAGE_ROLES.financialDashboard, isPrimary: true , module: 'financialDashboard' },
+  { href: '/inventory', label: 'Inventory', icon: Boxes, allowedRoles: PAGE_ROLES.inventory, isPrimary: true, module: 'inventory' },
   { href: '/duty', label: 'Duty Roster & Attendance', icon: CalendarClock, allowedRoles: PAGE_ROLES.duty, isPrimary: true , module: 'duty' },
 
   // Organization Setup Links
   { href: '/hospital-profile', label: 'Hospital Profile', icon: Hospital, allowedRoles: PAGE_ROLES.hospitalProfile, isPrimary: false },
   { href: '/patient-care', label: 'Patient Care Templates', icon: FileText, allowedRoles: PAGE_ROLES.patientCare, isPrimary: false , module: 'patientCare' },
-  { href: '/medications', label: 'Medications', icon: Pill, allowedRoles: PAGE_ROLES.medications, isPrimary: false , module: 'medications' },
+  { href: '/pharmacy', label: 'Pharmacy', icon: Pill, allowedRoles: PAGE_ROLES.medications, isPrimary: false , module: 'medications' },
   { href: '/materials', label: 'Materials', icon: Archive, allowedRoles: PAGE_ROLES.materials, isPrimary: false , module: 'materials' },
   { href: '/vendors', label: 'Material Vendors', icon: Truck, allowedRoles: PAGE_ROLES.vendors, isPrimary: false , module: 'vendors' },
   { href: '/departments', label: 'Departments', icon: Building2, allowedRoles: PAGE_ROLES.departments, isPrimary: false , module: 'departments' },

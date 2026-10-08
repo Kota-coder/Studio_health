@@ -35,6 +35,7 @@ export default function MedicationFormPage() {
   const [quantityInPackage, setQuantityInPackage] = useState<number | string>("");
   const [unitOfMeasure, setUnitOfMeasure] = useState("");
   const [additionalNotes, setAdditionalNotes] = useState("");
+  const [reorderLevel, setReorderLevel] = useState("");
   
   const [allTreatmentTemplates, setAllTreatmentTemplates] = useState<TreatmentTemplate[]>([]);
   const [currentMedicationId, setCurrentMedicationId] = useState<string | null>(null);
@@ -77,18 +78,19 @@ export default function MedicationFormPage() {
           setQuantityInPackage(medToEdit.quantityInPackage !== undefined ? String(medToEdit.quantityInPackage) : "");
           setUnitOfMeasure(medToEdit.unitOfMeasure);
           setAdditionalNotes(medToEdit.additionalNotes || "");
+          setReorderLevel(medToEdit.reorderLevel != null ? String(medToEdit.reorderLevel) : "");
         } else {
-          toast({ title: "Error", description: "Medication not found.", variant: "destructive" });
-          router.push('/medications');
+          toast({ title: "Error", description: "Pharmacy item not found.", variant: "destructive" });
+          router.push('/pharmacy');
         }
     }).catch(error => {
       console.error("Error loading medication:", error);
-      toast({ title: "Error", description: "Could not load medication.", variant: "destructive" });
+      toast({ title: "Error", description: "Could not load the pharmacy item.", variant: "destructive" });
     }).finally(() => setFormIsLoading(false));
   }, [isEditMode, medicationIdToEdit, router, toast, currentUser, authIsLoading]);
 
   const handleSubmit = async () => {
-    if (!name.trim()) { toast({ title: "Validation Error", description: "Medication Name is required.", variant: "destructive" }); return; }
+    if (!name.trim()) { toast({ title: "Validation Error", description: "Name is required.", variant: "destructive" }); return; }
     if (!treatment) { toast({ title: "Validation Error", description: "Treatment / Purpose is required (select a template).", variant: "destructive" }); return; }
     
     const price = parseFloat(String(listPrice));
@@ -107,6 +109,11 @@ export default function MedicationFormPage() {
 
     if (!unitOfMeasure.trim()) { toast({ title: "Validation Error", description: "Unit of Measure is required.", variant: "destructive" }); return; }
 
+    const reorderValue = reorderLevel.trim() === "" ? null : Number(reorderLevel);
+    if (reorderValue !== null && (!Number.isFinite(reorderValue) || reorderValue < 0)) {
+      toast({ title: "Validation Error", description: "The refill level must be 0 or more, or left empty.", variant: "destructive" }); return;
+    }
+
     const medicationData: Omit<Medication, 'id'> = {
       name: name.trim(),
       treatment: treatment, 
@@ -114,17 +121,18 @@ export default function MedicationFormPage() {
       quantityInPackage: numQuantityInPackage,
       unitOfMeasure: unitOfMeasure.trim(),
       additionalNotes: additionalNotes.trim(),
+      reorderLevel: reorderValue,
     };
 
     try {
       if (isEditMode && currentMedicationId) {
         await medicationsRepo.update(currentMedicationId, medicationData);
-        toast({ title: "Success", description: "Medication updated." });
+        toast({ title: "Success", description: "Pharmacy item updated." });
       } else {
         await medicationsRepo.create(medicationData);
-        toast({ title: "Success", description: "New medication added." });
+        toast({ title: "Success", description: "Pharmacy item added." });
       }
-      router.push('/medications');
+      router.push('/pharmacy');
     } catch (e) {
       console.error("Failed to save medication", e);
       toast({
@@ -149,7 +157,7 @@ export default function MedicationFormPage() {
         <CardHeader>
           <CardTitle className="text-2xl flex items-center">
             <Pill className="mr-3 h-7 w-7 text-primary"/>
-            {isEditMode ? "Edit Medication" : "Add New Medication"}
+            {isEditMode ? "Edit Pharmacy Item" : "Add Pharmacy Item"}
           </CardTitle>
           <CardDescription>
             {isEditMode ? "Update the details for this medication." : "Fill in the details to add a new medication."}
@@ -157,7 +165,7 @@ export default function MedicationFormPage() {
         </CardHeader>
         <CardContent className="grid gap-5">
           <div>
-            <Label htmlFor="name">Medication Name *</Label>
+            <Label htmlFor="name">Medicine / item name *</Label>
             <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required 
                    placeholder="e.g., Amoxicillin 500mg" />
           </div>
@@ -200,6 +208,12 @@ export default function MedicationFormPage() {
                        placeholder="e.g., tablet, ml, bottle, strip"/>
             </div>
           <div>
+            <Label htmlFor="reorderLevel">Refill when stock falls to (Optional)</Label>
+            <Input id="reorderLevel" type="number" inputMode="decimal" min="0" step="any" value={reorderLevel}
+                   onChange={(e) => setReorderLevel(e.target.value)} placeholder="e.g., 10" />
+            <p className="text-xs text-muted-foreground mt-1">In the unit above (the unit the price is for). The Inventory page lists the item under &quot;Needs refill&quot; at or below this.</p>
+          </div>
+          <div>
             <Label htmlFor="additionalNotes">Additional Notes (Optional)</Label>
             <Textarea id="additionalNotes" value={additionalNotes} 
                       onChange={(e) => setAdditionalNotes(e.target.value)} 
@@ -207,11 +221,11 @@ export default function MedicationFormPage() {
           </div>
         </CardContent>
         <CardFooter className="flex justify-between mt-4">
-          <Button variant="outline" onClick={() => router.push('/medications')}>
+          <Button variant="outline" onClick={() => router.push('/pharmacy')}>
             <ArrowLeft className="mr-2 h-4 w-4" /> Cancel
           </Button>
           <Button onClick={handleSubmit}>
-            <Save className="mr-2 h-4 w-4" /> {isEditMode ? "Save Changes" : "Add Medication"}
+            <Save className="mr-2 h-4 w-4" /> {isEditMode ? "Save Changes" : "Add Pharmacy Item"}
           </Button>
         </CardFooter>
       </Card>

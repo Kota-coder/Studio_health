@@ -26,8 +26,9 @@ export const MODULES: ModuleDefinition[] = [
   { key: 'departments', label: 'Departments', description: 'Departments and care teams (attending doctor and nurse).', paths: ['/departments'] },
   { key: 'patientCare', label: 'Patient Care Templates', description: 'Structured templates for care notes.', paths: ['/patient-care'] },
   { key: 'medicalTests', label: 'Medical Tests Catalog', description: 'Managing the tests offered and their prices.', paths: ['/medical-tests'] },
-  { key: 'medications', label: 'Medications', description: 'Pharmacy medicines; "Add Medication" on care notes.', paths: ['/medications'] },
+  { key: 'medications', label: 'Pharmacy', description: 'Medicines the pharmacy sells; "Add Medication" on care notes.', paths: ['/pharmacy'] },
   { key: 'materials', label: 'Materials', description: 'Consumables and supplies.', paths: ['/materials'] },
+  { key: 'inventory', label: 'Inventory', description: 'Stock on hand, its value, and what needs refilling.', paths: ['/inventory'], requiresAny: ['medications', 'materials'] },
   { key: 'vendors', label: 'Material Vendors', description: 'Suppliers of materials and medicines.', paths: ['/vendors'] },
   { key: 'sampleData', label: 'Sample Data', description: 'Loading demo data for trying the app out.', paths: ['/admin'] },
 ];
