@@ -36,6 +36,7 @@ export default function MaterialFormPage() {
   const [listPrice, setListPrice] = useState<number | string>("");
   const [associatedTreatmentTemplateName, setAssociatedTreatmentTemplateName] = useState<string>("");
   const [notes, setNotes] = useState("");
+  const [reorderLevel, setReorderLevel] = useState("");
   
   const [allTreatmentTemplates, setAllTreatmentTemplates] = useState<TreatmentTemplate[]>([]);
   const [currentMaterialId, setCurrentMaterialId] = useState<string | null>(null);
@@ -78,6 +79,7 @@ export default function MaterialFormPage() {
             setListPrice(matToEdit.listPrice !== undefined ? String(matToEdit.listPrice) : "");
             setAssociatedTreatmentTemplateName(matToEdit.associatedTreatmentTemplateName || "");
             setNotes(matToEdit.notes || "");
+            setReorderLevel(matToEdit.reorderLevel != null ? String(matToEdit.reorderLevel) : "");
           } else {
             toast({ title: "Error", description: "Material not found.", variant: "destructive" });
             router.push('/materials');
@@ -104,6 +106,11 @@ export default function MaterialFormPage() {
         }
     }
 
+    const reorderValue = reorderLevel.trim() === "" ? null : Number(reorderLevel);
+    if (reorderValue !== null && (!Number.isFinite(reorderValue) || reorderValue < 0)) {
+      toast({ title: "Validation Error", description: "The refill level must be 0 or more, or left empty.", variant: "destructive" }); return;
+    }
+
     const materialData: Omit<Material, 'id'> = {
       name: name.trim(),
       category: category.trim() || undefined,
@@ -111,6 +118,7 @@ export default function MaterialFormPage() {
       listPrice: numListPrice,
       associatedTreatmentTemplateName: associatedTreatmentTemplateName || undefined,
       notes: notes.trim() || undefined,
+      reorderLevel: reorderValue,
     };
 
     try {
@@ -175,6 +183,12 @@ export default function MaterialFormPage() {
                        onChange={(e) => setListPrice(e.target.value)} 
                        placeholder="e.g., 250.00" min="0" step="0.01"/>
             </div>
+          </div>
+          <div>
+            <Label htmlFor="reorderLevel">Refill when stock falls to (Optional)</Label>
+            <Input id="reorderLevel" type="number" inputMode="decimal" min="0" step="any" value={reorderLevel}
+                   onChange={(e) => setReorderLevel(e.target.value)} placeholder="e.g., 10" />
+            <p className="text-xs text-muted-foreground mt-1">In the unit above. The Inventory page lists the item under &quot;Needs refill&quot; at or below this.</p>
           </div>
           <div>
             <Label htmlFor="associatedTreatmentTemplateName">Associated Treatment Template (Optional)</Label>

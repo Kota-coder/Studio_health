@@ -4,7 +4,7 @@
 // removed again with removeSampleDataFromDatabase().
 
 import {
-  bills, countRows, departments, materials, medications, patients, payments, referringDoctors, testCatalog, vendors,
+  bills, countRows, departments, inventory, materials, medications, patients, payments, referringDoctors, testCatalog, vendors,
 } from '@/lib/data';
 import { maskAadhaarNumber, isAadhaarCard } from '@/lib/aadhaar';
 import { SHIFT_PRESETS, dateKey, shiftWindow, weekStartOf } from '@/lib/duty';
@@ -62,6 +62,9 @@ function createRandom(seed: number) {
 
 const dmy = (date: Date) =>
   `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+// What the pharmacy pays its supplier: 70% of the price it charges patients.
+const purchaseCost = (listPrice: number) => Math.round(listPrice * 70) / 100;
+const ymd = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const daysAgo = (days: number, hour = 10) => {
   const date = new Date(Date.now() - days * DAY);
   date.setHours(hour, 0, 0, 0);
@@ -192,15 +195,39 @@ export async function loadSampleDataIntoDatabase(
     SEED_MEDICATIONS.map(({ id: _id, ...medication }) => ({
       ...medication,
       additionalNotes: `${medication.additionalNotes ?? ''} ${MEDICATION_MARK}`.trim(),
+      reorderLevel: 10,
     })),
   );
   summary.medications = createdMedications.length;
-  const createdMaterials = await materials.createMany(SAMPLE_MATERIALS.map(m => ({ ...m, notes: SAMPLE_MARK })));
+  const createdMaterials = await materials.createMany(SAMPLE_MATERIALS.map(m => ({ ...m, notes: SAMPLE_MARK, reorderLevel: 3 })));
   summary.materials = createdMaterials.length;
   const createdVendors = await vendors.createMany(SAMPLE_VENDORS.map(v => ({ ...v, notes: SAMPLE_MARK })));
   summary.vendors = createdVendors.length;
   const createdTests = await testCatalog.createMany(SAMPLE_TESTS.map(t => ({ ...t, description: SAMPLE_MARK })));
   summary.testCatalog = createdTests.length;
+
+  // Stock on the shelves six months ago, so the Inventory page starts from real numbers.
+  // The first two pharmacy items start short, so they show as needing a refill.
+  const openingDate = ymd(daysAgo(185));
+  await inventory.record([
+    ...createdMedications.map((med, i) => ({
+      kind: 'pharmacy' as const, itemId: med.id, reason: 'opening' as const, movedOn: openingDate, note: SAMPLE_MARK,
+      quantity: i < 2 ? random.int(2, 4) : random.int(25, 45), unitCost: purchaseCost(med.listPrice),
+    })),
+    ...createdMaterials.map(material => ({
+      kind: 'material' as const, itemId: material.id, reason: 'opening' as const, movedOn: openingDate, note: SAMPLE_MARK,
+      quantity: random.int(4, 10), unitCost: material.listPrice ?? 0,
+    })),
+  ]);
+  // Materials used on the wards each month, and one batch that expired.
+  const usage = Array.from({ length: 6 }, (_, month) => {
+    const material = random.pick(createdMaterials);
+    return { kind: 'material' as const, itemId: material.id, reason: 'used' as const, quantity: -random.int(1, 3),
+      movedOn: ymd(daysAgo(month * 30 + 20)), note: `Ward use · ${SAMPLE_MARK}` };
+  });
+  const expiring = createdMedications[createdMedications.length - 1];
+  await inventory.record([...usage,
+    { kind: 'pharmacy', itemId: expiring.id, reason: 'expired', quantity: -3, movedOn: ymd(daysAgo(40)), note: `Batch expired · ${SAMPLE_MARK}` }]);
 
   // The three detailed patients from the original seed, then generated ones.
   type PatientPlan = {
@@ -415,8 +442,8 @@ export async function loadSampleDataIntoDatabase(
     const medQuantity = random.int(10, 40);
     addPayment(monthDays + 15, {
       paymentDate: '', paymentType: 'Pharmacy', payeeId: vendor.id, payeeName: vendor.name, payeeType: 'Vendor',
-      description: 'Pharmacy stock purchase', amount: med.listPrice * medQuantity, paymentMethod: 'Bank Transfer',
-      purchasedMedications: [{ medicationId: med.id, medicationName: med.name, quantityPurchased: medQuantity, unitPriceAtPurchase: med.listPrice, listPriceSnapshot: med.listPrice }],
+      description: 'Pharmacy stock purchase', amount: purchaseCost(med.listPrice) * medQuantity, paymentMethod: 'Bank Transfer',
+      purchasedMedications: [{ medicationId: med.id, medicationName: med.name, quantityPurchased: medQuantity, unitPriceAtPurchase: purchaseCost(med.listPrice), listPriceSnapshot: med.listPrice }],
     });
     addPayment(monthDays + 5, {
       paymentDate: '', paymentType: 'Other', payeeName: 'Electricity Board', payeeType: 'Other',
@@ -503,6 +530,20 @@ export async function loadSampleDataIntoDatabase(
   if (!response.ok) throw new Error((dutyResult as { error?: string }).error ?? 'Could not add the duty roster.');
   summary.shifts = duty.shifts.length;
   summary.attendance = duty.attendance.length;
+
+  // A stock count today, as a pharmacy would do: one item has run out, one is low, and
+  // anything sold beyond the recorded stock is counted back to a sensible level.
+  onProgress?.('Counting stock...');
+  const stock = (await inventory.summary()).filter(i => createdMedications.some(m => m.id === i.id));
+  const target = (index: number, onHand: number) => (index === 0 ? 0 : index === 1 ? 4 : onHand < 0 ? 15 : onHand);
+  await inventory.record(createdMedications.flatMap((med, index) => {
+    const item = stock.find(i => i.id === med.id);
+    const change = item ? target(index, item.onHand) - item.onHand : 0;
+    return item && change !== 0
+      ? [{ kind: 'pharmacy' as const, itemId: med.id, reason: 'adjustment' as const, quantity: change,
+          movedOn: ymd(new Date()), note: `Stock count · ${SAMPLE_MARK}` }]
+      : [];
+  }));
 
   return summary;
 }

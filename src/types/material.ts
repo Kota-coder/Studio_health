@@ -7,4 +7,5 @@ export interface Material {
   listPrice?: number; // Cost per unitOfMeasure
   associatedTreatmentTemplateName?: string; // Optional: Name of the TreatmentTemplate this material is often used with
   notes?: string;
+  reorderLevel?: number | null; // warn on the Inventory page when stock falls to this
 }

@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Bill, PaymentStatus } from '@/types/billing';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Eye, CreditCard, ArrowLeft, Pill, Stethoscope, Download, Trash2 } from 'lucide-react';
+import { PlusCircle, Eye, CreditCard, ArrowLeft, Pill, Stethoscope, Download, Trash2, Printer } from 'lucide-react';
 import { format, parseISO, isValid, parse } from 'date-fns';
 import { useAuth } from '@/context/AuthContext';
 import { bills as billsRepo, staff as staffRepo } from '@/lib/data';
@@ -380,6 +380,11 @@ export default function BillingOverviewPage() {
                       <Link href={`/billing/form?billId=${bill.id}`} passHref>
                         <Button variant="outline" size="sm" aria-label={`View or Edit ${bill.id}`}>
                           <Eye className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                      <Link href={`/billing/print?billId=${bill.id}`} passHref>
+                        <Button variant="outline" size="sm" aria-label={`Print ${bill.id}`} title={bill.paymentStatus === 'Paid' ? 'Print receipt' : 'Print bill'}>
+                          <Printer className="h-4 w-4" />
                         </Button>
                       </Link>
                       {bill.paymentStatus === 'Unpaid' && (

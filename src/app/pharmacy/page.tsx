@@ -42,7 +42,7 @@ export default function MedicationsPage() {
         .then(setMedications)
         .catch(error => {
           console.error("Error loading medications:", error);
-          toast({ title: "Error", description: "Could not load medications data.", variant: "destructive" });
+          toast({ title: "Error", description: "Could not load pharmacy items.", variant: "destructive" });
         })
         .finally(() => setIsLoading(false));
     } else if (currentUser && !ALLOWED_ROLES.includes(currentUser.role)){
@@ -163,15 +163,15 @@ export default function MedicationsPage() {
       try {
           await medicationsRepo.createMany(newItems);
           setMedications(await medicationsRepo.list());
-          toast({ title: "Import Successful", description: `${importedCount} medications imported. ${failedCount > 0 ? `${failedCount} rows failed.` : ''}` });
+          toast({ title: "Import Successful", description: `${importedCount} pharmacy items imported. ${failedCount > 0 ? `${failedCount} rows failed.` : ''}` });
       } catch (e) {
           console.error("Error saving imported medications:", e);
-          toast({ title: "Save Error", description: "Could not save imported medications.", variant: "destructive" });
+          toast({ title: "Save Error", description: "Could not save imported pharmacy items.", variant: "destructive" });
       }
     } else if (failedCount > 0) {
-        toast({ title: "Import Failed", description: `No medications imported. ${failedCount} rows had errors. Check console for details.`, variant: "destructive" });
+        toast({ title: "Import Failed", description: `No pharmacy items imported. ${failedCount} rows had errors. Check console for details.`, variant: "destructive" });
     } else {
-        toast({ title: "Import Info", description: "No new medications found in CSV to import.", variant: "default"});
+        toast({ title: "Import Info", description: "No new pharmacy items found in CSV to import.", variant: "default"});
     }
   };
 
@@ -185,7 +185,7 @@ export default function MedicationsPage() {
   if (authIsLoading || isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
-        <p>Loading medications...</p>
+        <p>Loading pharmacy items...</p>
       </div>
     );
   }
@@ -199,7 +199,7 @@ export default function MedicationsPage() {
       <header className="mb-8 flex flex-col sm:flex-row justify-between items-center gap-4">
         <div className="flex items-center gap-3">
           <Pill className="h-8 w-8 text-primary" />
-          <h1 className="text-3xl font-bold text-foreground">Medication Management</h1>
+          <h1 className="text-3xl font-bold text-foreground">Pharmacy</h1>
         </div>
         <div className="flex flex-wrap justify-center sm:justify-end gap-2">
             <Button variant="outline" onClick={() => router.push('/dashboard')}>
@@ -215,9 +215,9 @@ export default function MedicationsPage() {
             <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
               <Upload className="mr-2 h-4 w-4" /> Import from CSV
             </Button>
-            <Link href="/medications/form" passHref>
+            <Link href="/pharmacy/form" passHref>
                 <Button>
-                <PlusCircle className="mr-2 h-4 w-4" /> Add New Medication
+                <PlusCircle className="mr-2 h-4 w-4" /> Add Pharmacy Item
                 </Button>
             </Link>
         </div>
@@ -228,7 +228,7 @@ export default function MedicationsPage() {
             <CardTitle className="text-lg">CSV Import Instructions</CardTitle>
         </CardHeader>
         <CardContent className="text-sm">
-            <p>To import medications from a CSV file, ensure your file has the following headers in the first row (case-insensitive):</p>
+            <p>To import pharmacy items from a CSV file, ensure your file has the following headers in the first row (case-insensitive):</p>
             <ul className="list-disc list-inside mt-2 pl-4 bg-muted/50 p-3 rounded-md">
                 <li><code className="font-mono bg-gray-200 dark:bg-gray-700 px-1 rounded">Name</code> (Required)</li>
                 <li><code className="font-mono bg-gray-200 dark:bg-gray-700 px-1 rounded">Treatment</code> (Name of treatment template)</li>
@@ -252,19 +252,19 @@ export default function MedicationsPage() {
       {medications.length === 0 ? (
         <Card className="text-center shadow-lg">
           <CardHeader>
-            <CardTitle>No Medications Found</CardTitle>
+            <CardTitle>No Pharmacy Items Yet</CardTitle>
           </CardHeader>
           <CardContent>
             <CardDescription className="mb-4">
-              There are no medications registered yet. Click "Add New Medication" or "Import from CSV" to start.
+              There are no pharmacy items yet. Click "Add Pharmacy Item" or "Import from CSV" to start.
             </CardDescription>
           </CardContent>
         </Card>
       ) : (
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Medication List</CardTitle>
-            <CardDescription>Overview of all registered medications.</CardDescription>
+            <CardTitle>Pharmacy Items</CardTitle>
+            <CardDescription>Medicines and other items the pharmacy sells. Stock on hand is under Inventory.</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>
@@ -285,7 +285,7 @@ export default function MedicationsPage() {
                     <TableCell>₹{med.listPrice.toFixed(2)}</TableCell>
                     <TableCell className="hidden md:table-cell">{formatPackageDisplay(med)}</TableCell>
                     <TableCell className="text-right space-x-2">
-                      <Link href={`/medications/form?id=${med.id}`} passHref>
+                      <Link href={`/pharmacy/form?id=${med.id}`} passHref>
                         <Button variant="outline" size="sm" aria-label={`Edit ${med.name}`}>
                           <Edit3 className="h-4 w-4" />
                         </Button>

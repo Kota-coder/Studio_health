@@ -99,6 +99,19 @@ rules with row level security.
   with totals per method and CSV export. **Payment Methods** (Super Admin) are managed in
   Organization Setup; renaming one renames it on existing records. Every bill and payment records
   who processed it; only the Super Admin can record or change it to someone else.
+- **Printing bills:** every bill prints on the hospital's letterhead (Print / Save as PDF) with its
+  items, total in words, payment method and who received it. Once paid it prints as a **Payment
+  Receipt**; saving a bill as Paid opens the receipt straight away. Print buttons are on the bill,
+  the Billing list and the patient's bills.
+- **Pharmacy and Inventory:** the Pharmacy list (Organization Setup → Pharmacy) holds what the
+  pharmacy sells; Materials holds consumables. **Inventory** shows the stock on hand of both, its
+  value at average purchase cost, what came in and went out in any period, and a **Needs refill**
+  list (items at or below their refill level, with a suggested order and its cost). Stock updates
+  itself: a Pharmacy or Material purchase recorded under Payments adds stock, and a pharmacy bill
+  takes it out (editing, cancelling or deleting either corrects it). Anything else is recorded on the
+  Inventory page: items used on wards, expired or damaged stock, opening stock and stock counts.
+  Each item's history shows every change and who made it. Pharmacy bills pick items from the list
+  and show the stock while billing. Download the stock list as CSV for the accounts.
 - **Financial Dashboard:** totals and charts for any period, money in and out by method, and the
   doctor and referral fees owed.
 - **Duty Roster & Attendance:** clock in/out (server time), a weekly roster (Super Admin and
@@ -208,6 +221,7 @@ npm run typecheck
 | `src/lib/storage.ts`, `src/lib/images.ts` | Image upload, signed links and compression |
 | `src/config/permissions.ts` | Which roles open which screens |
 | `src/config/modules.ts`, `src/hooks/use-features.ts` | Features a hospital can switch off |
+| `src/lib/inventory.ts`, `src/app/inventory/` | Stock status, value and refill suggestions |
 | `scripts/migrate-hospitals.mjs` | Applies the database files to every hospital |
 
 Database changes: add a new file to `supabase/migrations` written so it can be re-run (`if not

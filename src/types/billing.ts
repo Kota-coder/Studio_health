@@ -10,6 +10,7 @@ export interface BillItem {
   unitPrice: number; // This will be the final, offered price.
   originalUnitPrice?: number; // The suggested list price from medication master.
   total: number; // Calculated: quantity * unitPrice
+  medicationId?: string; // Pharmacy bills: the pharmacy item sold (takes it out of stock)
 }
 
 // The name of one of the managed payment methods (payment_methods table), e.g. "Cash", "UPI".

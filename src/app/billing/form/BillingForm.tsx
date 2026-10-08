@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { Patient } from '@/types/patient'; // Ensure correct path
 import type { Bill, BillItem, PaymentMethod, PaymentStatus, BillType, AuditLogEntry } from '@/types/billing'; // Ensure correct path
 import type { StaffMember } from '@/types/staff'; // Ensure correct path
-import { ArrowLeft, Save, PlusCircle, Trash2, DollarSign, Pill, Stethoscope, History, Camera as CameraIcon, UploadCloud, X } from 'lucide-react';
+import { ArrowLeft, Save, PlusCircle, Trash2, DollarSign, Printer, Pill, Stethoscope, History, Camera as CameraIcon, UploadCloud, X } from 'lucide-react';
 import { format, parse, isValid, parseISO } from 'date-fns';
 import { useAuth } from '@/context/AuthContext'; // Ensure correct path
 import {
@@ -30,7 +30,10 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { compressImageFiles } from '@/lib/images';
 import { uploadNewImages } from '@/lib/storage';
 import { StoredImage } from '@/components/stored-image';
-import { bills as billsRepo, patients as patientsRepo, staff as staffRepo, type BillFields } from '@/lib/data';
+import { bills as billsRepo, inventory as inventoryRepo, medications as medicationsRepo, patients as patientsRepo, staff as staffRepo, type BillFields } from '@/lib/data';
+import { useFeatures } from '@/hooks/use-features';
+import { formatQty } from '@/lib/inventory';
+import type { Medication } from '@/types/medication';
 import { usePaymentMethods } from '@/hooks/use-payment-methods';
 import { methodChoices } from '@/types/paymentMethod';
 import { ProcessedByField } from '@/components/processed-by-field';
@@ -56,6 +59,10 @@ export default function BillingForm() {
 
   const [billType, setBillType] = useState<BillType>("");
   const [isBillTypeSelected, setIsBillTypeSelected] = useState(false);
+  const { isOn } = useFeatures();
+  // Pharmacy bills: the items the pharmacy sells, and their stock (Inventory).
+  const [pharmacyItems, setPharmacyItems] = useState<Medication[]>([]);
+  const [stockById, setStockById] = useState<Record<string, number>>({});
 
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState<string>("");
@@ -274,6 +281,21 @@ export default function BillingForm() {
   };
 
 
+  useEffect(() => {
+    if (billType !== 'Pharmacy' || !isOn('medications')) return;
+    medicationsRepo.list().then(setPharmacyItems).catch(error => console.error('Could not load pharmacy items', error));
+    if (isOn('inventory')) {
+      inventoryRepo.summary()
+        .then(list => setStockById(Object.fromEntries(list.filter(i => i.kind === 'pharmacy').map(i => [i.id, i.onHand]))))
+        .catch(error => console.error('Could not load stock', error));
+    }
+  }, [billType, isOn]);
+
+  const pharmacyItemNamed = (name: string) => {
+    const key = name.trim().toLowerCase();
+    return key ? pharmacyItems.find(m => m.name.trim().toLowerCase() === key) : undefined;
+  };
+
   const handleItemChange = (index: number, field: keyof Omit<BillItem, 'originalUnitPrice' | 'id' | 'total'>, value: string | number) => {
     const newItems = [...billItems];
     const item = { ...newItems[index] };
@@ -283,6 +305,15 @@ export default function BillingForm() {
         (item as any)[field] = numValue < 0 ? 0 : numValue;
     } else if (field === 'description') {
         item[field] = value as string;
+        if (billType === 'Pharmacy') {
+          // Picking a pharmacy item links it (for stock) and fills in its price.
+          const match = pharmacyItemNamed(value as string);
+          item.medicationId = match?.id;
+          if (match && (!item.unitPrice || item.unitPrice === item.originalUnitPrice)) {
+            item.unitPrice = match.listPrice;
+            item.originalUnitPrice = match.listPrice;
+          }
+        }
     }
 
     item.total = item.quantity * item.unitPrice;
@@ -406,8 +437,9 @@ export default function BillingForm() {
         patientName: `${patient.firstName} ${patient.lastName}`,
         billDate: finalBillDateString,
         billType: billType,
-        items: billItems.map(({id, description, quantity, unitPrice, originalUnitPrice, total}) => ({
-          id, description, quantity, unitPrice, originalUnitPrice, total
+        items: billItems.map(({id, description, quantity, unitPrice, originalUnitPrice, total, medicationId}) => ({
+          id, description, quantity, unitPrice, originalUnitPrice, total,
+          ...(billType === 'Pharmacy' && medicationId ? { medicationId } : {}),
         })),
         totalAmount: calculateGrandTotal(),
         paymentMethod,
@@ -426,11 +458,13 @@ export default function BillingForm() {
         }
         await billsRepo.update(currentBillId, billData, { actionType: "Bill Updated", details: auditDetails });
         toast({ title: "Success", description: `Bill ${currentBillId} updated.` });
+        // Just paid: straight to the receipt, ready to print.
+        router.push(paymentStatus === "Paid" && previousStatus !== "Paid" ? `/billing/print?billId=${currentBillId}` : '/billing');
       } else {
         const newBill = await billsRepo.create(billData, `Bill created with status ${paymentStatus}.${paymentStatus === "Paid" ? ` Marked as Paid on ${finalPaymentDateString}.` : ''}`);
         toast({ title: "Success", description: `New bill ${newBill.id} created.` });
+        router.push(paymentStatus === "Paid" ? `/billing/print?billId=${newBill.id}` : '/billing');
       }
-      router.push('/billing');
     } catch (e) {
       console.error("Failed to save bill", e);
       toast({
@@ -493,10 +527,17 @@ export default function BillingForm() {
     <div className="container mx-auto p-4 sm:p-6 lg:p-8 flex flex-col items-center">
       <Card className="w-full max-w-2xl mt-6 shadow-xl">
         <CardHeader>
-          <CardTitle className="text-2xl flex items-center">
-            <DollarSign className="mr-3 h-7 w-7 text-primary"/>
-            {isEditMode ? `Edit Bill: ${currentBillId}` : (billType === "Pharmacy" ? "Create Pharmacy Bill" : "Create Treatment Bill")}
-          </CardTitle>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <CardTitle className="text-2xl flex items-center">
+              <DollarSign className="mr-3 h-7 w-7 text-primary"/>
+              {isEditMode ? `Edit Bill: ${currentBillId}` : (billType === "Pharmacy" ? "Create Pharmacy Bill" : "Create Treatment Bill")}
+            </CardTitle>
+            {isEditMode && currentBillId && (
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/billing/print?billId=${currentBillId}`}><Printer className="mr-2 h-4 w-4" /> {paymentStatus === 'Paid' ? 'Print Receipt' : 'Print Bill'}</Link>
+              </Button>
+            )}
+          </div>
           <CardDescription>
             {isEditMode ? "Update the details for this bill." : "Fill in the details to generate a new bill."}
             {billType && !isEditMode && <span className="block text-sm text-muted-foreground mt-1">Selected Bill Type: {billType}</span>}
@@ -550,6 +591,11 @@ export default function BillingForm() {
 
           <Card className="p-4 bg-muted/50">
              <CardTitle className="text-lg mb-3">{billType === "Pharmacy" ? "Pharmacy Items" : "Services/Treatments Rendered"}</CardTitle>
+             {billType === "Pharmacy" && (
+               <datalist id="pharmacyItemNames">
+                 {pharmacyItems.map(m => <option key={m.id} value={m.name}>{`₹${Number(m.listPrice).toFixed(2)}${m.unitOfMeasure ? ` / ${m.unitOfMeasure}` : ''}`}</option>)}
+               </datalist>
+             )}
             {billItems.map((item, index) => (
               <div key={item.id} className="grid grid-cols-[1fr_1fr_1fr_auto] sm:grid-cols-[1fr_auto_auto_auto_auto] items-end gap-2 mb-3 pb-3 border-b last:border-b-0 last:mb-0 last:pb-0">
                 <div className="col-span-4 sm:col-span-1">
@@ -558,8 +604,22 @@ export default function BillingForm() {
                     id={`itemDesc-${index}`}
                     value={item.description}
                     onChange={(e) => handleItemChange(index, 'description', e.target.value)}
-                    placeholder={billType === "Pharmacy" ? "Medication Name" : "Service / Item Name"}
+                    placeholder={billType === "Pharmacy" ? "Start typing a pharmacy item" : "Service / Item Name"}
+                    list={billType === "Pharmacy" && pharmacyItems.length > 0 ? 'pharmacyItemNames' : undefined}
+                    autoComplete="off"
                   />
+                  {billType === "Pharmacy" && item.description.trim() !== '' && pharmacyItems.length > 0 && (() => {
+                    const linked = item.medicationId ? pharmacyItems.find(m => m.id === item.medicationId) : pharmacyItemNamed(item.description);
+                    if (!linked) return <p className="mt-1 text-xs text-muted-foreground">Not a pharmacy item, so stock won&apos;t change.</p>;
+                    const onHand = stockById[linked.id];
+                    if (onHand === undefined) return null;
+                    const short = onHand - item.quantity < 0;
+                    return (
+                      <p className={`mt-1 text-xs ${short ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}>
+                        In stock: {formatQty(onHand)}{linked.unitOfMeasure ? ` ${linked.unitOfMeasure}` : ''}{short ? ' (not enough)' : ''}
+                      </p>
+                    );
+                  })()}
                 </div>
                 <div>
                   <Label htmlFor={`itemQty-${index}`}>Qty *</Label>

@@ -319,7 +319,7 @@ export default function PaymentsOverviewPage() {
                             </div>
                             {payment.paymentType === "Pharmacy" && payment.purchasedMedications && payment.purchasedMedications.length > 0 && (
                                 <div className="mt-3">
-                                    <h4 className="text-sm font-semibold mb-1">Purchased Medications:</h4>
+                                    <h4 className="text-sm font-semibold mb-1">Pharmacy items purchased:</h4>
                                     <Table className="bg-background rounded-md text-xs">
                                         <TableHeader>
                                             <TableRow>

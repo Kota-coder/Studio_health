@@ -13,6 +13,8 @@ export const PAGE_ROLES = {
   patientCare: ["Super Admin", "Admin", "Doctor", "Nurse"],
   medications: ["Super Admin", "Admin", "Doctor", "Nurse"],
   materials: ["Super Admin", "Admin", "Doctor", "Nurse"],
+  // Also who may record stock entries (the database enforces the same).
+  inventory: ["Super Admin", "Admin", "Doctor", "Nurse", "Accounts"],
   vendors: ["Super Admin", "Admin", "Doctor", "Nurse"],
   staff: ["Super Admin", "Admin", "Doctor"],
   departments: ["Super Admin", "Admin"],

@@ -8,7 +8,7 @@ import { ArrowLeft, ClipboardList, FlaskConical, Pill, Printer, Stethoscope } fr
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { HospitalMark, useBranding } from '@/components/branding-provider';
+import { HospitalLetterhead } from '@/components/hospital-letterhead';
 import { useAuth } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
 import {
@@ -40,7 +40,6 @@ interface MedicationRow { name: string; dosage: string; prescribedOn: Date[]; pr
 // One-page treatment summary for a patient: key procedures, tests and medications.
 // Prints cleanly (Print / Save as PDF) to hand to the patient or another doctor.
 export default function PatientSummaryPage() {
-  const { profile: hospital } = useBranding();
   const params = useParams();
   const router = useRouter();
   const { currentUser, isLoading: authIsLoading } = useAuth();
@@ -166,18 +165,7 @@ export default function PatientSummaryPage() {
         <Button onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" /> Print / Save as PDF</Button>
       </div>
 
-      {/* Letterhead: the hospital's logo, name and contact details. */}
-      <div className="flex items-start gap-3 border-b-2 border-primary pb-3">
-        <HospitalMark className="h-14 w-14" />
-        <div className="min-w-0">
-          <p className="text-xl font-bold leading-tight">{hospital.name}</p>
-          {hospital.tagline && <p className="text-sm text-muted-foreground">{hospital.tagline}</p>}
-          <p className="text-xs text-muted-foreground">
-            {[hospital.address, hospital.phone && `Phone ${hospital.phone}`, hospital.email, hospital.website].filter(Boolean).join(' · ')}
-          </p>
-          {hospital.registrationNumber && <p className="text-xs text-muted-foreground">Registration no. {hospital.registrationNumber}</p>}
-        </div>
-      </div>
+      <HospitalLetterhead />
 
       <header className="flex items-start justify-between gap-4 border-b pb-4">
         <div>

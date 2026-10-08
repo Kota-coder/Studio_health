@@ -110,7 +110,8 @@ create table if not exists public.medications (
   list_price           numeric(12, 2) default 0,
   quantity_in_package  numeric(12, 2),
   unit_of_measure      text default '',
-  additional_notes     text default ''
+  additional_notes     text default '',
+  reorder_level        numeric(12, 2)  -- warn when stock falls to this (null: no warning)
 );
 
 create sequence if not exists public.materials_seq;
@@ -121,7 +122,8 @@ create table if not exists public.materials (
   unit_of_measure                     text default '',
   list_price                          numeric(12, 2),
   associated_treatment_template_name  text default '',
-  notes                               text default ''
+  notes                               text default '',
+  reorder_level                       numeric(12, 2)
 );
 
 create sequence if not exists public.vendors_seq;
@@ -352,6 +354,31 @@ create table if not exists public.payment_transactions (
 );
 
 -- -----------------------------------------------------------------------------
+-- Inventory: every change to pharmacy and material stock, one row each
+-- -----------------------------------------------------------------------------
+-- Rows from bills and payments (source_type 'bill' / 'payment') are kept in step with them
+-- by triggers: a pharmacy bill takes stock out, a Pharmacy or Material purchase payment
+-- puts it in, and editing, cancelling or deleting them corrects the stock. Rows without a
+-- source are entered on the Inventory page (opening stock, received, used, expired, counts).
+-- Quantities are in the item's own unit (the unit its price is for); out is negative.
+
+create table if not exists public.stock_movements (
+  id                      bigint generated always as identity primary key,
+  medication_id           text references public.medications (id) on delete cascade,
+  material_id             text references public.materials (id) on delete cascade,
+  quantity                numeric(12, 2) not null,
+  unit_cost               numeric(12, 2),       -- purchase price per unit, for stock coming in
+  reason                  text not null,
+  source_type             text,
+  source_id               text,
+  moved_on                date not null default ((now() at time zone 'Asia/Kolkata')::date),
+  note                    text,
+  recorded_by_staff_id    bigint references public.staff (id) on delete set null,
+  recorded_by_staff_name  text,
+  created_at              timestamptz not null default now()
+);
+
+-- -----------------------------------------------------------------------------
 -- Duty roster and attendance
 -- -----------------------------------------------------------------------------
 
@@ -482,6 +509,10 @@ update public.bills b
 -- Replaced by financial_summary(text, date, date) below.
 drop function if exists public.financial_summary(text);
 
+-- Inventory: reorder levels.
+alter table public.medications add column if not exists reorder_level numeric(12, 2);
+alter table public.materials   add column if not exists reorder_level numeric(12, 2);
+
 -- -----------------------------------------------------------------------------
 -- Constraints (named, so they can be re-applied)
 -- -----------------------------------------------------------------------------
@@ -495,6 +526,21 @@ alter table public.patients add constraint patients_referral_fee_status_check
 alter table public.referring_doctors drop constraint if exists referring_doctors_default_referral_percent_check;
 alter table public.referring_doctors add constraint referring_doctors_default_referral_percent_check
   check (default_referral_percent is null or (default_referral_percent >= 0 and default_referral_percent <= 100));
+alter table public.stock_movements drop constraint if exists stock_movements_item_check;
+alter table public.stock_movements add constraint stock_movements_item_check
+  check ((medication_id is null) <> (material_id is null));
+alter table public.stock_movements drop constraint if exists stock_movements_reason_check;
+alter table public.stock_movements add constraint stock_movements_reason_check
+  check (reason in ('purchase', 'received', 'opening', 'dispensed', 'used', 'expired', 'adjustment'));
+alter table public.stock_movements drop constraint if exists stock_movements_source_check;
+alter table public.stock_movements add constraint stock_movements_source_check
+  check (source_type is null or (source_type in ('bill', 'payment') and source_id is not null));
+alter table public.stock_movements drop constraint if exists stock_movements_quantity_check;
+alter table public.stock_movements add constraint stock_movements_quantity_check check (quantity <> 0);
+alter table public.medications drop constraint if exists medications_reorder_level_check;
+alter table public.medications add constraint medications_reorder_level_check check (reorder_level is null or reorder_level >= 0);
+alter table public.materials drop constraint if exists materials_reorder_level_check;
+alter table public.materials add constraint materials_reorder_level_check check (reorder_level is null or reorder_level >= 0);
 
 -- -----------------------------------------------------------------------------
 -- Indexes: foreign keys used in lookups and joins, and the filters the screens use
@@ -524,6 +570,9 @@ create index if not exists staff_attendance_clock_in_idx on public.staff_attenda
 create unique index if not exists staff_attendance_one_open_idx on public.staff_attendance (staff_id) where clock_out is null;
 create index if not exists audit_log_entity_idx on public.audit_log (entity_type, entity_id);
 create index if not exists payment_transactions_bill_idx on public.payment_transactions (bill_id);
+create index if not exists stock_movements_medication_idx on public.stock_movements (medication_id, created_at desc) where medication_id is not null;
+create index if not exists stock_movements_material_idx on public.stock_movements (material_id, created_at desc) where material_id is not null;
+create index if not exists stock_movements_source_idx on public.stock_movements (source_type, source_id) where source_type is not null;
 
 -- -----------------------------------------------------------------------------
 -- Triggers
@@ -687,6 +736,114 @@ drop trigger if exists hospital_profile_touch on public.hospital_profile;
 create trigger hospital_profile_touch before update on public.hospital_profile
   for each row execute function public.touch_hospital_profile();
 
+-- Inventory: pharmacy bills take stock out. A bill item counts against a pharmacy item
+-- when it carries that item's id, or (older bills, typed names) has exactly its name.
+-- Cancelled bills take nothing. Re-run whenever the bill's items, type, status or date change.
+create or replace function public.sync_bill_stock() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'UPDATE' and current_setting('seva.stock_resync', true) is distinct from 'on'
+     and old.items is not distinct from new.items
+     and old.bill_type is not distinct from new.bill_type
+     and (old.payment_status = 'Cancelled') is not distinct from (new.payment_status = 'Cancelled')
+     and old.billed_on is not distinct from new.billed_on
+     and old.patient_name is not distinct from new.patient_name then
+    return new;
+  end if;
+  if tg_op in ('UPDATE', 'DELETE') then
+    delete from public.stock_movements where source_type = 'bill' and source_id = old.id;
+  end if;
+  if tg_op in ('INSERT', 'UPDATE') and new.bill_type = 'Pharmacy' and coalesce(new.payment_status, '') <> 'Cancelled' then
+    insert into public.stock_movements
+      (medication_id, quantity, reason, source_type, source_id, moved_on, note, recorded_by_staff_id, recorded_by_staff_name)
+    select med.id, -sum(line.qty), 'dispensed', 'bill', new.id, new.billed_on,
+           'Bill ' || new.id || ' · ' || new.patient_name, new.processed_by_staff_id, new.processed_by_staff_name
+    from jsonb_array_elements(case when jsonb_typeof(new.items) = 'array' then new.items else '[]'::jsonb end) item
+    cross join lateral (select case when item->>'quantity' ~ '^\s*-?[0-9]+(\.[0-9]+)?\s*$'
+                                    then (item->>'quantity')::numeric else 0 end as qty) line
+    join lateral (
+      select m.id from public.medications m
+      where m.id = item->>'medicationId' or lower(trim(m.name)) = lower(trim(item->>'description'))
+      order by (m.id = item->>'medicationId') desc nulls last, m.id
+      limit 1
+    ) med on true
+    group by med.id
+    having sum(line.qty) <> 0;
+  end if;
+  return coalesce(new, old);
+end
+$$;
+drop trigger if exists bills_sync_stock on public.bills;
+create trigger bills_sync_stock after insert or update or delete on public.bills
+  for each row execute function public.sync_bill_stock();
+
+-- Inventory: Pharmacy and Material purchase payments put stock in, at the price paid.
+create or replace function public.sync_payment_stock() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'UPDATE' and current_setting('seva.stock_resync', true) is distinct from 'on'
+     and old.purchased_medications is not distinct from new.purchased_medications
+     and old.purchased_materials is not distinct from new.purchased_materials
+     and old.payment_type is not distinct from new.payment_type
+     and old.paid_on is not distinct from new.paid_on
+     and old.payee_name is not distinct from new.payee_name then
+    return new;
+  end if;
+  if tg_op in ('UPDATE', 'DELETE') then
+    delete from public.stock_movements where source_type = 'payment' and source_id = old.id;
+  end if;
+  if tg_op in ('INSERT', 'UPDATE') then
+    insert into public.stock_movements
+      (medication_id, material_id, quantity, unit_cost, reason, source_type, source_id, moved_on, note,
+       recorded_by_staff_id, recorded_by_staff_name)
+    select case when line.kind = 'medication' then line.item_id end,
+           case when line.kind = 'material' then line.item_id end,
+           line.qty, line.cost, 'purchase', 'payment', new.id, new.paid_on,
+           'Payment ' || new.id || coalesce(' · ' || nullif(new.payee_name, ''), ''),
+           new.recorded_by_staff_id, new.recorded_by_staff_name
+    from (
+      select 'medication' as kind, item->>'medicationId' as item_id, item
+      from jsonb_array_elements(case when new.payment_type = 'Pharmacy' and jsonb_typeof(new.purchased_medications) = 'array'
+                                     then new.purchased_medications else '[]'::jsonb end) item
+      union all
+      select 'material', item->>'materialId', item
+      from jsonb_array_elements(case when new.payment_type = 'Material' and jsonb_typeof(new.purchased_materials) = 'array'
+                                     then new.purchased_materials else '[]'::jsonb end) item
+    ) raw
+    cross join lateral (
+      select raw.kind, raw.item_id,
+             case when raw.item->>'quantityPurchased' ~ '^\s*[0-9]+(\.[0-9]+)?\s*$'
+                  then (raw.item->>'quantityPurchased')::numeric else 0 end as qty,
+             coalesce(case when raw.item->>'unitPriceAtPurchase' ~ '^\s*[0-9]+(\.[0-9]+)?\s*$' then (raw.item->>'unitPriceAtPurchase')::numeric end,
+                      case when raw.item->>'listPriceSnapshot' ~ '^\s*[0-9]+(\.[0-9]+)?\s*$' then (raw.item->>'listPriceSnapshot')::numeric end) as cost
+    ) line
+    where line.qty > 0
+      and ((line.kind = 'medication' and exists (select 1 from public.medications m where m.id = line.item_id))
+        or (line.kind = 'material' and exists (select 1 from public.materials m where m.id = line.item_id)));
+  end if;
+  return coalesce(new, old);
+end
+$$;
+drop trigger if exists payments_sync_stock on public.payments;
+create trigger payments_sync_stock after insert or update or delete on public.payments
+  for each row execute function public.sync_payment_stock();
+
+-- Entries made on the Inventory page are recorded as the person making them.
+create or replace function public.stamp_stock_movement() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.source_type is null and auth.role() is distinct from 'service_role' then
+    new.recorded_by_staff_id := public.current_staff_id();
+    new.recorded_by_staff_name := (select name from public.staff where id = new.recorded_by_staff_id);
+    new.unit_cost := case when new.quantity > 0 then new.unit_cost end;
+  end if;
+  return new;
+end
+$$;
+drop trigger if exists stock_movements_stamp on public.stock_movements;
+create trigger stock_movements_stamp before insert on public.stock_movements
+  for each row execute function public.stamp_stock_movement();
+
 -- -----------------------------------------------------------------------------
 -- Functions the app calls
 -- -----------------------------------------------------------------------------
@@ -830,12 +987,57 @@ language sql stable security invoker set search_path = public as $$
   )
 $$;
 
+-- Inventory page: every pharmacy item and material with its stock on hand (all time), its
+-- average purchase cost, and what came in and went out in the period (null dates: all time).
+-- Items never bought at a recorded price are valued at their list price (costFromList).
+create or replace function public.inventory_summary(from_date date default null, to_date date default null)
+returns jsonb
+language sql stable security invoker set search_path = public as $$
+  with items as (
+    select 'pharmacy' as kind, id, name, coalesce(unit_of_measure, '') as unit, coalesce(treatment, '') as category,
+           list_price, reorder_level
+    from public.medications
+    union all
+    select 'material', id, name, coalesce(unit_of_measure, ''), coalesce(category, ''), list_price, reorder_level
+    from public.materials
+  ), totals as (
+    select coalesce(medication_id, material_id) as item_id,
+           sum(quantity) as on_hand,
+           sum(quantity * unit_cost) filter (where quantity > 0 and unit_cost is not null)
+             / nullif(sum(quantity) filter (where quantity > 0 and unit_cost is not null), 0) as avg_cost,
+           sum(quantity) filter (where quantity > 0 and (from_date is null or moved_on >= from_date)
+                                   and (to_date is null or moved_on <= to_date)) as qty_in,
+           -sum(quantity) filter (where quantity < 0 and (from_date is null or moved_on >= from_date)
+                                    and (to_date is null or moved_on <= to_date)) as qty_out,
+           -sum(quantity) filter (where reason = 'expired' and (from_date is null or moved_on >= from_date)
+                                    and (to_date is null or moved_on <= to_date)) as qty_expired,
+           max(moved_on) as last_moved
+    from public.stock_movements
+    group by 1
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'kind', i.kind, 'id', i.id, 'name', i.name, 'unit', i.unit, 'category', i.category,
+           'reorderLevel', i.reorder_level,
+           'onHand', coalesce(t.on_hand, 0),
+           'unitCost', round(coalesce(t.avg_cost, i.list_price, 0), 2),
+           'costFromList', t.avg_cost is null,
+           'qtyIn', coalesce(t.qty_in, 0),
+           'qtyOut', coalesce(t.qty_out, 0),
+           'qtyExpired', coalesce(t.qty_expired, 0),
+           'lastMoved', t.last_moved
+         ) order by i.kind, lower(i.name)), '[]'::jsonb)
+  from items i
+  left join totals t on t.item_id = i.id
+$$;
+
 revoke all on function public.clock_in(text) from public;
 revoke all on function public.clock_out(text) from public;
 revoke all on function public.financial_summary(text, date, date) from public;
 grant execute on function public.clock_in(text) to authenticated;
 grant execute on function public.clock_out(text) to authenticated;
 grant execute on function public.financial_summary(text, date, date) to authenticated;
+revoke all on function public.inventory_summary(date, date) from public;
+grant execute on function public.inventory_summary(date, date) to authenticated;
 
 -- -----------------------------------------------------------------------------
 -- Row level security
@@ -848,7 +1050,7 @@ begin
     'staff', 'referring_doctors', 'medical_test_catalog', 'medications', 'materials', 'vendors',
     'treatment_templates', 'payment_methods', 'hospital_profile', 'departments', 'department_staff',
     'patients', 'care_notes', 'patient_tests', 'bills', 'payments', 'staff_shifts', 'staff_attendance', 'audit_log',
-    'payment_transactions'
+    'payment_transactions', 'stock_movements'
   ] loop
     execute format('alter table public.%I enable row level security', t);
   end loop;
@@ -977,6 +1179,22 @@ drop policy if exists payment_transactions_select on public.payment_transactions
 create policy payment_transactions_select on public.payment_transactions for select to authenticated
   using ((select public.is_active_staff()));
 
+-- Inventory: everyone reads stock; the roles that run the pharmacy and stores add entries
+-- (PAGE_ROLES.inventory in src/config/permissions.ts). Bill and payment rows are written by
+-- their triggers only. Entries are never edited; Super Admin and Admin may delete a mistaken
+-- manual entry (or record a correcting one).
+drop policy if exists stock_movements_select on public.stock_movements;
+drop policy if exists stock_movements_insert on public.stock_movements;
+drop policy if exists stock_movements_delete on public.stock_movements;
+create policy stock_movements_select on public.stock_movements for select to authenticated
+  using ((select public.is_active_staff()));
+create policy stock_movements_insert on public.stock_movements for insert to authenticated
+  with check (source_type is null
+              and reason in ('received', 'opening', 'used', 'expired', 'adjustment')
+              and (select public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Accounts'])));
+create policy stock_movements_delete on public.stock_movements for delete to authenticated
+  using (source_type is null and (select public.has_role(array['Super Admin', 'Admin'])));
+
 -- -----------------------------------------------------------------------------
 -- File storage
 -- -----------------------------------------------------------------------------
@@ -1038,6 +1256,19 @@ select method, 'Both', 95 from (
 ) used
 where method <> ''
 on conflict (name) do nothing;
+
+-- Inventory: the first time this runs, build the stock entries for the pharmacy bills and
+-- purchase payments recorded before inventory existed.
+do $$
+begin
+  if not exists (select 1 from public.stock_movements where source_type is not null) then
+    perform set_config('seva.stock_resync', 'on', true);
+    update public.bills set items = items where bill_type = 'Pharmacy';
+    update public.payments set payment_type = payment_type where payment_type in ('Pharmacy', 'Material');
+    perform set_config('seva.stock_resync', '', true);
+  end if;
+end
+$$;
 
 -- Tell the API to pick up the changes straight away.
 notify pgrst, 'reload schema';
