@@ -145,7 +145,7 @@ export function RecordStockDialog({ item, open, onOpenChange, onSaved }: {
           <div className="rounded-md border p-3">
             <Label htmlFor="stockReorder">Refill when stock falls to{unit && ` (${item.unit})`}</Label>
             <Input id="stockReorder" type="number" inputMode="decimal" min={0} step="any" value={reorderLevel} onChange={e => setReorderLevel(e.target.value)} placeholder="No warning" className="mt-1" />
-            <p className="mt-1 text-xs text-muted-foreground">The item is listed under &quot;Needs refill&quot; at or below this level.</p>
+            <p className="mt-1 text-xs text-muted-foreground">The item is listed under &quot;Needs refill&quot; at or below this level, and also whenever less than two weeks&apos; supply is left at the last 30 days&apos; use.</p>
           </div>
         </div>
         <DialogFooter className="gap-2">

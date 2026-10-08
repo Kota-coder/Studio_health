@@ -131,7 +131,7 @@ export default function PatientDetailPage() {
         <div className="min-w-0 space-y-6 lg:col-span-2">
           <PatientDetailsCard patient={patient} referredBy={referredBy} />
           <CareNotesSection patient={patient} onSaved={reloadPatient} onBilled={reloadBills} />
-          <TestsSection patient={patient} staff={staff} onSaved={reloadPatient} onBilled={reloadBills} />
+          <TestsSection patient={patient} staff={staff} bills={bills} onSaved={reloadPatient} onBilled={reloadBills} />
           <AuditTrail patientId={patient.id} />
         </div>
         <div className="min-w-0 space-y-6">

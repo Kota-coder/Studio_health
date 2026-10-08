@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from '@/components/app-link';
-import { ClipboardCheck, Hand, Microscope, Undo2 } from 'lucide-react';
+import { ClipboardCheck, Hand, IndianRupee, Microscope, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,9 @@ import { useStaff } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { testRequests } from '@/lib/data';
 import { cachedAt, invalidate } from '@/lib/data/cache';
-import { patientDisplayId } from '@/lib/format';
+import { canOpen } from '@/config/permissions';
+import { useFeatures } from '@/hooks/use-features';
+import { formatINR, patientDisplayId } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { TestRequest } from '@/types/testRequest';
 
@@ -29,6 +31,8 @@ export default function LabPage() {
   const { toast } = useToast();
   const currentUser = useStaff();
   const isTechnician = currentUser.role === 'Lab Technician';
+  const { isOn } = useFeatures();
+  const canBill = isOn('billing') && canOpen('billing', currentUser.role);
 
   const [open, setOpen] = useState<TestRequest[] | null>(null);
   const [done, setDone] = useState<TestRequest[] | null>(null);
@@ -152,7 +156,17 @@ export default function LabPage() {
                       {view === 'done' && request.completedAt && (
                         <p className="text-xs text-muted-foreground">{t('Done {time} by {name}', { time: date(request.completedAt, 'd MMM, HH:mm'), name: request.assignedToStaffName ?? '—' })}</p>
                       )}
+                      {view === 'done' && request.bill && (
+                        <p className={cn('text-xs font-medium', request.bill.status === 'Paid' ? 'text-green-700 dark:text-green-400' : 'text-amber-700 dark:text-amber-400')}>
+                          {t('Bill {id}', { id: request.bill.id })} · {formatINR(request.bill.amount)} · {t(request.bill.status)}
+                        </p>
+                      )}
                     </div>
+                    {view === 'done' && canBill && request.bill && request.bill.status !== 'Paid' && request.bill.status !== 'Cancelled' && (
+                      <Button size="sm" asChild className="shrink-0">
+                        <Link href={`/billing/form?billId=${request.bill.id}`}><IndianRupee className="mr-2 h-4 w-4" /> {t('Collect payment')}</Link>
+                      </Button>
+                    )}
                     {view !== 'done' && (
                       <div className="flex shrink-0 flex-wrap gap-2">
                         {(!request.assignedToStaffId || (mine && request.status === 'Requested')) && (

@@ -11,8 +11,9 @@ import { useT } from '@/components/language-provider';
 import { AttachmentPicker } from '@/components/patient/attachment-picker';
 import { TEST_DEFINITIONS } from '@/config/testTypes';
 import { useStaff } from '@/context/AuthContext';
+import { useFeatures } from '@/hooks/use-features';
 import { useToast } from '@/hooks/use-toast';
-import { patients as patientsRepo, testRequests } from '@/lib/data';
+import { bills as billsRepo, patients as patientsRepo, testRequests } from '@/lib/data';
 import { formatINR, toDMY } from '@/lib/format';
 import { uploadNewImages } from '@/lib/storage';
 import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
@@ -28,7 +29,8 @@ export function testDefinitionFor(testTypeId: string, testName?: string) {
 }
 
 // A new test result: type from the test catalog, its result fields, date, who did it, images.
-// For a lab request, the test is fixed and saving marks the request done.
+// For a lab request, the test is fixed and saving marks the request done and, with Billing
+// on, bills the test at its catalog price (Unpaid, for payment to be collected).
 export function TestForm({ patient, catalog, staff, request, onSaved, onCancel }: {
   patient: Patient;
   catalog: MedicalTestCatalogItem[] | null;
@@ -40,6 +42,7 @@ export function TestForm({ patient, catalog, staff, request, onSaved, onCancel }
   const t = useT();
   const { toast } = useToast();
   const currentUser = useStaff();
+  const { isOn } = useFeatures();
   const [testTypeId, setTestTypeId] = useState(request?.testTypeId ?? '');
   const [fields, setFields] = useState<TestFieldData>({});
   const [testDate, setTestDate] = useState(() => toDMY(new Date())); // usually logged the day it's done
@@ -82,9 +85,17 @@ export function TestForm({ patient, catalog, staff, request, onSaved, onCancel }
         performedByStaffName: by.name,
         attachments: await uploadNewImages(attachments, `patients/${patient.id}/tests`),
       });
-      if (request) await testRequests.complete(request.id, saved.id, by.id);
+      let billNote: string | undefined;
+      if (request) {
+        await testRequests.complete(request.id, saved.id, by.id);
+        const price = catalog?.find(test => test.id === testTypeId)?.defaultPrice ?? 0;
+        if (isOn('billing') && price > 0) {
+          const bill = await billsRepo.createForTest(patient, saved, price);
+          billNote = `Bill ${bill.id} for ${formatINR(price)} is waiting for payment.`;
+        }
+      }
       await onSaved();
-      toast({ title: 'Test added' });
+      toast({ title: request ? t('Result recorded') : 'Test added', description: billNote });
     } catch (e) {
       console.error('Failed to save test:', e);
       toast({ title: 'Could not save the test', description: e instanceof Error ? e.message : undefined, variant: 'destructive' });
