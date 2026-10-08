@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { SevaLogo } from '@/components/seva-logo';
 import { brandingUrls, displayName, hexToHslTriplet, initialsFor, isSevaDefault, monogramSvg, type HospitalProfile } from '@/lib/branding';
 import { hospitalProfile as profileRepo } from '@/lib/data';
@@ -51,6 +51,19 @@ export function useBranding(): BrandingContextValue {
 
 const SAFE_COLOR = /^#[0-9a-fA-F]{6}$/;
 
+// The 96 px logo copy (~4 KB instead of ~20 KB). Logos saved before that copy existed fall back
+// to logo.png, also when the small one failed before this code was running (checked on mount).
+function LogoImage({ small, full, className }: { small: string; full: string; className: string }) {
+  const ref = useRef<HTMLImageElement>(null);
+  const showFull = (img: HTMLImageElement | null) => { if (img && !img.src.endsWith('/logo.png')) img.src = full; };
+  useEffect(() => {
+    const img = ref.current;
+    if (img?.complete && img.naturalWidth === 0) showFull(img);
+  });
+  // eslint-disable-next-line @next/next/no-img-element -- small public PNG from Supabase Storage
+  return <img ref={ref} src={small} alt="" className={className} onError={e => showFull(e.currentTarget)} />;
+}
+
 // The hospital's logo: the uploaded image, or a monogram from its initials until one is
 // uploaded, or the Seva logo before the hospital profile has been set up.
 export function HospitalMark({ className, profile: override }: { className?: string; profile?: HospitalProfile }) {
@@ -58,8 +71,7 @@ export function HospitalMark({ className, profile: override }: { className?: str
   const profile = override ?? current;
   const urls = brandingUrls(profile);
   if (urls) {
-    // eslint-disable-next-line @next/next/no-img-element -- small public PNG from Supabase Storage
-    return <img src={urls.logo} alt="" className={cn('h-6 w-6 shrink-0 object-contain', className)} />;
+    return <LogoImage small={urls.logoSmall} full={urls.logo} className={cn('h-6 w-6 shrink-0 object-contain', className)} />;
   }
   if (isSevaDefault(profile)) return <SevaLogo className={className} />;
   const color = SAFE_COLOR.test(profile.brandColor) ? profile.brandColor : '#2563eb';

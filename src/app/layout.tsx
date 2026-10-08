@@ -1,9 +1,8 @@
 
 import type {Metadata, Viewport} from 'next';
-import {Noto_Sans_Telugu} from 'next/font/google';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
-import Link from 'next/link';
+import Link from '@/components/app-link';
 import { Suspense } from 'react';
 import { ServiceWorkerRegistration } from '@/components/service-worker-registration';
 import { BrandingProvider, HospitalMark, HospitalName } from '@/components/branding-provider';
@@ -15,20 +14,11 @@ import { AppMenu } from '@/components/app-menu';
 import { LanguageProvider } from '@/components/language-provider';
 import { LanguageToggle } from '@/components/language-toggle';
 
-// Telugu letters (the rest of the app uses the device's own font). Not preloaded: the
-// browser only downloads it when Telugu text is on screen.
-const teluguFont = Noto_Sans_Telugu({
-  variable: '--font-telugu',
-  subsets: ['telugu'],
-  weight: ['400', '600', '700'],
-  display: 'swap',
-  preload: false,
-});
-
-// Pages are built once and served from the CDN, rebuilt at most every 5 minutes or as soon
-// as the Super Admin saves the hospital profile (see lib/hospital-profile.server.ts). The
-// browser also checks the profile once per tab (BrandingProvider), so nobody sees an old logo.
-export const revalidate = 300;
+// Pages are built once and served from the CDN. They are rebuilt as soon as the Super Admin
+// saves the hospital profile (see /api/hospital-profile), and otherwise once a day as a safety
+// net. The browser also checks the profile once per tab (BrandingProvider), so nobody sees an
+// old logo even if it was changed directly in the database.
+export const revalidate = 86400;
 
 // Title, icons and colours come from this hospital's profile (Organization Setup →
 // Hospital Profile); before it is set up they are Seva's.
@@ -72,7 +62,7 @@ export default async function RootLayout({
       <head>
         <style dangerouslySetInnerHTML={{ __html: themeCss }} />
       </head>
-      <body className={`${teluguFont.variable} antialiased flex flex-col min-h-screen`}>
+      <body className="antialiased flex flex-col min-h-screen">
         <BrandingProvider initialProfile={profile}>
         <LanguageProvider>
         <AuthProvider>

@@ -560,6 +560,8 @@ create index if not exists department_staff_staff_id_idx on public.department_st
 create index if not exists patients_department_id_idx on public.patients (department_id);
 create index if not exists patients_attending_doctor_id_idx on public.patients (attending_doctor_id);
 create index if not exists patients_referred_doctor_id_idx on public.patients (referred_doctor_id);
+-- Dashboard: patients in care, and those discharged recently.
+create index if not exists patients_condition_updated_idx on public.patients (condition, updated_at);
 create index if not exists patients_doctor_fee_payment_idx on public.patients (doctor_fee_payment_id) where doctor_fee_payment_id is not null;
 create index if not exists patients_referral_fee_payment_idx on public.patients (referral_fee_payment_id) where referral_fee_payment_id is not null;
 create index if not exists bills_patient_id_idx on public.bills (patient_id);

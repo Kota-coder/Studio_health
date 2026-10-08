@@ -3,7 +3,8 @@
 @tailwind utilities;
 
 body {
-  font-family: Arial, Helvetica, var(--font-telugu), 'Noto Sans Telugu', 'Nirmala UI', Gautami, sans-serif;
+  /* The device's own fonts, Telugu included (Android, iPhone/Mac, Windows), so nothing is downloaded. */
+  font-family: Arial, Helvetica, 'Noto Sans Telugu', 'Kohinoor Telugu', 'Telugu Sangam MN', 'Nirmala UI', Gautami, sans-serif;
 }
 
 @layer base {

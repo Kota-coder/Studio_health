@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
+import Link from '@/components/app-link';
 import { useParams, useRouter } from 'next/navigation';
 import { ClipboardList, FileText, UserRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -132,7 +132,7 @@ export default function PatientDetailPage() {
           <PatientDetailsCard patient={patient} referredBy={referredBy} />
           <CareNotesSection patient={patient} onSaved={reloadPatient} onBilled={reloadBills} />
           <TestsSection patient={patient} staff={staff} onSaved={reloadPatient} onBilled={reloadBills} />
-          <AuditTrail entries={patient.auditLog} />
+          <AuditTrail patientId={patient.id} />
         </div>
         <div className="min-w-0 space-y-6">
           {(isOn('departments') || (isOn('referralFees') && !!patient.referredDoctorId)) && (

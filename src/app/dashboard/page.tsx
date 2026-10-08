@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import Link from '@/components/app-link';
 import { Activity, AlertTriangle, Building2, CheckCircle2, ClipboardList, HelpCircle, LayoutDashboard, ShieldCheck, UserPlus, Users as UsersIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,7 +18,7 @@ import { useStaff } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
 import { useToast } from '@/hooks/use-toast';
 import { isSevaDefault } from '@/lib/branding';
-import { bills as billsRepo, departments as departmentsRepo, homeSummary, patients as patientsRepo, staff as staffRepo, type HomeSummary } from '@/lib/data';
+import { DISCHARGED_DAYS, bills as billsRepo, departments as departmentsRepo, homeSummary, patients as patientsRepo, staff as staffRepo, type HomeSummary } from '@/lib/data';
 import { cachedAt, invalidate } from '@/lib/data/cache';
 import { formatDate, formatINR, patientDisplayId } from '@/lib/format';
 import type { Department } from '@/types/department';
@@ -74,6 +74,9 @@ export default function DashboardPage() {
   const [filterCondition, setFilterCondition] = useState<PatientCondition | "All">("All");
   const [filterDepartment, setFilterDepartment] = useState("All");
   const [filterChosen, setFilterChosen] = useState(false);
+  // Patients discharged more than DISCHARGED_DAYS ago: loaded on request, or found by name.
+  const [olderDischarged, setOlderDischarged] = useState<Patient[] | null>(null);
+  const [olderMatches, setOlderMatches] = useState<Patient[]>([]);
 
   // Patients, staff and departments come from a short-lived cache (see lib/data/cache.ts);
   // Refresh fetches them again.
@@ -115,6 +118,20 @@ export default function DashboardPage() {
     loadDashboard(true).finally(() => setIsRefreshing(false));
   };
 
+  useEffect(() => {
+    const term = searchTerm.trim();
+    if (olderDischarged || term.length < 2) { setOlderMatches([]); return; }
+    const timer = setTimeout(() => {
+      patientsRepo.listOlderDischarged(term).then(setOlderMatches).catch(() => setOlderMatches([]));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchTerm, olderDischarged]);
+
+  const showOlderDischarged = () => {
+    patientsRepo.listOlderDischarged().then(setOlderDischarged)
+      .catch(() => toast({ title: 'Could not load discharged patients', variant: 'destructive' }));
+  };
+
   const groupedPatients = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
     const matches = (patient: Patient) => {
@@ -127,11 +144,13 @@ export default function DashboardPage() {
       return filterDepartment === "All" || String(patient.departmentId) === filterDepartment;
     };
     const grouped: Record<PatientCondition, Patient[]> = { Critical: [], Medium: [], Low: [], Discharged: [], Unassigned: [] };
-    for (const patient of allPatients.filter(matches)) {
+    const loaded = new Set(allPatients.map(p => p.id));
+    const extra = (olderDischarged ?? olderMatches).filter(p => !loaded.has(p.id));
+    for (const patient of [...allPatients, ...extra].filter(matches)) {
       (grouped[patient.condition || "Unassigned"] ?? grouped.Unassigned).push(patient);
     }
     return grouped;
-  }, [allPatients, searchTerm, filterCondition, filterDepartment, currentUser]);
+  }, [allPatients, olderDischarged, olderMatches, searchTerm, filterCondition, filterDepartment, currentUser]);
 
   const changeCondition = useCallback(async (patientId: number, newCondition: PatientCondition) => {
     const patient = allPatients.find(p => p.id === patientId);
@@ -156,7 +175,7 @@ export default function DashboardPage() {
       return;
     }
     try {
-      const unpaid = (await billsRepo.list({ patientId })).filter(bill => bill.paymentStatus === "Unpaid" || bill.paymentStatus === "Partially Paid");
+      const unpaid = (await billsRepo.list({ patientId, brief: true })).filter(bill => bill.paymentStatus === "Unpaid" || bill.paymentStatus === "Partially Paid");
       if (unpaid.length === 0) {
         changeCondition(patientId, newCondition);
         return;
@@ -250,7 +269,8 @@ export default function DashboardPage() {
               {CONDITION_ORDER.map(level => {
                 const config = CONDITION_CONFIG[level];
                 const group = groupedPatients[level];
-                if (group.length === 0) return null;
+                const moreDischarged = level === 'Discharged' && !olderDischarged && (filterCondition === 'All' || filterCondition === 'Discharged');
+                if (group.length === 0 && !moreDischarged) return null;
                 return (
                   <section key={level}>
                     <h2 className="mb-4 flex items-center text-xl font-semibold text-foreground sm:text-2xl">
@@ -301,6 +321,11 @@ export default function DashboardPage() {
                         );
                       })}
                     </div>
+                    {moreDischarged && (
+                      <Button variant="outline" className="mt-4" onClick={showOlderDischarged}>
+                        {t('Show patients discharged more than {days} days ago', { days: DISCHARGED_DAYS })}
+                      </Button>
+                    )}
                   </section>
                 );
               })}

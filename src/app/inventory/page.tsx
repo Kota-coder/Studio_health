@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
-import Link from 'next/link';
+import Link from '@/components/app-link';
 import { format } from 'date-fns';
 import { AlertTriangle, Boxes, Download, History, PackagePlus, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';

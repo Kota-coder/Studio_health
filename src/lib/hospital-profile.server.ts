@@ -5,10 +5,10 @@ import { DEFAULT_PROFILE, type HospitalProfile } from '@/lib/branding';
 export const HOSPITAL_PROFILE_TAG = 'hospital-profile';
 
 // The hospital's branding for server-rendered parts (page title, icons, manifest, colours).
-// Cached on the server for 5 minutes, and cleared straight away when the Super Admin saves the
+// Cached on the server for a day, and cleared straight away when the Super Admin saves the
 // profile (see /api/hospital-profile), so page loads don't each query the database.
 export const getHospitalProfile = unstable_cache(loadHospitalProfile, [HOSPITAL_PROFILE_TAG], {
-  revalidate: 300,
+  revalidate: 86400,
   tags: [HOSPITAL_PROFILE_TAG],
 });
 

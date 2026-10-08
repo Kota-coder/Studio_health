@@ -50,4 +50,5 @@ export const PATIENTS: Record<string, string> = {
   'Key Procedures & Tests': 'ముఖ్య చికిత్సలు & పరీక్షలు',
   'Medications': 'మందులు',
   'Recent Care Notes': 'ఇటీవలి సంరక్షణ నోట్స్',
+  'Show patients discharged more than {days} days ago': '{days} రోజుల కంటే ముందు డిశ్చార్జ్ అయిన రోగులను చూపించండి',
 };

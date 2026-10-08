@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import Link from '@/components/app-link';
 import { Download, Eye, PlusCircle, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -94,14 +94,14 @@ export default function PaymentsPage() {
     return () => { live = false; };
   }, [toast, t, dateFilter, filterMethod, filterType, filterProcessedBy]);
 
-  // Patient names for fee payments: loaded once, only when a listed payment covers patients.
-  const needsNames = useMemo(() => payments?.some(p => p.associatedPatientIds?.length) ?? false, [payments]);
+  // Names of the patients the listed fee payments cover (only those patients).
+  const coveredIds = useMemo(() => (payments ?? []).flatMap(p => p.associatedPatientIds ?? []).sort((a, b) => a - b).join(','), [payments]);
   useEffect(() => {
-    if (!needsNames || patientNames) return;
-    patientsRepo.listNames()
-      .then(list => setPatientNames(new Map(list.map(p => [p.id, `${p.firstName} ${p.lastName}`]))))
+    if (!coveredIds) return;
+    patientsRepo.namesByIds(coveredIds.split(',').map(Number))
+      .then(setPatientNames)
       .catch(() => setPatientNames(new Map()));
-  }, [needsNames, patientNames]);
+  }, [coveredIds]);
 
   const handleDownloadCSV = () => {
     if (!payments?.length) {

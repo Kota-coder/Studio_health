@@ -1,6 +1,6 @@
 "use client";
 
-import Link from 'next/link';
+import Link from '@/components/app-link';
 import { CreditCard, Eye, PlusCircle, Printer } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';

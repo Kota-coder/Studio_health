@@ -38,6 +38,7 @@ export function brandingUrls(profile: HospitalProfile, supabaseUrl = process.env
   const base = `${supabaseUrl}/storage/v1/object/public/branding/${profile.logoFolder}`;
   return {
     logo: `${base}/logo.png`,
+    logoSmall: `${base}/logo-96.png`,
     icon192: `${base}/icon-192.png`,
     icon512: `${base}/icon-512.png`,
     maskable512: `${base}/maskable-512.png`,

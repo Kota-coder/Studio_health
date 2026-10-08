@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
+import Link from '@/components/app-link';
 import { Building2, Edit3, HeartPulse, PlusCircle, Stethoscope, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

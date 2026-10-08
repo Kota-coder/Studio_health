@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
+import Link from '@/components/app-link';
 import { CreditCard, History, Pill, PlusCircle, Printer, Save, Stethoscope, Trash2, UploadCloud, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -83,10 +83,14 @@ export default function BillingForm() {
     let cancelled = false;
     (async () => {
       try {
-        setPatients(await patientsRepo.listNames());
         if (canAssignProcessor) setStaffList(await staffRepo.list());
-        if (!billIdToEdit) return;
+        if (!billIdToEdit) {
+          // From a patient's page the patient is fixed; otherwise offer the patients in care.
+          setPatients(await patientsRepo.listNames(patientIdFromQuery ? [parseInt(patientIdFromQuery, 10)] : undefined));
+          return;
+        }
         const bill = await billsRepo.get(billIdToEdit);
+        if (bill) setPatients(await patientsRepo.listNames([bill.patientId]));
         if (cancelled) return;
         if (!bill) {
           toast({ title: 'Bill not found', variant: 'destructive' });

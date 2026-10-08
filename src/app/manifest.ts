@@ -2,7 +2,7 @@ import type { MetadataRoute } from 'next';
 import { getHospitalProfile } from '@/lib/hospital-profile.server';
 import { brandingUrls, displayName } from '@/lib/branding';
 
-export const revalidate = 300;
+export const revalidate = 86400; // rebuilt at once when the profile is saved
 
 // Lets staff add the app to their phone's home screen and open it full-screen, with this
 // hospital's name and icon (Seva's until the hospital profile is set up).

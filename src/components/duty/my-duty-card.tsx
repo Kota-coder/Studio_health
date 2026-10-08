@@ -27,7 +27,7 @@ export function MyDutyCard({ currentUser, refreshKey, onChange }: { currentUser:
     const today = new Date();
     const [entry, shiftList] = await Promise.all([
       attendanceRepo.openEntry(currentUser.id),
-      shiftsRepo.list(dateKey(addDays(today, -1)), dateKey(addDays(today, 7))),
+      shiftsRepo.list(dateKey(addDays(today, -1)), dateKey(addDays(today, 7)), currentUser.id),
     ]);
     setOpenEntry(entry);
     setMyShifts(shiftList.filter(s => s.staffId === currentUser.id));

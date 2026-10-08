@@ -274,11 +274,12 @@ const shiftFromRow = (shift: StaffShift): StaffShift =>
   ({ ...shift, startTime: shift.startTime.slice(0, 5), endTime: shift.endTime.slice(0, 5) });
 
 export const shifts = {
-  // Shifts dated from..to (yyyy-MM-dd, inclusive).
-  async list(from: string, to: string): Promise<StaffShift[]> {
-    const rows = check(await db().from('staff_shifts').select('*')
-      .gte('shift_date', from).lte('shift_date', to)
-      .order('shift_date').order('start_time'));
+  // Shifts dated from..to (yyyy-MM-dd, inclusive); only one person's when staffId is given.
+  async list(from: string, to: string, staffId?: number): Promise<StaffShift[]> {
+    let query = db().from('staff_shifts').select('id, staff_id, shift_date, start_time, end_time, shift_type, department_id, notes')
+      .gte('shift_date', from).lte('shift_date', to);
+    if (staffId !== undefined) query = query.eq('staff_id', staffId);
+    const rows = check(await query.order('shift_date').order('start_time'));
     return (rows as Row[]).map(r => shiftFromRow(fromRow<StaffShift>(r)));
   },
   async create(fields: Omit<StaffShift, 'id'>): Promise<StaffShift> {
@@ -533,36 +534,57 @@ const FEE_FIELDS = 'id, first_name, last_name, reason_for_visit, admission_date,
   + 'referred_doctor_id, referral_fee, referral_fee_status, referral_fee_basis, referral_fee_payment_id, '
   + 'attending_doctor_id, doctor_fee, doctor_fee_status, doctor_fee_payment_id';
 
+// Dashboard cards: names, care team and the latest note only.
+export const DISCHARGED_DAYS = 30;
+const dashboardQuery = () => db().from('patients')
+  .select('id, first_name, last_name, condition, reason_for_visit, department_id, attending_doctor_id, attending_nurse_id, assigned_staff_ids, '
+    + 'care_notes(id, text, template_name, staff_id, staff_name, created_at)')
+  .order('id')
+  .order('created_at', { referencedTable: 'care_notes', ascending: false })
+  .limit(1, { referencedTable: 'care_notes' });
+
 export const patients = invalidatesOnWrite({
   // For the Patient Dashboard: patient records with only their latest care note, instead of
   // every note and test. Cached briefly so going back and forth doesn't re-download it.
+  // Patients in care, and those discharged in the last DISCHARGED_DAYS days (older discharged
+  // patients load on request with listOlderDischarged), so the dashboard stays small as
+  // the hospital's records grow.
   listForDashboard(): Promise<Patient[]> {
     return cached('dashboard:patients', DASHBOARD_TTL, async () => {
-      const rows = check(await db().from('patients')
-        .select('id, first_name, last_name, condition, reason_for_visit, department_id, attending_doctor_id, attending_nurse_id, assigned_staff_ids, '
-          + 'care_notes(id, text, template_name, staff_id, staff_name, created_at)')
-        .order('id')
-        .order('created_at', { referencedTable: 'care_notes', ascending: false })
-        .limit(1, { referencedTable: 'care_notes' }));
+      const since = new Date(Date.now() - DISCHARGED_DAYS * 86400000).toISOString();
+      const rows = check(await dashboardQuery().or(`condition.neq.Discharged,updated_at.gte.${since}`));
       return (rows as Row[]).map(patientFromRow);
     });
+  },
+  // Patients discharged before that, optionally only those whose name matches.
+  async listOlderDischarged(nameSearch?: string): Promise<Patient[]> {
+    const since = new Date(Date.now() - DISCHARGED_DAYS * 86400000).toISOString();
+    let query = dashboardQuery().eq('condition', 'Discharged').lt('updated_at', since);
+    const term = nameSearch?.trim().replace(/[%,()*]/g, ' ').trim();
+    if (term) query = query.or(`first_name.ilike.%${term}%,last_name.ilike.%${term}%`).limit(50);
+    return (check(await query) as Row[]).map(patientFromRow);
   },
 
   // Patients with a referring doctor or a doctor fee, with only the fields the Payments form
   // needs to list and settle referral and doctor fees.
-  async listFeeCases(): Promise<Patient[]> {
+  // Only cases with a fee still to pay, plus `includeIds` (the cases a payment being edited
+  // covers), so the list doesn't grow with every case ever paid.
+  async listFeeCases(includeIds: number[] = []): Promise<Patient[]> {
+    const ids = includeIds.filter(Number.isInteger);
     const rows = check(await db().from('patients').select(FEE_FIELDS)
-      .or('referred_doctor_id.not.is.null,doctor_fee.not.is.null').order('id'));
+      .or('and(referred_doctor_id.not.is.null,referral_fee_status.neq.Paid),and(doctor_fee.not.is.null,doctor_fee_status.neq.Paid)'
+        + (ids.length ? `,id.in.(${ids.join(',')})` : ''))
+      .order('id'));
     return (rows as Row[]).map(patientFromRow);
   },
 
-  // Just enough to show and pick patients by name, department and condition (payments list,
-  // bill form, departments). Much smaller than whole records; cached briefly.
-  listNames(): Promise<Patient[]> {
-    return cached('dashboard:names', DASHBOARD_TTL, async () => {
-      const rows = check(await db().from('patients').select('id, first_name, last_name, condition, department_id').order('id'));
-      return (rows as Row[]).map(patientFromRow);
-    });
+  // Names for the bill form's patient picker: the given patients, or else patients in care
+  // and those discharged in the last DISCHARGED_DAYS days.
+  async listNames(ids?: number[]): Promise<Patient[]> {
+    let query = db().from('patients').select('id, first_name, last_name, condition, department_id').order('id');
+    if (ids) query = query.in('id', ids.length ? ids : [0]);
+    else query = query.or(`condition.neq.Discharged,updated_at.gte.${new Date(Date.now() - DISCHARGED_DAYS * 86400000).toISOString()}`);
+    return (check(await query) as Row[]).map(patientFromRow);
   },
 
   // Patients still in care per department (one small column, counted here).
@@ -576,20 +598,26 @@ export const patients = invalidatesOnWrite({
     });
   },
 
+  // Names of just these patients.
+  async namesByIds(ids: number[]): Promise<Map<number, string>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return new Map();
+    const rows = check(await db().from('patients').select('id, first_name, last_name').in('id', unique)) as Row[];
+    return new Map(rows.map(r => [Number(r.id), `${r.first_name} ${r.last_name}`]));
+  },
+
   // Patient records only, without notes and tests (for pickers and lookups).
   async listBasic(): Promise<Patient[]> {
     const rows = check(await db().from('patients').select('*').order('id'));
     return (rows as Row[]).map(patientFromRow);
   },
 
-  // Includes care notes, tests and the audit trail.
+  // Includes care notes and tests (the audit trail loads separately, when it is opened).
   async get(id: number): Promise<Patient | null> {
     const row = check(await db().from('patients').select('*, care_notes(*), patient_tests(*)').eq('id', id).maybeSingle());
-    if (!row) return null;
-    const patient = patientFromRow(row as Row);
-    patient.auditLog = await getAuditLog('patient', id);
-    return patient;
+    return row ? patientFromRow(row as Row) : null;
   },
+  auditLog: (id: number) => getAuditLog('patient', id),
 
   async create(fields: PatientFields, audit: { actionType: string; details: string }): Promise<Patient> {
     const row = check(await db().from('patients').insert(patientRow(fields)).select().single());
@@ -671,9 +699,13 @@ function billFromRow(row: Row): Bill {
   return bill;
 }
 
+const BILL_LIST_COLUMNS = 'id, patient_id, patient_name, bill_date, bill_type, total_amount, payment_method, payment_status, '
+  + 'payment_date, notes, processed_by_staff_id, processed_by_staff_name, created_at';
+
 export const bills = invalidatesOnWrite({
-  async list(filter?: { patientId?: number; status?: string; method?: string; processedBy?: number } & DateRange): Promise<Bill[]> {
-    let query = db().from('bills').select('*');
+  // brief: only what a list row shows (no items or attachments), for the Billing list.
+  async list(filter?: { patientId?: number; status?: string; method?: string; processedBy?: number; brief?: boolean } & DateRange): Promise<Bill[]> {
+    let query = db().from('bills').select(filter?.brief ? BILL_LIST_COLUMNS : '*');
     if (filter?.patientId !== undefined) query = query.eq('patient_id', filter.patientId);
     if (filter?.status) query = query.eq('payment_status', filter.status);
     if (filter?.method) query = query.eq('payment_method', filter.method);
