@@ -1,6 +1,6 @@
 import type { StaffRole } from '@/types/staff';
 
-export const ALL_ROLES: StaffRole[] = ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accounts'];
+export const ALL_ROLES: StaffRole[] = ['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accounts', 'Lab Technician'];
 
 /**
  * Which roles may open each section. Used by both the header menu and the pages
@@ -8,7 +8,9 @@ export const ALL_ROLES: StaffRole[] = ['Super Admin', 'Admin', 'Doctor', 'Nurse'
  * The database policies in supabase/migrations enforce the same rules for payments.
  */
 export const PAGE_ROLES = {
-  dashboard: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist", "Accounts"],
+  dashboard: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist", "Accounts", "Lab Technician"],
+  // The lab queue (the database's home_summary() shows its tile to the same roles).
+  lab: ["Super Admin", "Admin", "Doctor", "Nurse", "Lab Technician"],
   billing: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist", "Accounts"],
   payments: ["Super Admin", "Admin", "Doctor", "Accounts"],
   financialDashboard: ["Super Admin", "Admin", "Doctor", "Accounts"],
@@ -22,7 +24,7 @@ export const PAGE_ROLES = {
   departments: ["Super Admin", "Admin"],
   paymentMethods: ["Super Admin"],
   hospitalProfile: ["Super Admin"],
-  duty: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist", "Accounts"],
+  duty: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist", "Accounts", "Lab Technician"],
   medicalTests: ["Super Admin", "Admin", "Doctor", "Nurse"],
   referringDoctors: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"],
   admin: ["Super Admin"],
@@ -36,3 +38,6 @@ export const ATTENDANCE_VIEW_ROLES: StaffRole[] = ["Super Admin", "Admin", "Acco
 export const FEE_ROLES: StaffRole[] = ["Super Admin", "Admin", "Accounts"];
 // Who may delete a mistaken manual stock entry (the database enforces the same).
 export const STOCK_CORRECTION_ROLES: StaffRole[] = ["Super Admin", "Admin"];
+
+// Whether a role may open one of the sections above.
+export const canOpen = (page: keyof typeof PAGE_ROLES, role: StaffRole) => (PAGE_ROLES[page] as readonly StaffRole[]).includes(role);

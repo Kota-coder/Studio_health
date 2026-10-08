@@ -19,6 +19,7 @@ import type { AttendanceEntry, StaffShift } from '@/types/duty';
 import type { PaymentMethodOption } from '@/types/paymentMethod';
 import type { InventoryItem, InventoryKind, NewStockMovement, StockMovement } from '@/types/inventory';
 import type { HospitalLink } from '@/types/hospitalLink';
+import type { LabTechnician, TestRequest } from '@/types/testRequest';
 import { DEFAULT_PROFILE, type HospitalProfile } from '@/lib/branding';
 
 type Row = Record<string, unknown>;
@@ -449,6 +450,7 @@ export interface HomeSummary {
   feesOwed?: { doctorAmount: number; doctorCases: number; referralAmount: number; referralCases: number };
   myFees?: { pendingAmount: number; pendingCases: number };
   stock?: { outOfStock: number; low: number };
+  lab?: { mine: number; waiting: number; urgent: number };
 }
 
 export function homeSummary(): Promise<HomeSummary | null> {
@@ -682,6 +684,96 @@ export const patients = invalidatesOnWrite({
     return saved;
   },
 }, ['create', 'update', 'remove', 'setDoctorFeePayment', 'setReferralFeePayment', 'addCareNote', 'addTest'], ['dashboard:', 'summary:']);
+
+// ---------------------------------------------------------------------------
+// Test requests (the lab queue)
+// ---------------------------------------------------------------------------
+
+const OPEN_REQUEST = ['Requested', 'In progress'];
+export type NewTestRequest = Pick<TestRequest, 'patientId' | 'testTypeId' | 'testTypeName' | 'priority' | 'notes' | 'assignedToStaffId'>;
+
+function testRequestFromRow(row: Row): TestRequest {
+  const { patients: patient, ...rest } = row as Row & { patients?: { first_name: string; last_name: string } | null };
+  const request = fromRow<TestRequest>(rest);
+  if (patient) request.patientName = `${patient.first_name} ${patient.last_name}`;
+  return request;
+}
+
+// Changes one request, but only while it is still open; null when it is not (someone else
+// finished or cancelled it meanwhile).
+async function updateOpenRequest(id: string, changes: Row, onlyIfAssignedTo?: number | null): Promise<TestRequest | null> {
+  let query = db().from('test_requests').update(changes).eq('id', id).in('status', OPEN_REQUEST);
+  if (onlyIfAssignedTo !== undefined) {
+    query = onlyIfAssignedTo === null ? query.is('assigned_to_staff_id', null)
+      : query.or(`assigned_to_staff_id.is.null,assigned_to_staff_id.eq.${onlyIfAssignedTo}`);
+  }
+  const rows = check(await query.select()) as Row[];
+  return rows.length ? testRequestFromRow(rows[0]) : null;
+}
+
+export const testRequests = invalidatesOnWrite({
+  // Every open request, with the patient's name, oldest first (the queue order).
+  async listOpen(): Promise<TestRequest[]> {
+    return cached('lab:open', DASHBOARD_TTL, async () => {
+      const rows = check(await db().from('test_requests').select('*, patients(first_name, last_name)')
+        .in('status', OPEN_REQUEST).order('created_at'));
+      return (rows as Row[]).map(testRequestFromRow);
+    });
+  },
+
+  // Requests finished in the last day, newest first.
+  async listRecentlyDone(): Promise<TestRequest[]> {
+    const since = new Date(Date.now() - 86400000).toISOString();
+    const rows = check(await db().from('test_requests').select('*, patients(first_name, last_name)')
+      .eq('status', 'Done').gte('completed_at', since).order('completed_at', { ascending: false }).limit(50));
+    return (rows as Row[]).map(testRequestFromRow);
+  },
+
+  // One patient's open requests.
+  async listOpenForPatient(patientId: number): Promise<TestRequest[]> {
+    const rows = check(await db().from('test_requests').select('*')
+      .eq('patient_id', patientId).in('status', OPEN_REQUEST).order('created_at'));
+    return (rows as Row[]).map(testRequestFromRow);
+  },
+
+  // Lab technicians, on-duty first, with how many open requests each has.
+  technicians(): Promise<LabTechnician[]> {
+    return cached('lab:technicians', DASHBOARD_TTL, async () => {
+      const rows = check(await db().rpc('lab_technicians')) as Row[];
+      return rows.map(r => ({ id: Number(r.id), name: String(r.name), onDuty: !!r.on_duty, openRequests: Number(r.open_requests) }));
+    });
+  },
+
+  async create(request: NewTestRequest): Promise<TestRequest> {
+    const row = check(await db().from('test_requests').insert(toRow(request)).select().single());
+    const saved = testRequestFromRow(row as Row);
+    await addAuditEntry('patient', request.patientId, 'Test Requested',
+      `${request.testTypeName} requested${request.priority === 'Urgent' ? ' (urgent)' : ''}${saved.assignedToStaffName ? ` for ${saved.assignedToStaffName}` : ''}.`);
+    return saved;
+  },
+
+  // A technician takes a request: from the queue, or one already assigned to them.
+  async take(id: string, staffId: number): Promise<TestRequest> {
+    const taken = await updateOpenRequest(id, { assigned_to_staff_id: staffId, status: 'In progress' }, staffId);
+    if (!taken) throw new Error('Another technician has already taken this request, or it is no longer open.');
+    return taken;
+  },
+
+  // Puts a request back in the queue for any technician.
+  async release(id: string): Promise<void> {
+    if (!await updateOpenRequest(id, { assigned_to_staff_id: null, status: 'Requested' })) throw new Error('This request is no longer open.');
+  },
+
+  async cancel(request: TestRequest): Promise<void> {
+    if (!await updateOpenRequest(request.id, { status: 'Cancelled' })) throw new Error('This request is no longer open.');
+    await addAuditEntry('patient', request.patientId, 'Test Request Cancelled', `${request.testTypeName} request cancelled.`);
+  },
+
+  // Marks the request done with the recorded result.
+  async complete(id: string, testId: string, staffId: number): Promise<void> {
+    await updateOpenRequest(id, { status: 'Done', test_id: testId, assigned_to_staff_id: staffId });
+  },
+}, ['create', 'take', 'release', 'cancel', 'complete'], ['lab:', 'summary:']);
 
 // ---------------------------------------------------------------------------
 // Bills

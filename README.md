@@ -96,7 +96,8 @@ database enforces the same rules with row level security.
   worked out by the database (`home_summary()`, one ~1 KB call): patients in care and critical
   ones (doctors and nurses also see *their* patients, and start on "My Patients"), their duty and
   next shift, bills today and unpaid (billing roles), money in and out (finance roles), fees owed
-  (Super Admin, Admin, Accounts), a doctor's own pending fees, and stock needing a refill.
+  (Super Admin, Admin, Accounts), a doctor's own pending fees, stock needing a refill, and lab
+  requests (a lab technician sees theirs and the queue first, and starts on those patients).
 - **English / తెలుగు:** the EN/తె switch in the header (also on the login page) changes the menu,
   page titles, main buttons, statuses and the dashboard tiles to Telugu; details stay in English.
   The choice is saved to the person's profile, so it follows them to any device. The Telugu text
@@ -106,6 +107,13 @@ database enforces the same rules with row level security.
 - **Patients:** registration (with consent capture and ID-card scanning), care notes with
   treatment templates, tests, attachments, conditions, and a printable **Treatment Summary** on
   the hospital's letterhead.
+- **Lab requests** (Patients → Lab Requests): on a patient's page, **Request Test** sends a test
+  to the lab: routine or urgent, either to the lab queue (the next available technician takes it)
+  or to a particular **Lab Technician**, with who is on duty now and how busy each one is. The
+  request shows on the patient's page and dashboard card until its result is recorded. Lab
+  technicians see **Assigned to me**, **Waiting in queue**, all open and done today, can search by
+  patient name or number, **Take** a request, and **Record result** on the patient's page, which
+  completes it. Their dashboard starts on the patients with their requests or waiting ones.
 - **Departments and care teams** (Staff → Departments): each department's doctors
   and nurses and a default doctor fee per case. On a patient, choose the department, attending
   doctor and nurse; the dashboard filters by department or "My Patients".
@@ -201,7 +209,7 @@ included amounts are generous for a hospital. The app still keeps traffic small:
 - **Salaries** are readable only by the roles that manage staff (`staff_salaries()`); other
   staff can see colleagues' names and roles but not their pay.
 - **Logins:** Supabase Auth (email and password). Staff are invited from the app; there is no
-  public sign-up. Roles: Super Admin, Admin, Doctor, Nurse, Receptionist, Accounts.
+  public sign-up. Roles: Super Admin, Admin, Doctor, Nurse, Receptionist, Accounts, Lab Technician.
 - **Row level security** on every table: only signed-in, active staff can read or write; deletes
   need a Super Admin (unpaid bills excepted); payments, fees, attendance and settings are limited
   to the roles that manage them.

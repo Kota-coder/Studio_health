@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from 'react';
-import { CalendarDays, FlaskConical, PlusCircle, ShoppingCart, UserCircle } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { CalendarDays, ClipboardCheck, FlaskConical, Microscope, PlusCircle, ShoppingCart, UserCircle, X } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
@@ -10,19 +10,26 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useFormat, useT } from '@/components/language-provider';
+import { RequestSummary } from '@/components/lab/request-summary';
+import { RequestTestDialog } from '@/components/lab/request-test-dialog';
 import { AttachmentList } from '@/components/patient/attachment-picker';
 import { TestForm, testDefinitionFor } from '@/components/patient/test-form';
 import { loadTestCatalog, useLoadOnce } from '@/components/patient/use-load-once';
+import { canOpen } from '@/config/permissions';
+import { useStaff } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
 import { useToast } from '@/hooks/use-toast';
-import { bills as billsRepo } from '@/lib/data';
+import { bills as billsRepo, testRequests } from '@/lib/data';
 import { toDMY } from '@/lib/format';
 import type { BillItem } from '@/types/billing';
 import type { Patient, TestEntry } from '@/types/patient';
 import type { StaffMember } from '@/types/staff';
+import type { TestRequest } from '@/types/testRequest';
 
 // Tests performed: the form to add one (the test catalog loads when it opens), the list,
-// and "Bill Test" to bill a test at its catalog price.
+// and "Bill Test" to bill a test at its catalog price. With Lab Requests on, tests can also be
+// requested for the lab; the open requests show here until their result is recorded.
+// /patients/<id>?request=<request id> (from the lab queue) opens the result form for it.
 export function TestsSection({ patient, staff, onSaved, onBilled }: {
   patient: Patient;
   staff: StaffMember[];
@@ -32,13 +39,63 @@ export function TestsSection({ patient, staff, onSaved, onBilled }: {
   const t = useT();
   const { toast } = useToast();
   const { isOn } = useFeatures();
+  const currentUser = useStaff();
+  const labOn = isOn('labRequests');
+  const canBill = isOn('billing') && canOpen('billing', currentUser.role);
   const catalog = useLoadOnce(loadTestCatalog);
   const [showForm, setShowForm] = useState(false);
+  const [requests, setRequests] = useState<TestRequest[]>([]);
+  const [resultFor, setResultFor] = useState<TestRequest | undefined>();
+  const [showRequest, setShowRequest] = useState(false);
+
+  const loadRequests = useCallback(async () => {
+    if (!labOn) return [];
+    const list = await testRequests.listOpenForPatient(patient.id);
+    setRequests(list);
+    return list;
+  }, [labOn, patient.id]);
+
+  useEffect(() => {
+    loadRequests().then(list => {
+      const wanted = new URLSearchParams(window.location.search).get('request');
+      const request = wanted && list.find(r => r.id === wanted);
+      if (request) {
+        recordResult(request);
+        document.getElementById('tests')?.scrollIntoView({ block: 'start' });
+      }
+    }).catch(() => toast({ title: t('Could not load the lab requests'), variant: 'destructive' }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per patient
+  }, [loadRequests]);
   const tests = [...(patient.tests ?? [])].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 
   const openForm = () => {
     catalog.ensure().catch(() => toast({ title: 'Could not load', description: 'Could not load the test catalog.', variant: 'destructive' }));
     setShowForm(true);
+  };
+
+  const recordResult = (request: TestRequest) => {
+    setResultFor(request);
+    openForm();
+  };
+
+  const openRequestDialog = () => {
+    catalog.ensure().catch(() => toast({ title: 'Could not load', description: 'Could not load the test catalog.', variant: 'destructive' }));
+    setShowRequest(true);
+  };
+
+  const cancelRequest = async (request: TestRequest) => {
+    if (!confirm(t('Cancel the request for {test}?', { test: request.testTypeName }))) return;
+    try {
+      await testRequests.cancel(request);
+    } catch (e) {
+      toast({ title: t('Could not cancel the request'), description: e instanceof Error ? e.message : undefined, variant: 'destructive' });
+    }
+    await loadRequests();
+  };
+
+  const closeForm = () => {
+    setShowForm(false);
+    setResultFor(undefined);
   };
 
   const billTest = async (test: TestEntry) => {
@@ -68,15 +125,44 @@ export function TestsSection({ patient, staff, onSaved, onBilled }: {
   };
 
   return (
-    <Card className="shadow-lg">
+    <Card id="tests" className="scroll-mt-20 shadow-lg">
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="flex items-center"><FlaskConical className="mr-2 h-5 w-5 text-primary" />{t('Tests Performed')}</CardTitle>
-        {!showForm && <Button variant="outline" size="sm" onClick={openForm}><PlusCircle className="mr-2 h-4 w-4" /> {t('Add Test')}</Button>}
+        {!showForm && (
+          <div className="flex flex-wrap gap-2">
+            {labOn && <Button size="sm" onClick={openRequestDialog}><Microscope className="mr-2 h-4 w-4" /> {t('Request Test')}</Button>}
+            <Button variant="outline" size="sm" onClick={openForm}><PlusCircle className="mr-2 h-4 w-4" /> {t('Add Test')}</Button>
+          </div>
+        )}
       </CardHeader>
       <CardContent>
+        {requests.length > 0 && (
+          <div className="mb-4 space-y-2">
+            <p className="text-sm font-medium">{t('Requested tests ({n})', { n: requests.length })}</p>
+            <ul className="divide-y rounded-md border text-sm">
+              {requests.map(request => (
+                <li key={request.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start sm:justify-between">
+                  <RequestSummary request={request} />
+                  <div className="flex shrink-0 gap-2">
+                    <Button size="sm" onClick={() => recordResult(request)} disabled={showForm}>
+                      <ClipboardCheck className="mr-2 h-4 w-4" /> {t('Record result')}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => cancelRequest(request)} aria-label={t('Cancel request')}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {showForm && (
-          <TestForm patient={patient} catalog={catalog.data} staff={staff}
-            onSaved={async () => { await onSaved(); setShowForm(false); }} onCancel={() => setShowForm(false)} />
+          <TestForm key={resultFor?.id ?? 'new'} patient={patient} catalog={catalog.data} staff={staff} request={resultFor}
+            onSaved={async () => { closeForm(); await Promise.all([onSaved(), loadRequests()]); }} onCancel={closeForm} />
+        )}
+        {labOn && (
+          <RequestTestDialog patient={patient} catalog={catalog.data} open={showRequest} onOpenChange={setShowRequest}
+            onRequested={() => { loadRequests().catch(() => undefined); }} />
         )}
         {tests.length === 0 ? (
           <p className="mt-3 text-sm italic text-muted-foreground">No test entries added yet.</p>
@@ -86,7 +172,7 @@ export function TestsSection({ patient, staff, onSaved, onBilled }: {
               <AccordionTrigger className="py-2 text-sm hover:no-underline">View Recorded Tests ({tests.length})</AccordionTrigger>
               <AccordionContent className="pt-2">
                 <div className="max-h-96 space-y-3 overflow-y-auto pr-2">
-                  {tests.map(test => <TestCard key={test.id} test={test} onBill={isOn('billing') ? () => billTest(test) : undefined} />)}
+                  {tests.map(test => <TestCard key={test.id} test={test} onBill={canBill ? () => billTest(test) : undefined} />)}
                 </div>
               </AccordionContent>
             </AccordionItem>

@@ -12,12 +12,13 @@ import { AttachmentPicker } from '@/components/patient/attachment-picker';
 import { TEST_DEFINITIONS } from '@/config/testTypes';
 import { useStaff } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { patients as patientsRepo } from '@/lib/data';
+import { patients as patientsRepo, testRequests } from '@/lib/data';
 import { formatINR, toDMY } from '@/lib/format';
 import { uploadNewImages } from '@/lib/storage';
 import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 import type { Patient, TestFieldData } from '@/types/patient';
 import type { StaffMember } from '@/types/staff';
+import type { TestRequest } from '@/types/testRequest';
 
 // The built-in result form for a test: by id, or for catalog tests (ids like "test_cat_3")
 // by name, e.g. "ECG".
@@ -27,17 +28,19 @@ export function testDefinitionFor(testTypeId: string, testName?: string) {
 }
 
 // A new test result: type from the test catalog, its result fields, date, who did it, images.
-export function TestForm({ patient, catalog, staff, onSaved, onCancel }: {
+// For a lab request, the test is fixed and saving marks the request done.
+export function TestForm({ patient, catalog, staff, request, onSaved, onCancel }: {
   patient: Patient;
   catalog: MedicalTestCatalogItem[] | null;
   staff: StaffMember[];
+  request?: TestRequest;
   onSaved: () => Promise<void>;
   onCancel: () => void;
 }) {
   const t = useT();
   const { toast } = useToast();
   const currentUser = useStaff();
-  const [testTypeId, setTestTypeId] = useState('');
+  const [testTypeId, setTestTypeId] = useState(request?.testTypeId ?? '');
   const [fields, setFields] = useState<TestFieldData>({});
   const [testDate, setTestDate] = useState(() => toDMY(new Date())); // usually logged the day it's done
   const [performedBy, setPerformedBy] = useState('');
@@ -46,7 +49,7 @@ export function TestForm({ patient, catalog, staff, onSaved, onCancel }: {
   const [attachments, setAttachments] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
-  const catalogName = catalog?.find(test => test.id === testTypeId)?.name;
+  const catalogName = catalog?.find(test => test.id === testTypeId)?.name ?? request?.testTypeName;
   const definition = testTypeId ? testDefinitionFor(testTypeId, catalogName) : null;
   const setField = (fieldId: string, value: string | number) => setFields(prev => ({ ...prev, [fieldId]: value }));
 
@@ -68,7 +71,7 @@ export function TestForm({ patient, catalog, staff, onSaved, onCancel }: {
 
     setIsSaving(true);
     try {
-      await patientsRepo.addTest(patient.id, {
+      const saved = await patientsRepo.addTest(patient.id, {
         testTypeId,
         testTypeName: catalogName || definition?.name || 'Unknown Test',
         datePerformed: testDate.trim(),
@@ -79,6 +82,7 @@ export function TestForm({ patient, catalog, staff, onSaved, onCancel }: {
         performedByStaffName: by.name,
         attachments: await uploadNewImages(attachments, `patients/${patient.id}/tests`),
       });
+      if (request) await testRequests.complete(request.id, saved.id, by.id);
       await onSaved();
       toast({ title: 'Test added' });
     } catch (e) {
@@ -91,12 +95,13 @@ export function TestForm({ patient, catalog, staff, onSaved, onCancel }: {
 
   return (
     <div className="mb-6 space-y-4 rounded-md border bg-muted/30 p-4">
-      <h3 className="text-lg font-semibold">{t('Add Test')}</h3>
+      <h3 className="text-lg font-semibold">{request ? t('Record result: {test}', { test: request.testTypeName }) : t('Add Test')}</h3>
       <div>
         <Label htmlFor="selectedTestType">Test Type *</Label>
-        <Select onValueChange={id => { setTestTypeId(id); setFields({}); }} value={testTypeId} disabled={!catalog}>
+        <Select onValueChange={id => { setTestTypeId(id); setFields({}); }} value={testTypeId} disabled={!catalog || !!request}>
           <SelectTrigger id="selectedTestType"><SelectValue placeholder={catalog ? 'Select Test Type' : 'Loading...'} /></SelectTrigger>
           <SelectContent>
+            {request && !catalog?.some(test => test.id === request.testTypeId) && <SelectItem value={request.testTypeId}>{request.testTypeName}</SelectItem>}
             {(catalog ?? []).map(test => (
               <SelectItem key={test.id} value={test.id}>{test.name}{test.defaultPrice ? ` (${formatINR(test.defaultPrice)})` : ''}</SelectItem>
             ))}

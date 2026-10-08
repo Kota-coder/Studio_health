@@ -21,6 +21,7 @@ const SAMPLE_STAFF = [
   { name: 'Nurse Asha Thomas', role: 'Nurse', phone_number: '9800000008', salary: 15000 },
   { name: 'Meena Joshi', role: 'Receptionist', phone_number: '9800000005', salary: 10000 },
   { name: 'Suresh Rao', role: 'Accounts', phone_number: '9800000006', salary: 12000 },
+  { name: 'Ravi Kumar', role: 'Lab Technician', phone_number: '9800000009', salary: 14000 },
 ];
 
 async function requireSuperAdmin() {
@@ -30,25 +31,27 @@ async function requireSuperAdmin() {
   return { caller };
 }
 
-// POST -> creates the sample staff (or returns them if they already exist).
+// POST -> creates the sample staff, or any of them that are missing (e.g. roles added since
+// the sample data was first loaded), and returns them all.
 export async function POST() {
   const { error } = await requireSuperAdmin();
   if (error) return error;
   const admin = getAdminSupabase();
 
   const { data: existing } = await admin.from('staff').select('id, name, role').or(sampleEmailFilter);
-  if (existing && existing.length > 0) return NextResponse.json({ staff: existing });
+  const missing = SAMPLE_STAFF.filter(member => !existing?.some(s => s.name === member.name));
+  if (missing.length === 0) return NextResponse.json({ staff: existing });
 
   const hireDate = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000);
   const hireDateText = `${String(hireDate.getDate()).padStart(2, '0')}/${String(hireDate.getMonth() + 1).padStart(2, '0')}/${hireDate.getFullYear()}`;
-  const rows = SAMPLE_STAFF.map(member => ({
+  const rows = missing.map(member => ({
     ...member,
     email: `${member.name.toLowerCase().replace(/^(dr|nurse)\.?\s+/, '').replace(/[^a-z]+/g, '.')}@${SAMPLE_STAFF_EMAIL_DOMAIN}`,
     hire_date: hireDateText,
   }));
   const { data, error: insertError } = await admin.from('staff').insert(rows).select('id, name, role');
   if (insertError) return NextResponse.json({ error: insertError.message }, { status: 400 });
-  return NextResponse.json({ staff: data });
+  return NextResponse.json({ staff: [...(existing ?? []), ...(data ?? [])] });
 }
 
 interface DutyBody {

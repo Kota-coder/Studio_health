@@ -40,7 +40,7 @@ create table if not exists public.staff (
 );
 alter table public.staff drop constraint if exists staff_role_check;
 alter table public.staff add constraint staff_role_check
-  check (role in ('Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accounts'));
+  check (role in ('Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accounts', 'Lab Technician'));
 
 -- SECURITY DEFINER so they can read staff without recursing through staff's own policies.
 create or replace function public.current_staff_id() returns bigint
@@ -286,6 +286,27 @@ create table if not exists public.patient_tests (
   performed_by_staff_name  text,
   attachments              text[] not null default '{}',
   created_at               timestamptz not null default now()
+);
+
+-- Tests asked for from the patient page. A request waits in the lab queue until a lab
+-- technician takes it (or is chosen when it is made); recording the result links the test.
+create table if not exists public.test_requests (
+  id                       uuid primary key default gen_random_uuid(),
+  patient_id               bigint not null references public.patients (id) on delete cascade,
+  test_type_id             text not null,
+  test_type_name           text not null,
+  priority                 text not null default 'Routine' check (priority in ('Routine', 'Urgent')),
+  notes                    text,
+  status                   text not null default 'Requested'
+                           check (status in ('Requested', 'In progress', 'Done', 'Cancelled')),
+  requested_by_staff_id    bigint references public.staff (id) on delete set null,
+  requested_by_staff_name  text,
+  assigned_to_staff_id     bigint references public.staff (id) on delete set null,
+  assigned_to_staff_name   text,
+  test_id                  uuid references public.patient_tests (id) on delete set null,
+  completed_at             timestamptz,
+  created_at               timestamptz not null default now(),
+  updated_at               timestamptz not null default now()
 );
 
 -- -----------------------------------------------------------------------------
@@ -593,6 +614,8 @@ create index if not exists payment_transactions_bill_idx on public.payment_trans
 create index if not exists stock_movements_medication_idx on public.stock_movements (medication_id, created_at desc) where medication_id is not null;
 create index if not exists stock_movements_material_idx on public.stock_movements (material_id, created_at desc) where material_id is not null;
 create index if not exists stock_movements_source_idx on public.stock_movements (source_type, source_id) where source_type is not null;
+create index if not exists test_requests_open_idx on public.test_requests (created_at) where status in ('Requested', 'In progress');
+create index if not exists test_requests_patient_idx on public.test_requests (patient_id, created_at desc);
 
 -- -----------------------------------------------------------------------------
 -- Triggers
@@ -863,6 +886,35 @@ $$;
 drop trigger if exists stock_movements_stamp on public.stock_movements;
 create trigger stock_movements_stamp before insert on public.stock_movements
   for each row execute function public.stamp_stock_movement();
+
+-- Test requests: who asked comes from the session; names come from the staff table; taking
+-- a request without a technician assigns it to whoever takes it.
+create or replace function public.stamp_test_request() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'INSERT' then
+    if auth.role() is distinct from 'service_role' or new.requested_by_staff_id is null then
+      new.requested_by_staff_id := coalesce(public.current_staff_id(), new.requested_by_staff_id);
+    end if;
+    new.requested_by_staff_name := (select name from public.staff where id = new.requested_by_staff_id);
+    new.created_at := now();
+  else
+    new.requested_by_staff_id := old.requested_by_staff_id;
+    new.requested_by_staff_name := old.requested_by_staff_name;
+    new.created_at := old.created_at;
+  end if;
+  if new.status = 'In progress' and new.assigned_to_staff_id is null then
+    new.assigned_to_staff_id := public.current_staff_id();
+  end if;
+  new.assigned_to_staff_name := (select name from public.staff where id = new.assigned_to_staff_id);
+  new.completed_at := case when new.status = 'Done' then coalesce(new.completed_at, now()) end;
+  new.updated_at := now();
+  return new;
+end
+$$;
+drop trigger if exists test_requests_stamp on public.test_requests;
+create trigger test_requests_stamp before insert or update on public.test_requests
+  for each row execute function public.stamp_test_request();
 
 -- -----------------------------------------------------------------------------
 -- Functions the app calls
@@ -1146,8 +1198,31 @@ begin
       from items);
   end if;
 
+  -- Lab requests: assigned to me, and waiting in the queue for a technician.
+  if public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Lab Technician']) then
+    result := result || (select jsonb_build_object('lab', jsonb_build_object(
+      'mine', count(*) filter (where assigned_to_staff_id = me),
+      'waiting', count(*) filter (where assigned_to_staff_id is null),
+      'urgent', count(*) filter (where priority = 'Urgent' and (assigned_to_staff_id is null or assigned_to_staff_id = me))))
+      from public.test_requests
+      where status in ('Requested', 'In progress'));
+  end if;
+
   return result;
 end
+$$;
+
+-- Lab technicians to choose from when requesting a test: who is on duty now and how many
+-- open requests each has (attendance itself is private, so this only says yes or no).
+create or replace function public.lab_technicians()
+returns table (id bigint, name text, on_duty boolean, open_requests bigint)
+language sql stable security definer set search_path = public as $$
+  select s.id, s.name,
+         exists (select 1 from public.staff_attendance a where a.staff_id = s.id and a.clock_out is null),
+         (select count(*) from public.test_requests r where r.assigned_to_staff_id = s.id and r.status in ('Requested', 'In progress'))
+  from public.staff s
+  where s.role = 'Lab Technician' and s.active and public.is_active_staff()
+  order by 3 desc, 4, s.name
 $$;
 
 -- Anyone signed in can choose the language the app shows them.
@@ -1181,6 +1256,8 @@ revoke all on function public.home_summary(text) from public;
 grant execute on function public.home_summary(text) to authenticated;
 revoke all on function public.set_my_language(text) from public;
 grant execute on function public.set_my_language(text) to authenticated;
+revoke all on function public.lab_technicians() from public;
+grant execute on function public.lab_technicians() to authenticated;
 revoke all on function public.staff_salaries() from public;
 grant execute on function public.staff_salaries() to authenticated;
 
@@ -1195,7 +1272,7 @@ begin
     'staff', 'referring_doctors', 'medical_test_catalog', 'medications', 'materials', 'vendors',
     'treatment_templates', 'payment_methods', 'hospital_profile', 'departments', 'department_staff',
     'patients', 'care_notes', 'patient_tests', 'bills', 'payments', 'staff_shifts', 'staff_attendance', 'audit_log',
-    'payment_transactions', 'stock_movements', 'hospital_links'
+    'payment_transactions', 'stock_movements', 'hospital_links', 'test_requests'
   ] loop
     execute format('alter table public.%I enable row level security', t);
   end loop;
@@ -1218,7 +1295,7 @@ declare t text;
 begin
   foreach t in array array[
     'referring_doctors', 'medical_test_catalog', 'medications', 'materials', 'vendors',
-    'treatment_templates', 'patients', 'care_notes', 'patient_tests'
+    'treatment_templates', 'patients', 'care_notes', 'patient_tests', 'test_requests'
   ] loop
     execute format('drop policy if exists %1$s_select on public.%1$s', t);
     execute format('drop policy if exists %1$s_insert on public.%1$s', t);
