@@ -565,6 +565,17 @@ export const patients = invalidatesOnWrite({
     });
   },
 
+  // Patients still in care per department (one small column, counted here).
+  activeCountByDepartment(): Promise<Map<number, number>> {
+    return cached('dashboard:departmentCounts', DASHBOARD_TTL, async () => {
+      const rows = check(await db().from('patients').select('department_id')
+        .not('department_id', 'is', null).neq('condition', 'Discharged')) as Array<{ department_id: number }>;
+      const counts = new Map<number, number>();
+      for (const r of rows) counts.set(r.department_id, (counts.get(r.department_id) ?? 0) + 1);
+      return counts;
+    });
+  },
+
   // Patient records only, without notes and tests (for pickers and lookups).
   async listBasic(): Promise<Patient[]> {
     const rows = check(await db().from('patients').select('*').order('id'));

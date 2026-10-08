@@ -9,32 +9,35 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useT } from '@/components/language-provider';
+import { FEE_ROLES } from '@/config/permissions';
+import { useStaff } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useFeatures } from '@/hooks/use-features';
 import { departments as departmentsRepo, patients as patientsRepo } from '@/lib/data';
+import { formatINR } from '@/lib/format';
 import { billedProcedures, referralLines, referralTotal, type BilledProcedure } from '@/lib/referralFee';
 import type { Bill } from '@/types/billing';
 import type { ReferringDoctor } from '@/types/referringDoctor';
 import type { Department, DepartmentMembers } from '@/types/department';
 import type { Patient, ReferralFeeBasis } from '@/types/patient';
-import type { StaffMember, StaffRole } from '@/types/staff';
+import type { StaffMember } from '@/types/staff';
 
-// Roles allowed to set a doctor's fee (the database enforces the same rule).
-const FEE_ROLES: StaffRole[] = ['Super Admin', 'Admin', 'Accounts'];
 const NONE = 'none';
 
 interface CareTeamCardProps {
   patient: Patient;
   staff: StaffMember[];
-  currentUser: StaffMember;
   bills: Bill[]; // the patient's bills (for referral % per procedure)
-  referringDoctors: ReferringDoctor[];
+  referringDoctor: ReferringDoctor | null; // who referred the patient, if anyone
   onSaved: () => Promise<void> | void;
 }
 
 // Department, attending doctor and nurse, and the doctor's fee for this case.
-export function CareTeamCard({ patient, staff, currentUser, bills, referringDoctors, onSaved }: CareTeamCardProps) {
+export function CareTeamCard({ patient, staff, bills, referringDoctor, onSaved }: CareTeamCardProps) {
+  const t = useT();
   const { toast } = useToast();
+  const currentUser = useStaff();
   const { isOn } = useFeatures();
   // Parts the hospital uses (Hospital Profile → Menus).
   const showTeam = isOn('departments');
@@ -65,7 +68,6 @@ export function CareTeamCard({ patient, staff, currentUser, bills, referringDoct
       .catch(error => console.error('Could not load departments', error));
   }, [showTeam]);
 
-  const referringDoctor = referringDoctors.find(d => d.id === patient.referredDoctorId) ?? null;
   const procedures = useMemo<BilledProcedure[]>(() => (patient.referredDoctorId ? billedProcedures(bills) : []), [bills, patient.referredDoctorId]);
 
   // No fee chosen yet: start in the referring doctor's usual mode.
@@ -124,13 +126,13 @@ export function CareTeamCard({ patient, staff, currentUser, bills, referringDoct
     const referralFeeValue = usePercent ? percentTotal : referralFee.trim() === '' ? null : Number(referralFee);
     for (const value of [feeValue, referralFeeValue]) {
       if (value !== null && (!Number.isFinite(value) || value < 0)) {
-        toast({ title: "Invalid fee", description: "Enter fees of 0 or more, or leave them empty.", variant: "destructive" });
+        toast({ title: "Check the fees", description: "Enter fees of 0 or more, or leave them empty.", variant: "destructive" });
         return;
       }
     }
     if (showReferral && usePercent && canEditFee && !referralPaid) {
       if (lines.some(line => !Number.isFinite(line.percent) || line.percent < 0 || line.percent > 100)) {
-        toast({ title: "Invalid percentage", description: "Referral percentages must be between 0 and 100.", variant: "destructive" });
+        toast({ title: "Check the percentages", description: "Referral percentages must be between 0 and 100.", variant: "destructive" });
         return;
       }
       if (lines.length === 0) {
@@ -165,9 +167,9 @@ export function CareTeamCard({ patient, staff, currentUser, bills, referringDoct
         `Doctor: ${staffName(newDoctorId) ?? 'none'}`,
         `Nurse: ${staffName(newNurseId) ?? 'none'}`,
       ] : []),
-      ...(changes.doctorFee !== undefined ? [`Doctor fee: ${feeValue != null ? `₹${feeValue.toFixed(2)}` : 'not set'}`] : []),
+      ...(changes.doctorFee !== undefined ? [`Doctor fee: ${feeValue != null ? formatINR(feeValue) : 'not set'}`] : []),
       ...(changes.referralFee !== undefined
-        ? [`Referral fee: ${referralFeeValue != null ? `₹${referralFeeValue.toFixed(2)}` : 'not set'}${usePercent ? ` (${lines.filter(l => l.percent > 0).map(l => `${l.percent}% of ${l.description}`).join(', ') || '0%'})` : ''}`]
+        ? [`Referral fee: ${referralFeeValue != null ? formatINR(referralFeeValue) : 'not set'}${usePercent ? ` (${lines.filter(l => l.percent > 0).map(l => `${l.percent}% of ${l.description}`).join(', ') || '0%'})` : ''}`]
         : []),
     ].join('; ');
 
@@ -177,7 +179,7 @@ export function CareTeamCard({ patient, staff, currentUser, bills, referringDoct
       toast({ title: "Care team saved", description: details });
       await onSaved();
     } catch (error) {
-      toast({ title: "Save Error", description: error instanceof Error ? error.message : 'Could not save the care team.', variant: "destructive" });
+      toast({ title: "Could not save the care team", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
     } finally {
       setIsSaving(false);
     }
@@ -188,7 +190,7 @@ export function CareTeamCard({ patient, staff, currentUser, bills, referringDoct
   return (
     <Card className="shadow-lg">
       <CardHeader>
-        <CardTitle className="flex items-center"><Building2 className="mr-2 h-5 w-5 text-primary" />{showTeam ? <>Department &amp; Care Team</> : 'Referral Fee'}</CardTitle>
+        <CardTitle className="flex items-center"><Building2 className="mr-2 h-5 w-5 text-primary" />{showTeam ? t('Department & Care Team') : t('Referral Fee')}</CardTitle>
         <CardDescription>
           {showTeam
             ? `The department treating this patient and the doctor and nurse in charge${showDoctorFee ? ", the doctor's fee for the case" : ''}${showReferral ? ' and the referral fee' : ''}.`
@@ -239,10 +241,10 @@ export function CareTeamCard({ patient, staff, currentUser, bills, referringDoct
             {showDoctorFee && <div>
               <div className="flex items-center justify-between gap-2">
                 <Label htmlFor="careFee">Doctor fee for this case (₹)</Label>
-                <Badge variant={feePaid ? 'default' : 'secondary'}>{feePaid ? `Paid${patient.doctorFeePaymentId ? ` · ${patient.doctorFeePaymentId}` : ''}` : 'Pending'}</Badge>
+                <Badge variant={feePaid ? 'default' : 'secondary'}>{feePaid ? `${t('Paid')}${patient.doctorFeePaymentId ? ` · ${patient.doctorFeePaymentId}` : ''}` : t('Pending')}</Badge>
               </div>
               <Input id="careFee" type="number" inputMode="decimal" min={0} value={fee} onChange={e => setFee(e.target.value)}
-                disabled={!canEditFee || feePaid} placeholder={department?.defaultDoctorFee != null ? `Default ₹${department.defaultDoctorFee}` : 'e.g. 1500'} />
+                disabled={!canEditFee || feePaid} placeholder={department?.defaultDoctorFee != null ? `Default ${formatINR(department.defaultDoctorFee)}` : 'e.g. 1500'} />
               <p className="text-xs text-muted-foreground mt-1">
                 {feePaid
                   ? 'The fee has been paid, so the doctor and fee can no longer change.'
@@ -257,7 +259,7 @@ export function CareTeamCard({ patient, staff, currentUser, bills, referringDoct
               <div className="rounded-md border p-3 space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <Label htmlFor="careReferralFee">Referral fee (paid by the hospital)</Label>
-                  <Badge variant={referralPaid ? 'default' : 'secondary'} className="shrink-0 whitespace-nowrap">{referralPaid ? `Paid${patient.referralFeePaymentId ? ` · ${patient.referralFeePaymentId}` : ''}` : 'Pending'}</Badge>
+                  <Badge variant={referralPaid ? 'default' : 'secondary'} className="shrink-0 whitespace-nowrap">{referralPaid ? `${t('Paid')}${patient.referralFeePaymentId ? ` · ${patient.referralFeePaymentId}` : ''}` : t('Pending')}</Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   The hospital pays this to {referringDoctor ? `${referringDoctor.name}${referringDoctor.location ? ` (${referringDoctor.location})` : ''}` : 'the referring doctor'}. It is not added to the patient&apos;s bill.
@@ -276,12 +278,12 @@ export function CareTeamCard({ patient, staff, currentUser, bills, referringDoct
                   <>
                     <Input id="careReferralFee" type="number" inputMode="decimal" min={0} value={referralFee} onChange={e => setReferralFee(e.target.value)}
                       disabled={!canEditFee || referralPaid} aria-label="Referral fee (₹)"
-                      placeholder={referringDoctor?.defaultReferralFee != null ? `Default ₹${referringDoctor.defaultReferralFee}` : 'Amount in ₹, e.g. 500'} />
+                      placeholder={referringDoctor?.defaultReferralFee != null ? `Default ${formatINR(referringDoctor.defaultReferralFee)}` : 'Amount in ₹, e.g. 500'} />
                     <p className="text-xs text-muted-foreground">
                       {referralPaid
                         ? 'The referral fee has been paid.'
                         : referralFee.trim() === '' && referringDoctor?.defaultReferralFee != null
-                          ? `If left empty, the doctor's default of ₹${referringDoctor.defaultReferralFee.toFixed(2)} is used when paying through Payments → Referral/CC.`
+                          ? `If left empty, the doctor's default of ${formatINR(referringDoctor.defaultReferralFee)} is used when paying through Payments → Referral/CC.`
                           : 'Paid to the referring doctor through Payments → Referral/CC.'}
                     </p>
                   </>
@@ -298,24 +300,24 @@ export function CareTeamCard({ patient, staff, currentUser, bills, referringDoct
                             <p className="shrink-0 text-xs text-muted-foreground">{line.billType}</p>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="flex-1 text-xs text-muted-foreground tabular-nums">Billed ₹{line.amount.toFixed(2)}</span>
+                            <span className="min-w-0 flex-1 text-xs text-muted-foreground tabular-nums">Billed {formatINR(line.amount)}</span>
                             <Input type="number" inputMode="decimal" min={0} max={100} step="0.5" className="h-9 w-20 text-right"
                               aria-label={`Referral % for ${line.description}`}
                               value={referralPaid ? String(line.percent) : percents[line.key] ?? String(line.percent || '')}
                               onChange={e => setPercents(prev => ({ ...prev, [line.key]: e.target.value }))}
                               disabled={!canEditFee || referralPaid} placeholder="0" />
                             <span className="text-sm text-muted-foreground">%</span>
-                            <span className="w-20 text-right text-sm tabular-nums">₹{line.fee.toFixed(2)}</span>
+                            <span className="min-w-20 text-right text-sm tabular-nums">{formatINR(line.fee)}</span>
                           </div>
                         </li>
                       ))}
                     </ul>
                     <div className="flex items-center justify-between text-sm font-medium">
                       <span>Referral fee</span>
-                      <span id="careReferralPercentTotal" className="tabular-nums">₹{percentTotal.toFixed(2)}</span>
+                      <span id="careReferralPercentTotal" className="tabular-nums">{formatINR(percentTotal)}</span>
                     </div>
                     {percentOutOfDate && (
-                      <p className="text-xs text-amber-700 dark:text-amber-400">Bills have changed since the fee of ₹{patient.referralFee?.toFixed(2)} was saved. Save to update it.</p>
+                      <p className="text-xs text-amber-700 dark:text-amber-400">Bills have changed since the fee of {formatINR(patient.referralFee)} was saved. Save to update it.</p>
                     )}
                     {!referralPaid && <p className="text-xs text-muted-foreground">Paid to the referring doctor through Payments → Referral/CC.</p>}
                   </div>
@@ -324,7 +326,7 @@ export function CareTeamCard({ patient, staff, currentUser, bills, referringDoct
             )}
             {(canEditTeam || canEditFee) && ((showTeam && departments.length > 0) || showReferral) && (
               <Button onClick={handleSave} disabled={isSaving} className="w-full">
-                <Save className="mr-2 h-4 w-4" /> {isSaving ? 'Saving...' : 'Save Care Team'}
+                <Save className="mr-2 h-4 w-4" /> {isSaving ? t('Saving…') : t('Save Care Team')}
               </Button>
             )}
       </CardContent>

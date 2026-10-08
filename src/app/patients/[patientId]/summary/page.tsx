@@ -1,49 +1,40 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { differenceInYears, format, isValid, parse, parseISO } from 'date-fns';
-import { ArrowLeft, ClipboardList, FlaskConical, Pill, Printer, Stethoscope } from 'lucide-react';
+import { useParams } from 'next/navigation';
+import { differenceInYears } from 'date-fns';
+import { ClipboardList, FileText, FlaskConical, Pill, Printer, Stethoscope } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { HospitalLetterhead } from '@/components/hospital-letterhead';
-import { useAuth } from '@/context/AuthContext';
+import { PageBody, PageHeader, PageLoading } from '@/components/page';
+import { useFormat, useT } from '@/components/language-provider';
 import { useFeatures } from '@/hooks/use-features';
 import {
   bills as billsRepo, departments as departmentsRepo, patients as patientsRepo,
   referringDoctors as referringDoctorsRepo, staff as staffRepo,
 } from '@/lib/data';
+import { formatINR, parseStoredDate as toDate, patientDisplayId } from '@/lib/format';
 import type { Bill } from '@/types/billing';
 import type { Department } from '@/types/department';
 import type { Patient } from '@/types/patient';
 import type { ReferringDoctor } from '@/types/referringDoctor';
 import type { StaffMember } from '@/types/staff';
 
-// Dates are stored either as ISO timestamps or dd/MM/yyyy text.
-function toDate(value?: string | null): Date | null {
-  if (!value) return null;
-  const iso = parseISO(value);
-  if (isValid(iso)) return iso;
-  const dmy = parse(value, 'dd/MM/yyyy', new Date());
-  return isValid(dmy) ? dmy : null;
-}
-const show = (value?: string | null) => {
-  const date = toDate(value);
-  return date ? format(date, 'dd MMM yyyy') : '—';
-};
-
 interface ProcedureRow { date: Date | null; name: string; detail: string; by?: string; kind: 'Test' | 'Procedure' }
 interface MedicationRow { name: string; dosage: string; prescribedOn: Date[]; prescribedBy: Set<string>; dispensed: number }
 
 // One-page treatment summary for a patient: key procedures, tests and medications.
 // Prints cleanly (Print / Save as PDF) to hand to the patient or another doctor.
+// Access is checked by PageGuard (src/config/navigation.ts).
 export default function PatientSummaryPage() {
   const params = useParams();
-  const router = useRouter();
-  const { currentUser, isLoading: authIsLoading } = useAuth();
+  const t = useT();
+  const { date: show } = useFormat();
   const { isOn } = useFeatures();
+  const billingOn = isOn('billing');
+  const referralsOn = isOn('referringDoctors');
   const patientId = Number(params.patientId);
 
   const [patient, setPatient] = useState<Patient | null>(null);
@@ -55,13 +46,10 @@ export default function PatientSummaryPage() {
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
-    if (!authIsLoading && !currentUser) router.replace('/login');
-  }, [authIsLoading, currentUser, router]);
-
-  useEffect(() => {
-    if (!currentUser || !Number.isInteger(patientId)) return;
+    if (!Number.isInteger(patientId)) { setNotFound(true); return; }
     const load = async () => {
       try {
+        // Pharmacy and treatment bills also list what was dispensed and done.
         const [found, billList, staffList] = await Promise.all([
           patientsRepo.get(patientId), billsRepo.list({ patientId }), staffRepo.list(),
         ]);
@@ -71,7 +59,7 @@ export default function PatientSummaryPage() {
         setStaff(staffList);
         const [dept, referrer] = await Promise.all([
           found.departmentId ? departmentsRepo.get(found.departmentId) : Promise.resolve(null),
-          found.referredDoctorId ? referringDoctorsRepo.get(found.referredDoctorId) : Promise.resolve(null),
+          referralsOn && found.referredDoctorId ? referringDoctorsRepo.get(found.referredDoctorId) : Promise.resolve(null),
         ]);
         setDepartment(dept);
         setReferringDoctor(referrer);
@@ -83,7 +71,7 @@ export default function PatientSummaryPage() {
       }
     };
     load();
-  }, [currentUser, patientId]);
+  }, [patientId, referralsOn]);
 
   const staffName = (id?: number | null) => staff.find(s => s.id === id)?.name;
 
@@ -135,19 +123,16 @@ export default function PatientSummaryPage() {
     return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [patient, bills]);
 
-  if (authIsLoading || (isLoading && !notFound)) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Loading summary...</p></div>;
-  }
-  if (notFound || !patient) {
+  if (notFound) {
     return (
-      <div className="container mx-auto p-8 text-center">
-        <p className="mb-4">Patient not found.</p>
-        <Button variant="outline" onClick={() => router.push('/dashboard')}><ArrowLeft className="mr-2 h-4 w-4" /> Back to Dashboard</Button>
-      </div>
+      <PageBody width="medium">
+        <PageHeader icon={FileText} title={t('Patient Not Found')} back={{ href: '/dashboard', label: t('Patient Dashboard') }} />
+      </PageBody>
     );
   }
+  if (isLoading || !patient) return <PageLoading />;
 
-  const displayId = String(patient.id).padStart(3, '0');
+  const displayId = patientDisplayId(patient.id);
   const dob = toDate(patient.dateOfBirth);
   const age = dob ? differenceInYears(new Date(), dob) : null;
   const totalBilled = bills.reduce((sum, b) => sum + b.totalAmount, 0);
@@ -159,36 +144,35 @@ export default function PatientSummaryPage() {
   );
 
   return (
-    <div className="container mx-auto max-w-4xl p-4 sm:p-6 lg:p-8 space-y-6 print:max-w-none print:p-0 print:space-y-4">
-      <div className="flex flex-wrap justify-between gap-2 print:hidden">
-        <Button variant="outline" asChild><Link href={`/patients/${displayId}`}><ArrowLeft className="mr-2 h-4 w-4" /> Back to Patient</Link></Button>
-        <Button onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" /> Print / Save as PDF</Button>
-      </div>
+    <PageBody width="medium" className="print:space-y-4">
+      <PageHeader icon={FileText} title={t('Treatment Summary')} className="print:hidden"
+        back={{ href: `/patients/${displayId}`, label: `${patient.firstName} ${patient.lastName}` }}
+        actions={<Button onClick={() => window.print()}><Printer className="mr-2 h-4 w-4" /> {t('Print / Save as PDF')}</Button>} />
 
       <HospitalLetterhead />
 
       <header className="flex items-start justify-between gap-4 border-b pb-4">
         <div>
-          <p className="text-sm text-muted-foreground">Treatment Summary</p>
+          <p className="text-sm text-muted-foreground">{t('Treatment Summary')}</p>
           <h1 className="text-2xl sm:text-3xl font-bold">{patient.firstName} {patient.lastName}</h1>
           <p className="text-sm text-muted-foreground">
-            Patient ID {displayId}{age !== null ? ` · ${age} years` : ''}{patient.gender ? ` · ${patient.gender}` : ''} · Generated {format(new Date(), 'dd MMM yyyy')}
+            Patient ID {displayId}{age !== null ? ` · ${age} years` : ''}{patient.gender ? ` · ${patient.gender}` : ''} · Generated {show(new Date())}
           </p>
         </div>
       </header>
 
       <Card className="print:shadow-none print:border-0">
-        <CardHeader className="print:px-0"><CardTitle className="flex items-center gap-2 text-lg"><Stethoscope className="h-5 w-5 text-primary" /> Admission &amp; Care Team</CardTitle></CardHeader>
+        <CardHeader className="print:px-0"><CardTitle className="flex items-center gap-2 text-lg"><Stethoscope className="h-5 w-5 text-primary" /> {t('Admission & Care Team')}</CardTitle></CardHeader>
         <CardContent className="print:px-0">
           <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <Detail label="Admitted" value={show(patient.admissionDate)} />
             <Detail label="Reason for visit" value={patient.reasonForVisit} />
-            <Detail label="Current condition" value={patient.condition} />
+            <Detail label="Current condition" value={patient.condition && t(patient.condition)} />
             <Detail label="Department" value={department?.name} />
             <Detail label="Attending doctor" value={staffName(patient.attendingDoctorId)} />
             <Detail label="Nurse in charge" value={staffName(patient.attendingNurseId)} />
-            {isOn('referringDoctors') && <Detail label="Referred by" value={referringDoctor ? `${referringDoctor.name}${referringDoctor.location ? `, ${referringDoctor.location}` : ''}` : null} />}
-            <Detail label="Date of birth" value={dob ? format(dob, 'dd MMM yyyy') : null} />
+            {referralsOn && <Detail label="Referred by" value={referringDoctor ? `${referringDoctor.name}${referringDoctor.location ? `, ${referringDoctor.location}` : ''}` : null} />}
+            <Detail label="Date of birth" value={dob ? show(dob) : null} />
             <Detail label="Emergency contact" value={patient.emergencyContactName ? `${patient.emergencyContactName} (${patient.emergencyContactNumber})` : null} />
           </dl>
           {patient.initialObservationsText && (
@@ -199,7 +183,7 @@ export default function PatientSummaryPage() {
 
       <Card className="print:shadow-none print:border-0 print:break-inside-avoid">
         <CardHeader className="print:px-0">
-          <CardTitle className="flex items-center gap-2 text-lg"><FlaskConical className="h-5 w-5 text-primary" /> Key Procedures &amp; Tests</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-lg"><FlaskConical className="h-5 w-5 text-primary" /> {t('Key Procedures & Tests')}</CardTitle>
           <CardDescription>Tests recorded on the patient&apos;s file and procedures billed.</CardDescription>
         </CardHeader>
         <CardContent className="print:px-0">
@@ -211,7 +195,7 @@ export default function PatientSummaryPage() {
               <TableBody>
                 {procedures.map((row, index) => (
                   <TableRow key={index}>
-                    <TableCell className="whitespace-nowrap">{row.date ? format(row.date, 'dd MMM yyyy') : '—'}</TableCell>
+                    <TableCell className="whitespace-nowrap">{show(row.date)}</TableCell>
                     <TableCell>
                       <span className="font-medium">{row.name}</span>
                       <span className="block text-xs text-muted-foreground">{row.kind}{row.by ? ` · ${row.by}` : ''}</span>
@@ -228,7 +212,7 @@ export default function PatientSummaryPage() {
 
       <Card className="print:shadow-none print:border-0 print:break-inside-avoid">
         <CardHeader className="print:px-0">
-          <CardTitle className="flex items-center gap-2 text-lg"><Pill className="h-5 w-5 text-primary" /> Medications</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-lg"><Pill className="h-5 w-5 text-primary" /> {t('Medications')}</CardTitle>
           <CardDescription>Prescribed in care notes, with quantities dispensed by the pharmacy.</CardDescription>
         </CardHeader>
         <CardContent className="print:px-0">
@@ -248,7 +232,7 @@ export default function PatientSummaryPage() {
                     <TableCell className="font-medium">{med.name}</TableCell>
                     <TableCell>{med.dosage || '—'}</TableCell>
                     <TableCell className="hidden sm:table-cell print:table-cell text-sm">
-                      {med.prescribedOn.length > 0 ? `${format(med.prescribedOn[0], 'dd MMM yyyy')}${med.prescribedOn.length > 1 ? ` (+${med.prescribedOn.length - 1} more)` : ''}` : 'Pharmacy only'}
+                      {med.prescribedOn.length > 0 ? `${show(med.prescribedOn[0])}${med.prescribedOn.length > 1 ? ` (+${med.prescribedOn.length - 1} more)` : ''}` : 'Pharmacy only'}
                       {med.prescribedBy.size > 0 && <span className="block text-xs text-muted-foreground">{[...med.prescribedBy].join(', ')}</span>}
                     </TableCell>
                     <TableCell className="text-right">{med.dispensed > 0 ? med.dispensed : '—'}</TableCell>
@@ -263,7 +247,7 @@ export default function PatientSummaryPage() {
       {notes.length > 0 && (
         <Card className="print:shadow-none print:border-0">
           <CardHeader className="print:px-0">
-            <CardTitle className="flex items-center gap-2 text-lg"><ClipboardList className="h-5 w-5 text-primary" /> Recent Care Notes</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-lg"><ClipboardList className="h-5 w-5 text-primary" /> {t('Recent Care Notes')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 print:px-0">
             {notes.map(note => (
@@ -276,19 +260,19 @@ export default function PatientSummaryPage() {
         </Card>
       )}
 
-      {isOn('billing') && (
+      {billingOn && (
       <Card className="print:shadow-none print:border-0 print:break-inside-avoid">
-        <CardHeader className="print:px-0"><CardTitle className="text-lg">Billing</CardTitle></CardHeader>
+        <CardHeader className="print:px-0"><CardTitle className="text-lg">{t('Billing')}</CardTitle></CardHeader>
         <CardContent className="print:px-0">
-          <dl className="grid grid-cols-3 gap-4">
+          <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <Detail label="Bills" value={String(bills.length)} />
-            <Detail label="Total billed" value={`₹${totalBilled.toFixed(2)}`} />
-            <Detail label="Paid in full" value={`₹${totalPaid.toFixed(2)}`} />
+            <Detail label="Total billed" value={formatINR(totalBilled)} />
+            <Detail label="Paid in full" value={formatINR(totalPaid)} />
           </dl>
         </CardContent>
       </Card>
       )}
       <p className="text-center text-[11px] text-muted-foreground">Generated with Seva</p>
-    </div>
+    </PageBody>
   );
 }

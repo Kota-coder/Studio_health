@@ -30,15 +30,8 @@ export default function DepartmentsPage() {
   const [data, setData] = useState<PageData | null>(null);
 
   useEffect(() => {
-    // listNames() is the lightest patient query there is; a per-department count query would be lighter still.
-    Promise.all([departmentsRepo.list(), departmentsRepo.listMembers(), staffRepo.list(), patientsRepo.listNames()])
-      .then(([departments, members, staff, patients]) => {
-        const activePatients = new Map<number, number>();
-        for (const p of patients) {
-          if (p.departmentId != null && p.condition !== 'Discharged') activePatients.set(p.departmentId, (activePatients.get(p.departmentId) ?? 0) + 1);
-        }
-        setData({ departments, members, staff, activePatients });
-      })
+    Promise.all([departmentsRepo.list(), departmentsRepo.listMembers(), staffRepo.list(), patientsRepo.activeCountByDepartment()])
+      .then(([departments, members, staff, activePatients]) => setData({ departments, members, staff, activePatients }))
       .catch(() => {
         toast({ title: 'Could not load departments', variant: 'destructive' });
         setData({ departments: [], members: {}, staff: [], activePatients: new Map() });

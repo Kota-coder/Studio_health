@@ -1,3 +1,76 @@
 // Telugu: billing, bills and receipts, payments, financial dashboard, payment methods.
 export const MONEY: Record<string, string> = {
+  // Billing
+  'Bills for patients: treatment and pharmacy.': 'రోగుల బిల్లులు: చికిత్స మరియు ఫార్మసీ.',
+  'New Bill': 'కొత్త బిల్లు',
+  'Edit Bill': 'బిల్లు మార్చండి',
+  'Bills': 'బిల్లులు',
+  'Filters': 'ఫిల్టర్లు',
+  'Choose the bill type': 'బిల్లు రకాన్ని ఎంచుకోండి',
+  'Pharmacy Bill': 'ఫార్మసీ బిల్లు',
+  'Treatment / Consultation Bill': 'చికిత్స / కన్సల్టేషన్ బిల్లు',
+  'Continue': 'కొనసాగించండి',
+  'Pharmacy Items': 'ఫార్మసీ వస్తువులు',
+  'Services / Treatments': 'సేవలు / చికిత్సలు',
+  'Add Item': 'వస్తువు జోడించండి',
+  'Save Bill': 'బిల్లు సేవ్ చేయండి',
+  'Print Bill': 'బిల్లు ప్రింట్',
+  'Print Receipt': 'రసీదు ప్రింట్',
+  'Bill History': 'బిల్లు చరిత్ర',
+
+  // Payments
+  'Money paid out: salaries, purchases, doctor and referral fees.': 'చెల్లించిన డబ్బు: జీతాలు, కొనుగోళ్లు, డాక్టర్ మరియు రిఫరల్ ఫీజులు.',
+  'New Payment': 'కొత్త చెల్లింపు',
+  'Edit Payment': 'చెల్లింపు మార్చండి',
+  'Record money paid out by the hospital.': 'ఆసుపత్రి చెల్లించిన డబ్బును నమోదు చేయండి.',
+  'Recorded Payments': 'నమోదైన చెల్లింపులు',
+  'View / Edit': 'చూడండి / మార్చండి',
+  'Save Payment': 'చెల్లింపు సేవ్ చేయండి',
+  'Payment History': 'చెల్లింపు చరిత్ర',
+  'Unpaid referrals': 'చెల్లించని రిఫరల్స్',
+  'Referrals paid by this payment': 'ఈ చెల్లింపుతో చెల్లించిన రిఫరల్స్',
+  'Unpaid cases': 'చెల్లించని కేసులు',
+  'Cases paid by this payment': 'ఈ చెల్లింపుతో చెల్లించిన కేసులు',
+  'Pharmacy Items Purchased': 'కొన్న ఫార్మసీ వస్తువులు',
+  'Materials Purchased': 'కొన్న సామగ్రి',
+  // Payment types
+  'Salary': 'జీతం',
+  'Material': 'సామగ్రి',
+  'Doctor Fee': 'డాక్టర్ ఫీజు',
+  'Referral/CC': 'రిఫరల్/CC',
+
+  // Financial dashboard
+  'Money billed, collected and paid out.': 'బిల్లు చేసిన, వసూలైన మరియు చెల్లించిన డబ్బు.',
+  'No financial data yet': 'ఇంకా ఆర్థిక వివరాలు లేవు',
+  'Nothing in this period': 'ఈ కాలంలో ఏమీ లేదు',
+  'Total Billed': 'మొత్తం బిల్లు',
+  'Total Collected': 'మొత్తం వసూలు',
+  'Total Outstanding': 'మొత్తం బాకీ',
+  'Total Paid Out': 'మొత్తం చెల్లించినది',
+  'Income & Expenditure': 'ఆదాయం & ఖర్చు',
+  'Bill Status': 'బిల్లుల స్థితి',
+  'Payments by Type': 'రకం వారీగా చెల్లింపులు',
+  'Billed Amount by Type': 'రకం వారీగా బిల్లు మొత్తం',
+  'By Payment Method': 'చెల్లింపు పద్ధతి వారీగా',
+  'Received': 'వచ్చినది',
+  'Paid out': 'చెల్లించినది',
+  'Doctor Fees': 'డాక్టర్ ఫీజులు',
+  'Referral Fees': 'రిఫరల్ ఫీజులు',
+
+  // Payment methods
+  'The choices offered on bills (money received) and payments (money paid out), in this order.':
+    'బిల్లులు (వచ్చే డబ్బు) మరియు చెల్లింపులు (ఇచ్చే డబ్బు) లో ఈ క్రమంలో చూపే ఎంపికలు.',
+  'Add a method': 'పద్ధతిని జోడించండి',
+  'Methods': 'పద్ధతులు',
+  'Off': 'ఆఫ్',
+
+  // Period filter
+  'Period': 'కాలం',
+  'Last 30 days': 'గత 30 రోజులు',
+  'This month': 'ఈ నెల',
+  'Last month': 'గత నెల',
+  'Last 3 months': 'గత 3 నెలలు',
+  'This year': 'ఈ సంవత్సరం',
+  'All time': 'మొత్తం కాలం',
+  'Custom dates': 'తేదీలు ఎంచుకోండి',
 };

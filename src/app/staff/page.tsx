@@ -31,7 +31,7 @@ export default function StaffPage() {
         toast({ title: 'Could not load staff', variant: 'destructive' });
         setStaffMembers([]);
       });
-  }, [toast, t]);
+  }, [toast]);
 
   const importRows = async (rows: Record<string, string>[]) => {
     const emails = new Set((staffMembers ?? []).map(s => s.email.toLowerCase()));

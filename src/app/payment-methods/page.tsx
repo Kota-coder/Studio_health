@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { ArrowDown, ArrowLeft, ArrowUp, PlusCircle, Save, Wallet } from 'lucide-react';
+import { ArrowDown, ArrowUp, PlusCircle, Save, Wallet } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,14 +9,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { useAuth } from '@/context/AuthContext';
+import { PageBody, PageHeader, PageLoading } from '@/components/page';
+import { useT } from '@/components/language-provider';
 import { useToast } from '@/hooks/use-toast';
-import { PAGE_ROLES } from '@/config/permissions';
 import { paymentMethods as paymentMethodsRepo } from '@/lib/data';
 import type { PaymentMethodOption, PaymentMethodUse } from '@/types/paymentMethod';
-import type { StaffRole } from '@/types/staff';
 
-const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.paymentMethods;
 const USES: Array<{ value: PaymentMethodUse; label: string }> = [
   { value: 'Both', label: 'Bills and payments' },
   { value: 'Bills', label: 'Bills (money received)' },
@@ -28,21 +25,13 @@ type Draft = Pick<PaymentMethodOption, 'name' | 'usedFor' | 'active'>;
 
 // Super Admin: the payment methods offered on bills and payments (Cash, UPI, ...).
 export default function PaymentMethodsPage() {
-  const router = useRouter();
+  const t = useT();
   const { toast } = useToast();
-  const { currentUser, isLoading: authIsLoading } = useAuth();
   const [methods, setMethods] = useState<PaymentMethodOption[]>([]);
   const [drafts, setDrafts] = useState<Record<number, Draft>>({});
   const [newMethod, setNewMethod] = useState<Draft>({ name: '', usedFor: 'Both', active: true });
   const [isLoading, setIsLoading] = useState(true);
   const [savingId, setSavingId] = useState<number | 'new' | null>(null);
-
-  const allowed = !!currentUser && ALLOWED_ROLES.includes(currentUser.role);
-
-  useEffect(() => {
-    if (!authIsLoading && !currentUser) router.replace('/login');
-    else if (!authIsLoading && currentUser && !allowed) router.replace('/dashboard');
-  }, [authIsLoading, currentUser, allowed, router]);
 
   const load = useCallback(async () => {
     try {
@@ -50,13 +39,13 @@ export default function PaymentMethodsPage() {
       setMethods(list);
       setDrafts(Object.fromEntries(list.map(m => [m.id, { name: m.name, usedFor: m.usedFor, active: m.active }])));
     } catch (error) {
-      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Could not load payment methods.', variant: 'destructive' });
+      toast({ title: t('Error'), description: error instanceof Error ? error.message : 'Could not load payment methods.', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, [toast, t]);
 
-  useEffect(() => { if (allowed) load(); }, [allowed, load]);
+  useEffect(() => { load(); }, [load]);
 
   const nameProblem = (name: string, id?: number) => {
     const trimmed = name.trim();
@@ -77,7 +66,7 @@ export default function PaymentMethodsPage() {
       toast({ title: 'Saved', description: `${draft.name.trim()} updated.` });
       await load();
     } catch (error) {
-      toast({ title: 'Save Error', description: error instanceof Error ? error.message : 'Could not save.', variant: 'destructive' });
+      toast({ title: 'Could not save', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
     } finally {
       setSavingId(null);
     }
@@ -94,7 +83,7 @@ export default function PaymentMethodsPage() {
       setNewMethod({ name: '', usedFor: 'Both', active: true });
       await load();
     } catch (error) {
-      toast({ title: 'Save Error', description: error instanceof Error ? error.message : 'Could not add the method.', variant: 'destructive' });
+      toast({ title: 'Could not add the method', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
     } finally {
       setSavingId(null);
     }
@@ -112,18 +101,13 @@ export default function PaymentMethodsPage() {
       await paymentMethodsRepo.update(b.id, { sortOrder: second });
       await load();
     } catch (error) {
-      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Could not reorder.', variant: 'destructive' });
+      toast({ title: 'Could not reorder', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
     } finally {
       setSavingId(null);
     }
   };
 
-  if (authIsLoading || (allowed && isLoading)) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Loading payment methods...</p></div>;
-  }
-  if (!allowed) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Access Denied. Redirecting...</p></div>;
-  }
+  if (isLoading) return <PageLoading />;
 
   const changed = (m: PaymentMethodOption) => {
     const d = drafts[m.id];
@@ -131,24 +115,16 @@ export default function PaymentMethodsPage() {
   };
 
   return (
-    <div className="container mx-auto max-w-4xl p-4 sm:p-6 lg:p-8 space-y-6">
-      <header className="flex flex-col sm:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-3">
-          <Wallet className="h-8 w-8 text-primary" />
-          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Payment Methods</h1>
-        </div>
-        <Button variant="outline" onClick={() => router.push('/dashboard')}><ArrowLeft className="mr-2 h-4 w-4" /> Dashboard</Button>
-      </header>
-
+    <PageBody width="medium">
+      <PageHeader icon={Wallet} title={t('Payment Methods')}
+        description={t('The choices offered on bills (money received) and payments (money paid out), in this order.')} />
       <p className="text-sm text-muted-foreground">
-        The choices offered under &quot;Payment Method&quot; on bills (money received) and payments (money paid out), in this
-        order. Switch a method off to stop offering it; records that already use it keep it. Renaming a method renames it on
-        those records too.
+        Switch a method off to stop offering it; records that already use it keep it. Renaming a method renames it on those records too.
       </p>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Add a method</CardTitle>
+          <CardTitle className="text-lg">{t('Add a method')}</CardTitle>
           <CardDescription>For example a bank&apos;s UPI handle, a card machine, or an insurer.</CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_14rem_auto] sm:items-end">
@@ -165,13 +141,13 @@ export default function PaymentMethodsPage() {
               <SelectContent>{USES.map(u => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <Button onClick={addMethod} disabled={savingId === 'new'}><PlusCircle className="mr-2 h-4 w-4" /> Add</Button>
+          <Button onClick={addMethod} disabled={savingId === 'new'}><PlusCircle className="mr-2 h-4 w-4" /> {t('Add')}</Button>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Methods</CardTitle>
+          <CardTitle className="text-lg">{t('Methods')}</CardTitle>
         </CardHeader>
         <CardContent>
           <ul className="divide-y rounded-md border">
@@ -186,7 +162,7 @@ export default function PaymentMethodsPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Input aria-label="Name" value={draft.name} maxLength={40} onChange={e => setDraft({ name: e.target.value })} />
-                    {!method.active && <Badge variant="secondary" className="shrink-0">Off</Badge>}
+                    {!method.active && <Badge variant="secondary" className="shrink-0">{t('Off')}</Badge>}
                   </div>
                   <Select value={draft.usedFor} onValueChange={v => setDraft({ usedFor: v as PaymentMethodUse })}>
                     <SelectTrigger aria-label={`${method.name} used for`}><SelectValue /></SelectTrigger>
@@ -197,7 +173,7 @@ export default function PaymentMethodsPage() {
                     Offered
                   </label>
                   <Button size="sm" onClick={() => saveMethod(method)} disabled={!changed(method) || savingId !== null}>
-                    <Save className="mr-1 h-4 w-4" /> Save
+                    <Save className="mr-1 h-4 w-4" /> {t('Save')}
                   </Button>
                 </li>
               );
@@ -205,6 +181,6 @@ export default function PaymentMethodsPage() {
           </ul>
         </CardContent>
       </Card>
-    </div>
+    </PageBody>
   );
 }
