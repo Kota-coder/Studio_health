@@ -2,7 +2,7 @@
 
 import Link from '@/components/app-link';
 import { format, parseISO } from 'date-fns';
-import { AlertTriangle, Boxes, CalendarClock, HandCoins, IndianRupee, Receipt, Stethoscope, Users } from 'lucide-react';
+import { AlertTriangle, Boxes, CalendarClock, HandCoins, IndianRupee, Microscope, Receipt, Stethoscope, Users } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useT } from '@/components/language-provider';
 import { useFeatures } from '@/hooks/use-features';
@@ -67,6 +67,14 @@ export function RoleSummary({ summary, user, onShowMine }: { summary: HomeSummar
       detail={user.role === 'Super Admin' || user.role === 'Admin' ? `${t('{n} staff on duty now', { n: duty.onDutyNow })} · ${nextText}` : nextText} />);
   }
 
+  if (summary.lab && isOn('labRequests')) {
+    const l = summary.lab;
+    const technician = user.role === 'Lab Technician';
+    // A technician's main work, so it comes first for them.
+    tiles[technician ? 'unshift' : 'push'](<Tile key="lab" icon={Microscope} title={t('Lab requests')} href="/lab" tone={l.urgent ? 'warn' : undefined}
+      value={technician ? t('{n} assigned to me', { n: l.mine }) : t('{n} waiting', { n: l.waiting })}
+      detail={[technician && t('{n} waiting in queue', { n: l.waiting }), l.urgent && t('{n} urgent', { n: l.urgent })].filter(Boolean).join(' · ') || undefined} />);
+  }
   if (summary.billing && isOn('billing')) {
     const b = summary.billing;
     tiles.push(<Tile key="bills" icon={Receipt} title={t('Bills today')} href="/billing" value={rupees(b.todayAmount)}

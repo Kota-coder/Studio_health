@@ -25,6 +25,7 @@ export const MODULES: ModuleDefinition[] = [
   { key: 'departments', label: 'Departments', description: 'Departments and care teams (attending doctor and nurse).' },
   { key: 'patientCare', label: 'Care Note Templates', description: 'Structured templates for care notes.' },
   { key: 'medicalTests', label: 'Medical Tests', description: 'Managing the tests offered and their prices.' },
+  { key: 'labRequests', label: 'Lab Requests', description: 'Requesting tests from the patient page, and the lab technicians\' queue.' },
   { key: 'medications', label: 'Pharmacy', description: 'Medicines the pharmacy sells; "Add Medication" on care notes.' },
   { key: 'materials', label: 'Materials', description: 'Consumables and supplies.' },
   { key: 'inventory', label: 'Inventory', description: 'Stock on hand, its value, and what needs refilling.', requiresAny: ['medications', 'materials'] },

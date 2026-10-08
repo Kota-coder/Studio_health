@@ -4,7 +4,7 @@
 // removed again with removeSampleDataFromDatabase().
 
 import {
-  bills, countRows, departments, inventory, materials, medications, patients, payments, referringDoctors, testCatalog, vendors,
+  bills, countRows, departments, inventory, materials, medications, patients, payments, referringDoctors, testCatalog, testRequests, vendors,
 } from '@/lib/data';
 import { maskAadhaarNumber, isAadhaarCard } from '@/lib/aadhaar';
 import { SHIFT_PRESETS, dateKey, shiftWindow, weekStartOf } from '@/lib/duty';
@@ -40,6 +40,7 @@ export interface SampleDataSummary {
   patients: number;
   careNotes: number;
   tests: number;
+  testRequests: number;
   bills: number;
   payments: number;
 }
@@ -142,7 +143,7 @@ export async function loadSampleDataIntoDatabase(
   const random = createRandom(20261007);
   const summary: SampleDataSummary = {
     staff: 0, departments: 0, doctorFeePayments: 0, referralFeePayments: 0, shifts: 0, attendance: 0, referringDoctors: 0, medications: 0, materials: 0, vendors: 0, testCatalog: 0,
-    patients: 0, careNotes: 0, tests: 0, bills: 0, payments: 0,
+    patients: 0, careNotes: 0, tests: 0, testRequests: 0, bills: 0, payments: 0,
   };
 
   onProgress?.('Adding sample staff...');
@@ -154,6 +155,7 @@ export async function loadSampleDataIntoDatabase(
   const accounts = staff.find(s => s.role === 'Accounts');
   const paymentProcessor = accounts ?? currentStaff;
   const nurses = staff.filter(s => s.role === 'Nurse');
+  const labTechnician = staff.find(s => s.role === 'Lab Technician');
 
   // Departments, each with one sample doctor and nurse (in order).
   onProgress?.('Adding departments...');
@@ -398,6 +400,22 @@ export async function loadSampleDataIntoDatabase(
     }
   }
 
+  // A few tests waiting for the lab: two in the queue (one urgent), one assigned to the
+  // sample technician and one they have started.
+  onProgress?.('Adding lab requests...');
+  const inCare = createdCases.filter((_, i) => plans[i].fields.condition !== 'Discharged').slice(-4);
+  for (const [i, patientCase] of inCare.entries()) {
+    const test = createdTests[i % createdTests.length];
+    const request = await testRequests.create({
+      patientId: patientCase.id, testTypeId: test.id, testTypeName: test.name,
+      priority: i === 0 ? 'Urgent' : 'Routine',
+      notes: i === 0 ? 'Chest pain since morning, please do first.' : undefined,
+      assignedToStaffId: i >= 2 ? labTechnician?.id : undefined,
+    });
+    if (i === 3 && labTechnician) await testRequests.take(request.id, labTechnician.id);
+    summary.testRequests++;
+  }
+
   onProgress?.('Adding bills...');
   billPlans.sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
   for (const bill of billPlans) {
@@ -426,7 +444,7 @@ export async function loadSampleDataIntoDatabase(
     for (const member of staff.filter(s => s.role !== 'Doctor')) {
       addPayment(monthDays, {
         paymentDate: '', paymentType: 'Salary', payeeId: member.id, payeeName: member.name, payeeType: 'StaffMember',
-        description: `Monthly salary – ${member.name}`, amount: ({ Nurse: 15000, Receptionist: 10000, Accounts: 12000 } as Record<string, number>)[member.role] ?? 10000,
+        description: `Monthly salary – ${member.name}`, amount: ({ Nurse: 15000, Receptionist: 10000, Accounts: 12000, 'Lab Technician': 14000 } as Record<string, number>)[member.role] ?? 10000,
         paymentMethod: 'Bank Transfer',
       });
     }
@@ -586,6 +604,7 @@ function buildSampleDuty(
     });
     for (const person of staff.filter(s => s.role === 'Receptionist')) if (weekday < 6) add(person, 'Morning');
     for (const person of staff.filter(s => s.role === 'Accounts')) if (weekday < 5) add(person, 'Day');
+    for (const person of staff.filter(s => s.role === 'Lab Technician')) if (weekday < 6) add(person, 'Day');
   }
 
   const now = new Date();

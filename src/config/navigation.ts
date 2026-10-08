@@ -2,7 +2,7 @@
 // database also enforces) and which switchable feature it belongs to (src/config/modules.ts).
 // The menu, the page guard (components/page-guard.tsx) and the page titles all come from here.
 import {
-  AreaChart, Boxes, Building2, CalendarClock, ClipboardPlus, CreditCard, Database, FileText, FlaskConical,
+  AreaChart, Boxes, Building2, CalendarClock, ClipboardPlus, CreditCard, Database, FileText, FlaskConical, Microscope,
   HeartHandshake, Hospital, LayoutDashboard, Package, Pill, Receipt, Truck, Users, Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -24,6 +24,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Patient Dashboard', icon: LayoutDashboard, section: 'Patients', roles: PAGE_ROLES.dashboard },
   { href: '/patients/new', label: 'Register Patient', icon: ClipboardPlus, section: 'Patients', roles: PAGE_ROLES.dashboard },
+  { href: '/lab', label: 'Lab Requests', icon: Microscope, section: 'Patients', roles: PAGE_ROLES.lab, module: 'labRequests' },
   { href: '/referring-doctors', label: 'Referring Doctors', icon: HeartHandshake, section: 'Patients', roles: PAGE_ROLES.referringDoctors, module: 'referringDoctors' },
 
   { href: '/billing', label: 'Billing', icon: CreditCard, section: 'Money', roles: PAGE_ROLES.billing, module: 'billing' },
