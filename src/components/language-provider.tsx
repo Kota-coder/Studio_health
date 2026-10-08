@@ -2,7 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { getSupabase } from '@/lib/supabase/client';
-import { isLang, translate, type Lang, type Vars } from '@/lib/i18n';
+import type { Locale } from 'date-fns';
+import { isLang, loadTelugu, translate, type Lang, type Vars } from '@/lib/i18n';
 import { formatDate } from '@/lib/format';
 
 const STORAGE_KEY = 'seva.lang';
@@ -17,11 +18,13 @@ interface LanguageContextValue {
 const LanguageContext = createContext<LanguageContextValue>({
   lang: 'en',
   setLang: () => undefined,
-  t: (text, vars) => translate('en', text, vars),
+  t: (text, vars) => translate(null, text, vars),
 });
+const DateLocaleContext = createContext<Locale | undefined>(undefined);
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [lang, setLangState] = useState<Lang>('en');
+  const [telugu, setTelugu] = useState<{ dictionary: Record<string, string>; locale: Locale } | null>(null);
 
   // Pages are built in English; switch after loading if this device chose Telugu.
   useEffect(() => {
@@ -33,6 +36,11 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
 
+  // English users never download the Telugu text.
+  useEffect(() => {
+    if (lang === 'te' && !telugu) loadTelugu().then(setTelugu).catch(error => console.error('Could not load Telugu', error));
+  }, [lang, telugu]);
+
   const setLang = useCallback((next: Lang, options?: { save?: boolean }) => {
     setLangState(next);
     try { localStorage.setItem(STORAGE_KEY, next); } catch { /* storage unavailable */ }
@@ -43,11 +51,16 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const dictionary = lang === 'te' ? telugu?.dictionary ?? null : null;
   const value = useMemo<LanguageContextValue>(() => ({
-    lang, setLang, t: (text, vars) => translate(lang, text, vars),
-  }), [lang, setLang]);
+    lang, setLang, t: (text, vars) => translate(dictionary, text, vars),
+  }), [lang, setLang, dictionary]);
 
-  return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
+  return (
+    <LanguageContext.Provider value={value}>
+      <DateLocaleContext.Provider value={lang === 'te' ? telugu?.locale : undefined}>{children}</DateLocaleContext.Provider>
+    </LanguageContext.Provider>
+  );
 }
 
 export const useLanguage = () => useContext(LanguageContext);
@@ -56,8 +69,8 @@ export const useT = () => useContext(LanguageContext).t;
 
 // Dates in the chosen language: const { date } = useFormat(); date(bill.billDate)
 export function useFormat() {
-  const { lang } = useContext(LanguageContext);
+  const locale = useContext(DateLocaleContext);
   return useMemo(() => ({
-    date: (value: string | Date | null | undefined, pattern?: string) => formatDate(value, pattern, lang),
-  }), [lang]);
+    date: (value: string | Date | null | undefined, pattern?: string) => formatDate(value, pattern, locale),
+  }), [locale]);
 }

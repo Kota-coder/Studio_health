@@ -511,7 +511,7 @@ export default function PaymentFormPage() {
                 {lines.map((line, index) => (
                   <div key={index} className="grid grid-cols-[1fr_auto_auto] items-end gap-2 border-b pb-2 last:border-b-0 md:grid-cols-[1fr_auto_auto_auto]">
                     <div className="col-span-3 md:col-span-1">
-                      <Label htmlFor={`item-${index}`}>{paymentType === 'Pharmacy' ? 'Medication' : 'Material'} *</Label>
+                      <Label htmlFor={`item-${index}`}>{paymentType === 'Pharmacy' ? 'Pharmacy item' : 'Material'} *</Label>
                       <Select value={line.itemId} onValueChange={value => chooseLineItem(index, value)}>
                         <SelectTrigger id={`item-${index}`}><SelectValue placeholder={line.name || 'Select item'} /></SelectTrigger>
                         <SelectContent>

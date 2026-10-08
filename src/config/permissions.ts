@@ -4,7 +4,7 @@ export const ALL_ROLES: StaffRole[] = ['Super Admin', 'Admin', 'Doctor', 'Nurse'
 
 /**
  * Which roles may open each section. Used by both the header menu and the pages
- * themselves, so a menu link never leads to an "Access Denied" screen.
+ * themselves (via src/config/navigation.ts and the page guard).
  * The database policies in supabase/migrations enforce the same rules for payments.
  */
 export const PAGE_ROLES = {

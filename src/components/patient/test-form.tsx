@@ -13,7 +13,7 @@ import { TEST_DEFINITIONS } from '@/config/testTypes';
 import { useStaff } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { patients as patientsRepo } from '@/lib/data';
-import { formatINR } from '@/lib/format';
+import { formatINR, toDMY } from '@/lib/format';
 import { uploadNewImages } from '@/lib/storage';
 import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 import type { Patient, TestFieldData } from '@/types/patient';
@@ -39,7 +39,7 @@ export function TestForm({ patient, catalog, staff, onSaved, onCancel }: {
   const currentUser = useStaff();
   const [testTypeId, setTestTypeId] = useState('');
   const [fields, setFields] = useState<TestFieldData>({});
-  const [testDate, setTestDate] = useState('');
+  const [testDate, setTestDate] = useState(() => toDMY(new Date())); // usually logged the day it's done
   const [performedBy, setPerformedBy] = useState('');
   const [results, setResults] = useState('');
   const [notes, setNotes] = useState('');

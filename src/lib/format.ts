@@ -1,7 +1,5 @@
 // Shared formatting for money, dates and patient numbers.
-import { format, isValid, parse, parseISO } from 'date-fns';
-import { te } from 'date-fns/locale';
-import type { Lang } from '@/lib/i18n';
+import { format, isValid, parse, parseISO, type Locale } from 'date-fns';
 
 // Dates typed and stored as text use this pattern (e.g. bill and payment dates).
 export const DMY = 'dd/MM/yyyy';
@@ -23,10 +21,11 @@ export function parseStoredDate(value?: string | Date | null): Date | null {
   return isValid(iso) ? iso : null;
 }
 
-// "05 Oct 2026" (Telugu month names when lang is 'te'); '—' when there is no valid date.
-export function formatDate(value: string | Date | null | undefined, pattern = 'dd MMM yyyy', lang: Lang = 'en'): string {
+// "05 Oct 2026"; '—' when there is no valid date. Pages use useFormat().date, which passes the
+// Telugu locale when Telugu is chosen.
+export function formatDate(value: string | Date | null | undefined, pattern = 'dd MMM yyyy', locale?: Locale): string {
   const date = parseStoredDate(value);
-  return date ? format(date, pattern, lang === 'te' ? { locale: te } : undefined) : '—';
+  return date ? format(date, pattern, locale ? { locale } : undefined) : '—';
 }
 
 export const toDMY = (date: Date) => format(date, DMY);
