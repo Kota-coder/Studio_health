@@ -21,6 +21,7 @@ import type { InventoryItem, InventoryKind, NewStockMovement, StockMovement } fr
 import type { HospitalLink } from '@/types/hospitalLink';
 import type { LabTechnician, TestRequest } from '@/types/testRequest';
 import { DEFAULT_PROFILE, type HospitalProfile } from '@/lib/branding';
+import { toDMY } from '@/lib/format';
 
 type Row = Record<string, unknown>;
 
@@ -692,10 +693,14 @@ export const patients = invalidatesOnWrite({
 const OPEN_REQUEST = ['Requested', 'In progress'];
 export type NewTestRequest = Pick<TestRequest, 'patientId' | 'testTypeId' | 'testTypeName' | 'priority' | 'notes' | 'assignedToStaffId'>;
 
+type TestBillRow = { bills: { id: string; payment_status: string; total_amount: number } | null } | null;
+
 function testRequestFromRow(row: Row): TestRequest {
-  const { patients: patient, ...rest } = row as Row & { patients?: { first_name: string; last_name: string } | null };
+  const { patients: patient, patient_tests: test, ...rest } = row as Row & { patients?: { first_name: string; last_name: string } | null; patient_tests?: TestBillRow };
   const request = fromRow<TestRequest>(rest);
   if (patient) request.patientName = `${patient.first_name} ${patient.last_name}`;
+  const bill = test?.bills;
+  if (bill) request.bill = { id: bill.id, status: bill.payment_status, amount: Number(bill.total_amount) };
   return request;
 }
 
@@ -721,10 +726,10 @@ export const testRequests = invalidatesOnWrite({
     });
   },
 
-  // Requests finished in the last day, newest first.
+  // Requests finished in the last day, newest first, with their test's bill.
   async listRecentlyDone(): Promise<TestRequest[]> {
     const since = new Date(Date.now() - 86400000).toISOString();
-    const rows = check(await db().from('test_requests').select('*, patients(first_name, last_name)')
+    const rows = check(await db().from('test_requests').select('*, patients(first_name, last_name), patient_tests(bills(id, payment_status, total_amount))')
       .eq('status', 'Done').gte('completed_at', since).order('completed_at', { ascending: false }).limit(50));
     return (rows as Row[]).map(testRequestFromRow);
   },
@@ -836,7 +841,26 @@ export const bills = invalidatesOnWrite({
   async remove(id: string): Promise<void> {
     checkDeleted(await db().from('bills').delete().eq('id', id).select('id'));
   },
-}, ['create', 'update', 'remove'], ['summary:']);
+
+  // An unpaid bill for one test at the given price, linked to the test so it isn't billed twice.
+  async createForTest(patient: Pick<Patient, 'id' | 'firstName' | 'lastName'>, test: Pick<TestEntry, 'id' | 'testTypeName' | 'datePerformed'>, price: number): Promise<Bill> {
+    const fields: BillFields = {
+      patientId: patient.id,
+      patientName: `${patient.firstName} ${patient.lastName}`,
+      billDate: toDMY(new Date()),
+      billType: 'Treatment',
+      items: [{ id: `${test.id}-1`, description: test.testTypeName, quantity: 1, originalUnitPrice: price, unitPrice: price, total: price }],
+      totalAmount: price,
+      paymentMethod: '',
+      paymentStatus: 'Unpaid',
+      notes: `Bill for test: ${test.testTypeName} performed on ${test.datePerformed}`,
+    };
+    const bill = billFromRow(check(await db().from('bills').insert(toRow(fields)).select().single()) as Row);
+    await addAuditEntry('bill', bill.id, 'Bill Created', 'Treatment bill created for test.');
+    check(await db().from('patient_tests').update({ bill_id: bill.id }).eq('id', test.id));
+    return bill;
+  },
+}, ['create', 'update', 'remove', 'createForTest'], ['summary:', 'lab:']);
 
 // ---------------------------------------------------------------------------
 // Payments (clinic expenses)

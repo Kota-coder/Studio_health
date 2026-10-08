@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from 'react';
-import { CalendarDays, ClipboardCheck, FlaskConical, Microscope, PlusCircle, ShoppingCart, UserCircle, X } from 'lucide-react';
+import { CalendarDays, ClipboardCheck, FlaskConical, IndianRupee, Microscope, PlusCircle, ShoppingCart, UserCircle, X } from 'lucide-react';
+import Link from '@/components/app-link';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
@@ -20,8 +21,8 @@ import { useStaff } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
 import { useToast } from '@/hooks/use-toast';
 import { bills as billsRepo, testRequests } from '@/lib/data';
-import { toDMY } from '@/lib/format';
-import type { BillItem } from '@/types/billing';
+import { formatINR } from '@/lib/format';
+import type { Bill } from '@/types/billing';
 import type { Patient, TestEntry } from '@/types/patient';
 import type { StaffMember } from '@/types/staff';
 import type { TestRequest } from '@/types/testRequest';
@@ -30,9 +31,10 @@ import type { TestRequest } from '@/types/testRequest';
 // and "Bill Test" to bill a test at its catalog price. With Lab Requests on, tests can also be
 // requested for the lab; the open requests show here until their result is recorded.
 // /patients/<id>?request=<request id> (from the lab queue) opens the result form for it.
-export function TestsSection({ patient, staff, onSaved, onBilled }: {
+export function TestsSection({ patient, staff, bills, onSaved, onBilled }: {
   patient: Patient;
   staff: StaffMember[];
+  bills: Bill[];
   onSaved: () => Promise<void>;
   onBilled: () => Promise<void>;
 }) {
@@ -103,20 +105,8 @@ export function TestsSection({ patient, staff, onSaved, onBilled }: {
       const list = await catalog.ensure();
       const item = list.find(c => c.id === test.testTypeId)
         ?? list.find(c => c.name.trim().toLowerCase() === test.testTypeName.trim().toLowerCase());
-      const price = item?.defaultPrice || 0;
-      const billItem: BillItem = { id: `${test.id}-${Date.now()}`, description: test.testTypeName, quantity: 1, originalUnitPrice: price, unitPrice: price, total: price };
-      const bill = await billsRepo.create({
-        patientId: patient.id,
-        patientName: `${patient.firstName} ${patient.lastName}`,
-        billDate: toDMY(new Date()),
-        billType: 'Treatment',
-        items: [billItem],
-        totalAmount: billItem.total,
-        paymentMethod: '',
-        paymentStatus: 'Unpaid',
-        notes: `Bill for test: ${test.testTypeName} performed on ${test.datePerformed}`,
-      }, 'Treatment bill created for test.');
-      await onBilled();
+      const bill = await billsRepo.createForTest(patient, test, item?.defaultPrice || 0);
+      await Promise.all([onBilled(), onSaved()]);
       toast({ title: 'Bill created', description: `Bill ${bill.id} created for test.` });
     } catch (e) {
       console.error('Failed to create test bill:', e);
@@ -158,7 +148,7 @@ export function TestsSection({ patient, staff, onSaved, onBilled }: {
         )}
         {showForm && (
           <TestForm key={resultFor?.id ?? 'new'} patient={patient} catalog={catalog.data} staff={staff} request={resultFor}
-            onSaved={async () => { closeForm(); await Promise.all([onSaved(), loadRequests()]); }} onCancel={closeForm} />
+            onSaved={async () => { closeForm(); await Promise.all([onSaved(), loadRequests(), canBill ? onBilled() : undefined]); }} onCancel={closeForm} />
         )}
         {labOn && (
           <RequestTestDialog patient={patient} catalog={catalog.data} open={showRequest} onOpenChange={setShowRequest}
@@ -172,7 +162,10 @@ export function TestsSection({ patient, staff, onSaved, onBilled }: {
               <AccordionTrigger className="py-2 text-sm hover:no-underline">View Recorded Tests ({tests.length})</AccordionTrigger>
               <AccordionContent className="pt-2">
                 <div className="max-h-96 space-y-3 overflow-y-auto pr-2">
-                  {tests.map(test => <TestCard key={test.id} test={test} onBill={canBill ? () => billTest(test) : undefined} />)}
+                  {tests.map(test => (
+                    <TestCard key={test.id} test={test} bill={test.billId ? bills.find(b => b.id === test.billId) ?? { id: test.billId } : undefined}
+                      canBill={canBill} onBill={() => billTest(test)} />
+                  ))}
                 </div>
               </AccordionContent>
             </AccordionItem>
@@ -183,7 +176,7 @@ export function TestsSection({ patient, staff, onSaved, onBilled }: {
   );
 }
 
-function TestCard({ test, onBill }: { test: TestEntry; onBill?: () => void }) {
+function TestCard({ test, bill, canBill, onBill }: { test: TestEntry; bill?: Pick<Bill, 'id'> & Partial<Bill>; canBill: boolean; onBill: () => void }) {
   const t = useT();
   const { date } = useFormat();
   const fields = (testDefinitionFor(test.testTypeId, test.testTypeName)?.fields ?? [])
@@ -204,7 +197,19 @@ function TestCard({ test, onBill }: { test: TestEntry; onBill?: () => void }) {
       )}
       {test.overallResults && <div className="mt-1.5"><p className="text-xs font-medium">Overall Results:</p><p className="whitespace-pre-wrap text-xs">{test.overallResults}</p></div>}
       {test.notes && <div className="mt-1.5"><p className="text-xs font-medium">General Notes:</p><p className="whitespace-pre-wrap text-xs">{test.notes}</p></div>}
-      {onBill && (
+      {bill && (
+        <div className="mt-2 flex flex-wrap items-center justify-end gap-2 text-xs">
+          <span className="text-muted-foreground">
+            {t('Billed')}: {bill.id}{bill.totalAmount != null ? ` · ${formatINR(bill.totalAmount)}` : ''}{bill.paymentStatus ? ` · ${t(bill.paymentStatus)}` : ''}
+          </span>
+          {canBill && bill.paymentStatus !== 'Paid' && bill.paymentStatus !== 'Cancelled' && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/billing/form?billId=${bill.id}`}><IndianRupee className="mr-2 h-3 w-3" /> {t('Collect payment')}</Link>
+            </Button>
+          )}
+        </div>
+      )}
+      {canBill && !bill && (
         <div className="mt-2 flex justify-end">
           <AlertDialog>
             <AlertDialogTrigger asChild>

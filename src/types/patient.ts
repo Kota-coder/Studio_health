@@ -46,6 +46,7 @@ export interface TestEntry {
   performedByStaffName?: string;
   createdAt: string;
   attachments?: string[]; // Storage paths in the patient-files bucket (data: URLs only before upload)
+  billId?: string; // the bill it was charged on
 }
 
 // One billed procedure type and the referral % applied to it.

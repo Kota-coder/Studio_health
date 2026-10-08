@@ -11,7 +11,8 @@ export const PAGE_ROLES = {
   dashboard: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist", "Accounts", "Lab Technician"],
   // The lab queue (the database's home_summary() shows its tile to the same roles).
   lab: ["Super Admin", "Admin", "Doctor", "Nurse", "Lab Technician"],
-  billing: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist", "Accounts"],
+  // Lab technicians collect payment for the tests they complete.
+  billing: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist", "Accounts", "Lab Technician"],
   payments: ["Super Admin", "Admin", "Doctor", "Accounts"],
   financialDashboard: ["Super Admin", "Admin", "Doctor", "Accounts"],
   patientCare: ["Super Admin", "Admin", "Doctor", "Nurse"],

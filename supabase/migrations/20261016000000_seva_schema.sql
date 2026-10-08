@@ -476,6 +476,8 @@ alter table public.patients      add column if not exists initial_observation_at
 alter table public.care_notes    add column if not exists attachments                     text[] not null default '{}';
 alter table public.patient_tests add column if not exists attachments                     text[] not null default '{}';
 alter table public.bills         add column if not exists attachments                     text[] not null default '{}';
+-- The bill for a test (set when it is billed; cleared if that bill is deleted).
+alter table public.patient_tests add column if not exists bill_id text references public.bills (id) on delete set null;
 do $$
 declare
   moves constant text[][] := array[
@@ -1083,6 +1085,9 @@ language sql stable security invoker set search_path = public as $$
                                     and (to_date is null or moved_on <= to_date)) as qty_out,
            -sum(quantity) filter (where reason = 'expired' and (from_date is null or moved_on >= from_date)
                                     and (to_date is null or moved_on <= to_date)) as qty_expired,
+           -- Sold or used in the last 30 days, whatever the period: the basis for keeping
+           -- two weeks of stock (src/lib/inventory.ts).
+           -sum(quantity) filter (where reason in ('dispensed', 'used') and moved_on > current_date - 30) as used_30_days,
            max(moved_on) as last_moved
     from public.stock_movements
     group by 1
@@ -1096,6 +1101,7 @@ language sql stable security invoker set search_path = public as $$
            'qtyIn', coalesce(t.qty_in, 0),
            'qtyOut', coalesce(t.qty_out, 0),
            'qtyExpired', coalesce(t.qty_expired, 0),
+           'used30Days', coalesce(t.used_30_days, 0),
            'lastMoved', t.last_moved
          ) order by i.kind, lower(i.name)), '[]'::jsonb)
   from items i
@@ -1144,7 +1150,7 @@ begin
                   limit 1)));
 
   -- Billing (every role that opens Billing).
-  if public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accounts']) then
+  if public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accounts', 'Lab Technician']) then
     result := result || (select jsonb_build_object('billing', jsonb_build_object(
       'todayCount', count(*) filter (where billed_on = today and payment_status <> 'Cancelled'),
       'todayAmount', coalesce(sum(total_amount) filter (where billed_on = today and payment_status <> 'Cancelled'), 0),
@@ -1184,17 +1190,21 @@ begin
 
   -- Stock needing a refill (the Inventory roles).
   if public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Accounts']) then
-    result := result || (with items as (
-        select m.id, m.reorder_level, coalesce(sum(s.quantity), 0) as on_hand
-        from public.medications m left join public.stock_movements s on s.medication_id = m.id group by m.id
-        union all
-        select m.id, m.reorder_level, coalesce(sum(s.quantity), 0)
-        from public.materials m left join public.stock_movements s on s.material_id = m.id group by m.id
+    -- Low: at or below the refill level, or less than two weeks' stock at the last 30 days' use.
+    result := result || (with movements as (
+        select coalesce(medication_id, material_id) as item_id, sum(quantity) as on_hand,
+               -sum(quantity) filter (where reason in ('dispensed', 'used') and moved_on > current_date - 30) as used_30_days
+        from public.stock_movements group by 1
+      ), items as (
+        select m.id, m.reorder_level, coalesce(v.on_hand, 0) as on_hand, coalesce(v.used_30_days, 0) as used_30_days
+        from (select id, reorder_level from public.medications union all select id, reorder_level from public.materials) m
+        left join movements v on v.item_id = m.id
       )
       select jsonb_build_object('stock', jsonb_build_object(
         'outOfStock', count(*) filter (where on_hand <= 0 and (reorder_level is not null or exists (
                           select 1 from public.stock_movements x where x.medication_id = items.id or x.material_id = items.id))),
-        'low', count(*) filter (where on_hand > 0 and reorder_level is not null and on_hand <= reorder_level)))
+        'low', count(*) filter (where on_hand > 0 and ((reorder_level is not null and on_hand <= reorder_level)
+                                                      or on_hand < ceil(used_30_days * 14 / 30.0)))))
       from items);
   end if;
 

@@ -95,4 +95,8 @@ export const PATIENTS: Record<string, string> = {
   '{n} urgent': '{n} అత్యవసరం',
   'My lab requests & queue': 'నా ల్యాబ్ అభ్యర్థనలు & క్యూ',
   'Waiting for lab tests': 'ల్యాబ్ పరీక్షల కోసం వేచి ఉన్నవారు',
+  'Result recorded': 'ఫలితం నమోదైంది',
+  'Billed': 'బిల్లు',
+  'Bill {id}': 'బిల్లు {id}',
+  'Collect payment': 'చెల్లింపు తీసుకోండి',
 };

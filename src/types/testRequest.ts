@@ -19,6 +19,7 @@ export interface TestRequest {
   createdAt: string;
   updatedAt: string;
   patientName?: string; // filled in by the lab queue
+  bill?: { id: string; status: string; amount: number }; // done requests: the test's bill
 }
 
 export interface LabTechnician {

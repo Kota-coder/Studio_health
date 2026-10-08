@@ -24,7 +24,7 @@ import { downloadCsv } from '@/lib/csv';
 import { inventory } from '@/lib/data';
 import { cachedAt, invalidate } from '@/lib/data/cache';
 import { formatINR } from '@/lib/format';
-import { STATUS_LABELS, formatQty, stockStatus, stockValue, suggestedOrder, type StockStatus } from '@/lib/inventory';
+import { STATUS_LABELS, daysLeft, formatQty, refillLevel, stockStatus, stockValue, suggestedOrder, twoWeeksNeed, type StockStatus } from '@/lib/inventory';
 import { cn } from '@/lib/utils';
 import type { InventoryItem, InventoryKind } from '@/types/inventory';
 import type { StaffRole } from '@/types/staff';
@@ -177,7 +177,8 @@ export default function InventoryPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg"><AlertTriangle className="h-5 w-5 text-amber-600" /> {t('Needs refill')}</CardTitle>
             <CardDescription>
-              At or below the refill level, or out of stock. The suggested order brings stock back to twice the refill level.
+              Out of stock, at or below the item&apos;s refill level, or with less than two weeks&apos; supply at the last 30 days&apos; use.
+              The suggested order covers four weeks of that use (or twice the refill level, if more), so at least two weeks stay in stock.
               {purchaseLink && <> Record the purchase under <Link href="/payments/form" className="text-primary underline">Payments → Record New Payment</Link> (type Pharmacy or Material) and stock goes up automatically.</>}
             </CardDescription>
           </CardHeader>
@@ -188,6 +189,7 @@ export default function InventoryPage() {
                   <TableHead>Item</TableHead>
                   <TableHead className="text-right">On hand</TableHead>
                   <TableHead className="hidden text-right sm:table-cell">Refill at</TableHead>
+                  <TableHead className="hidden text-right md:table-cell">Lasts</TableHead>
                   <TableHead className="text-right">Order</TableHead>
                   <TableHead className="hidden text-right sm:table-cell">Approx. cost</TableHead>
                 </TableRow>
@@ -195,6 +197,8 @@ export default function InventoryPage() {
               <TableBody>
                 {refill.map(i => {
                   const order = suggestedOrder(i);
+                  const level = refillLevel(i);
+                  const days = daysLeft(i);
                   return (
                     <TableRow key={`${i.kind}-${i.id}`}>
                       <TableCell>
@@ -202,7 +206,11 @@ export default function InventoryPage() {
                         <span className="block text-xs text-muted-foreground">{kindLabel(i)}{i.unit ? ` · ${i.unit}` : ''}</span>
                       </TableCell>
                       <TableCell className={cn('text-right tabular-nums', i.onHand <= 0 && 'font-semibold text-destructive')}>{formatQty(i.onHand)}</TableCell>
-                      <TableCell className="hidden text-right tabular-nums sm:table-cell">{i.reorderLevel != null ? formatQty(i.reorderLevel) : '—'}</TableCell>
+                      <TableCell className="hidden text-right tabular-nums sm:table-cell">
+                        {level != null ? formatQty(level) : '—'}
+                        {level != null && level === twoWeeksNeed(i) && level !== i.reorderLevel && <span className="block text-xs text-muted-foreground">2 weeks&apos; use</span>}
+                      </TableCell>
+                      <TableCell className="hidden text-right tabular-nums md:table-cell">{days != null ? `~${Math.floor(days)} days` : '—'}</TableCell>
                       <TableCell className="text-right tabular-nums">{order > 0 ? formatQty(order) : <button type="button" className="text-xs text-primary underline" onClick={() => setRecordItem(i)}>Set level</button>}</TableCell>
                       <TableCell className="hidden text-right tabular-nums sm:table-cell">{order > 0 ? formatINR(order * i.unitCost) : '—'}</TableCell>
                     </TableRow>
@@ -265,6 +273,8 @@ export default function InventoryPage() {
                 {shown.map(i => {
                   const status = stockStatus(i);
                   const badge = t(STATUS_LABELS[status]);
+                  const level = refillLevel(i);
+                  const days = daysLeft(i);
                   return (
                     <TableRow key={`${i.kind}-${i.id}`}>
                       <TableCell>
@@ -276,7 +286,8 @@ export default function InventoryPage() {
                       </TableCell>
                       <TableCell className={cn('text-right tabular-nums', i.onHand < 0 && 'font-semibold text-destructive')}>
                         {formatQty(i.onHand)}
-                        {i.reorderLevel != null && <span className="block text-xs text-muted-foreground">refill at {formatQty(i.reorderLevel)}</span>}
+                        {level != null && <span className="block text-xs text-muted-foreground">refill at {formatQty(level)}</span>}
+                        {days != null && <span className="block text-xs text-muted-foreground">~{Math.floor(days)} days left</span>}
                       </TableCell>
                       <TableCell className="hidden md:table-cell"><Badge variant="outline" className={STATUS_STYLES[status]}>{badge}</Badge></TableCell>
                       <TableCell className="hidden text-right tabular-nums lg:table-cell" title={i.costFromList ? 'No recorded purchase price yet; using the list price' : 'Average purchase price'}>

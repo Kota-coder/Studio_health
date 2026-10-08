@@ -19,6 +19,7 @@ export interface InventoryItem {
   qtyIn: number; // in the chosen period
   qtyOut: number; // in the chosen period (dispensed, used, expired, counted short)
   qtyExpired: number;
+  used30Days: number; // sold or used in the last 30 days, whatever the period
   lastMoved: string | null; // yyyy-MM-dd
 }
 

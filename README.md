@@ -113,7 +113,11 @@ database enforces the same rules with row level security.
   request shows on the patient's page and dashboard card until its result is recorded. Lab
   technicians see **Assigned to me**, **Waiting in queue**, all open and done today, can search by
   patient name or number, **Take** a request, and **Record result** on the patient's page, which
-  completes it. Their dashboard starts on the patients with their requests or waiting ones.
+  completes it. With Billing on, completing it bills the test at its catalog price as **Unpaid**;
+  the technician (or the front desk) then uses **Collect payment** (on the test, or under Done
+  today) to mark it paid, which prints the receipt. A test is never billed twice: once billed it
+  shows its bill instead of "Bill Test". Their dashboard starts on the patients with their
+  requests or waiting ones.
 - **Departments and care teams** (Staff → Departments): each department's doctors
   and nurses and a default doctor fee per case. On a patient, choose the department, attending
   doctor and nurse; the dashboard filters by department or "My Patients".
@@ -133,7 +137,11 @@ database enforces the same rules with row level security.
 - **Pharmacy and Inventory:** the Pharmacy list (Pharmacy & Stock → Pharmacy) holds what the
   pharmacy sells; Materials holds consumables. **Inventory** shows the stock on hand of both, its
   value at average purchase cost, what came in and went out in any period, and a **Needs refill**
-  list (items at or below their refill level, with a suggested order and its cost). Stock updates
+  list with a suggested order and its cost. At least **two weeks of supply** is kept: an item needs
+  a refill when it is out, at or below the refill level set on it, or has less than two weeks'
+  stock at the rate it was sold or used over the last 30 days; the suggested order covers four
+  weeks of that use (or twice the refill level, if more), and each item shows about how many days
+  its stock lasts. The dashboard's stock tile counts items the same way. Stock updates
   itself: a Pharmacy or Material purchase recorded under Payments adds stock, and a pharmacy bill
   takes it out (editing, cancelling or deleting either corrects it). Anything else is recorded on the
   Inventory page: items used on wards, expired or damaged stock, opening stock and stock counts.
