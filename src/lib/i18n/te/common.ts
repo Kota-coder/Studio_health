@@ -148,4 +148,9 @@ export const COMMON: Record<string, string> = {
   'Choose file': 'ఫైల్ ఎంచుకోండి',
   'Edit {name}': '{name} మార్చండి',
   'this page': 'ఈ పేజీ',
+  'Take photo': 'ఫోటో తీయండి',
+  'Choose from gallery': 'గ్యాలరీ నుండి ఎంచుకోండి',
+  'Capture': 'క్లిక్ చేయండి',
+  'Retake': 'మళ్ళీ తీయండి',
+  'Use photo': 'ఈ ఫోటో వాడండి',
 };

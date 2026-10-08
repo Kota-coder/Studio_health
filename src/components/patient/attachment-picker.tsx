@@ -1,10 +1,10 @@
 "use client";
 
-import { useRef } from 'react';
-import { UploadCloud, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { StoredImage } from '@/components/stored-image';
+import { ImageSourceButtons } from '@/components/image-source-buttons';
 import { useToast } from '@/hooks/use-toast';
 import { compressImageFiles } from '@/lib/images';
 
@@ -17,12 +17,8 @@ export function AttachmentPicker({ id, label = 'Attachments (Optional, images ar
   onChange: (value: string[]) => void;
 }) {
   const { toast } = useToast();
-  const input = useRef<HTMLInputElement>(null);
 
-  const addFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = '';
-    if (files.length === 0) return;
+  const addFiles = async (files: File[]) => {
     const added = await compressImageFiles(files);
     onChange([...value, ...added]);
     if (added.length > 0) toast({ title: 'Attachments added', description: `${added.length} file(s) added.` });
@@ -30,12 +26,9 @@ export function AttachmentPicker({ id, label = 'Attachments (Optional, images ar
 
   return (
     <div>
-      <Label htmlFor={id}>{label}</Label>
-      <div className="mt-1 flex items-center gap-3">
-        <input id={id} type="file" accept="image/*" multiple onChange={addFiles} ref={input} className="hidden" />
-        <Button type="button" variant="outline" onClick={() => input.current?.click()} className="flex-1">
-          <UploadCloud className="mr-2 h-4 w-4" /> {value.length > 0 ? `Add More (${value.length})` : 'Upload Files'}
-        </Button>
+      <Label id={id}>{label}{value.length > 0 ? ` — ${value.length} added` : ''}</Label>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <ImageSourceButtons onFiles={addFiles} className="flex-1" />
         {value.length > 0 && (
           <Button type="button" variant="ghost" size="sm" onClick={() => onChange([])} className="text-xs text-destructive">Clear All</Button>
         )}

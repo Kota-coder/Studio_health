@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from '@/components/app-link';
-import { CreditCard, History, Pill, PlusCircle, Printer, Save, Stethoscope, Trash2, UploadCloud, X } from 'lucide-react';
+import { CreditCard, History, Pill, PlusCircle, Printer, Save, Stethoscope, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +16,7 @@ import { PageBody, PageHeader, PageLoading } from '@/components/page';
 import { DateField, parseDMY } from '@/components/date-field';
 import { ProcessedByField } from '@/components/processed-by-field';
 import { StoredImage } from '@/components/stored-image';
+import { ImageSourceButtons } from '@/components/image-source-buttons';
 import { useT } from '@/components/language-provider';
 import { useStaff } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -77,7 +78,6 @@ export default function BillingForm() {
   const [attachments, setAttachments] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const attachmentInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -173,10 +173,8 @@ export default function BillingForm() {
 
   const grandTotal = billItems.reduce((sum, item) => sum + item.total, 0);
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files?.length) compressImageFiles(Array.from(files)).then(results => setAttachments(prev => [...prev, ...results]));
-    event.target.value = '';
+  const addAttachments = (files: File[]) => {
+    compressImageFiles(files).then(results => setAttachments(prev => [...prev, ...results]));
   };
 
   const invalid = (title: string, description?: string) => toast({ title, description, variant: 'destructive' });
@@ -402,12 +400,9 @@ export default function BillingForm() {
           </div>
 
           <div>
-            <Label>Attachments (optional, images are resized automatically)</Label>
-            <div className="mt-1 flex items-center gap-3">
-              <input type="file" accept="image/*" multiple onChange={handleFileUpload} ref={attachmentInput} className="hidden" />
-              <Button type="button" variant="outline" onClick={() => attachmentInput.current?.click()} className="flex-1">
-                <UploadCloud className="mr-2 h-4 w-4" /> {attachments.length > 0 ? `Add more (${attachments.length})` : 'Upload files'}
-              </Button>
+            <Label>Attachments (optional, images are resized automatically){attachments.length > 0 ? ` — ${attachments.length} added` : ''}</Label>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <ImageSourceButtons onFiles={addAttachments} className="flex-1" />
               {attachments.length > 0 && (
                 <Button type="button" variant="ghost" size="sm" onClick={() => setAttachments([])} className="text-xs text-destructive">Clear all</Button>
               )}
