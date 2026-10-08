@@ -3,6 +3,7 @@
 import { format } from 'date-fns';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useT } from '@/components/language-provider';
 import { cn } from '@/lib/utils';
 
 // "Updated 10:42 · Refresh" for pages that show briefly cached data.
@@ -12,11 +13,12 @@ export function RefreshStamp({ loadedAt, onRefresh, isRefreshing, className }: {
   isRefreshing?: boolean;
   className?: string;
 }) {
+  const t = useT();
   return (
     <div className={cn('flex items-center gap-1 text-xs text-muted-foreground print:hidden', className)}>
-      {loadedAt && <span>Updated {format(loadedAt, 'HH:mm')}</span>}
-      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={onRefresh} disabled={isRefreshing} aria-label="Refresh data">
-        <RefreshCw className={cn('mr-1 h-3.5 w-3.5', isRefreshing && 'animate-spin')} /> Refresh
+      {loadedAt && <span>{t('Updated {time}', { time: format(loadedAt, 'HH:mm') })}</span>}
+      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={onRefresh} disabled={isRefreshing}>
+        <RefreshCw className={cn('mr-1 h-3.5 w-3.5', isRefreshing && 'animate-spin')} /> {t('Refresh')}
       </Button>
     </div>
   );

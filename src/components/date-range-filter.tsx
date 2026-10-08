@@ -2,6 +2,7 @@
 
 import { endOfMonth, endOfYear, format, startOfMonth, startOfYear, subDays, subMonths } from 'date-fns';
 import { Input } from '@/components/ui/input';
+import { useT } from '@/components/language-provider';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
@@ -45,9 +46,9 @@ export function dateFilterRange(value: DateFilterValue, today = new Date()): Dat
   }
 }
 
-// e.g. "1 Sep 2026 – 30 Sep 2026", for headings and file names.
-export function describeDateFilter(value: DateFilterValue): string {
-  if (value.preset === 'all') return 'All time';
+// e.g. "1 Sep 2026 – 30 Sep 2026", for headings and file names. Pass t to translate "All time".
+export function describeDateFilter(value: DateFilterValue, t: (text: string) => string = text => text): string {
+  if (value.preset === 'all') return t('All time');
   const { from, to } = dateFilterRange(value);
   const show = (d?: string) => (d ? format(new Date(`${d}T00:00`), 'd MMM yyyy') : '…');
   return `${show(from)} – ${show(to)}`;
@@ -60,11 +61,12 @@ export function DateRangeFilter({ value, onChange, idPrefix = 'dateFilter', clas
   idPrefix?: string;
   className?: string;
 }) {
+  const t = useT();
   const custom = value.preset === 'custom';
   return (
     <div className={cn('flex flex-col gap-2 sm:flex-row sm:items-end', className)}>
       <div className="sm:w-44">
-        <Label htmlFor={`${idPrefix}Period`}>Period</Label>
+        <Label htmlFor={`${idPrefix}Period`}>{t('Period')}</Label>
         <Select value={value.preset} onValueChange={preset => {
           const next = { ...value, preset: preset as DatePreset };
           // Switching to custom starts from the period that was showing.
@@ -78,7 +80,7 @@ export function DateRangeFilter({ value, onChange, idPrefix = 'dateFilter', clas
           <SelectTrigger id={`${idPrefix}Period`}><SelectValue /></SelectTrigger>
           <SelectContent>
             {(Object.keys(PRESET_LABELS) as DatePreset[]).map(preset => (
-              <SelectItem key={preset} value={preset}>{PRESET_LABELS[preset]}</SelectItem>
+              <SelectItem key={preset} value={preset}>{t(PRESET_LABELS[preset])}</SelectItem>
             ))}
           </SelectContent>
         </Select>

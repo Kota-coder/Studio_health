@@ -227,16 +227,30 @@ async function staffApi<T>(method: string, body?: unknown, query = ''): Promise<
   return result as T;
 }
 
+const STAFF_COLUMNS = 'id, name, phone_number, email, role, hire_date';
+
+// Salaries are only readable by the roles that manage staff (staff_salaries()).
+async function withSalaries(members: StaffMember[]): Promise<StaffMember[]> {
+  const pay = check(await db().rpc('staff_salaries')) as Array<{ id: number; salary: number | null }>;
+  const byId = new Map(pay.map(p => [Number(p.id), p.salary]));
+  return members.map(m => ({ ...m, salary: byId.get(m.id) == null ? undefined : Number(byId.get(m.id)) }));
+}
+
 export const staff = invalidatesOnWrite({
+  // Active staff without salaries: for names, assignments and filters.
   list(): Promise<StaffMember[]> {
     return cached('staff:list', REFERENCE_TTL, async () => {
-      const rows = check(await db().from('staff').select('id, name, phone_number, email, role, hire_date, salary').eq('active', true).order('name'));
+      const rows = check(await db().from('staff').select(STAFF_COLUMNS).eq('active', true).order('name'));
       return (rows as Row[]).map(r => fromRow<StaffMember>(r));
     });
   },
+  // Staff Management: with salaries.
+  async listWithSalaries(): Promise<StaffMember[]> {
+    return withSalaries(await staff.list());
+  },
   async get(id: number): Promise<StaffMember | null> {
-    const row = check(await db().from('staff').select('id, name, phone_number, email, role, hire_date, salary').eq('id', id).eq('active', true).maybeSingle());
-    return row ? fromRow<StaffMember>(row as Row) : null;
+    const row = check(await db().from('staff').select(STAFF_COLUMNS).eq('id', id).eq('active', true).maybeSingle());
+    return row ? (await withSalaries([fromRow<StaffMember>(row as Row)]))[0] : null;
   },
   // Each new staff member gets an email invite to set their password.
   createMany(members: Omit<StaffMember, 'id'>[]): Promise<{ created: number[]; failures: string[] }> {
@@ -298,10 +312,14 @@ export const attendance = {
   },
   // Clocking in and out uses the server's clock, not the device's.
   async clockIn(note?: string): Promise<AttendanceEntry> {
-    return fromRow<AttendanceEntry>(check(await db().rpc('clock_in', { note: note ?? null })) as Row);
+    try {
+      return fromRow<AttendanceEntry>(check(await db().rpc('clock_in', { note: note ?? null })) as Row);
+    } finally { invalidate('summary:home'); }
   },
   async clockOut(note?: string): Promise<AttendanceEntry> {
-    return fromRow<AttendanceEntry>(check(await db().rpc('clock_out', { note: note ?? null })) as Row);
+    try {
+      return fromRow<AttendanceEntry>(check(await db().rpc('clock_out', { note: note ?? null })) as Row);
+    } finally { invalidate('summary:home'); }
   },
   // Manual entries and corrections (Super Admin, Admin).
   create: (fields: Pick<AttendanceEntry, 'staffId' | 'clockIn' | 'clockOut' | 'notes'>) =>
@@ -415,6 +433,27 @@ export const inventory = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// Home dashboard summary: only the sections the signed-in role may see (home_summary()).
+// ---------------------------------------------------------------------------
+
+export interface HomeSummary {
+  patients: { inCare: number; critical: number; newToday: number; mine: number; myCritical: number };
+  duty: { clockedInSince: string | null; onDutyNow: number; nextShift: { date: string; type: string; start: string; end: string } | null };
+  billing?: { todayCount: number; todayAmount: number; unpaidCount: number; unpaidAmount: number };
+  money?: { collectedToday: number; collectedMonth: number; paidOutToday: number; paidOutMonth: number };
+  feesOwed?: { doctorAmount: number; doctorCases: number; referralAmount: number; referralCases: number };
+  myFees?: { pendingAmount: number; pendingCases: number };
+  stock?: { outOfStock: number; low: number };
+}
+
+export function homeSummary(): Promise<HomeSummary | null> {
+  return cached('summary:home', DASHBOARD_TTL, async () => {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+    return check(await db().rpc('home_summary', { tz: timeZone })) as HomeSummary | null;
+  });
+}
+
 export async function countRows(tableName: 'patients' | 'staff'): Promise<number> {
   let query = db().from(tableName).select('id', { count: 'exact', head: true });
   if (tableName === 'staff') query = query.eq('active', true);
@@ -523,6 +562,17 @@ export const patients = invalidatesOnWrite({
     return cached('dashboard:names', DASHBOARD_TTL, async () => {
       const rows = check(await db().from('patients').select('id, first_name, last_name, condition, department_id').order('id'));
       return (rows as Row[]).map(patientFromRow);
+    });
+  },
+
+  // Patients still in care per department (one small column, counted here).
+  activeCountByDepartment(): Promise<Map<number, number>> {
+    return cached('dashboard:departmentCounts', DASHBOARD_TTL, async () => {
+      const rows = check(await db().from('patients').select('department_id')
+        .not('department_id', 'is', null).neq('condition', 'Discharged')) as Array<{ department_id: number }>;
+      const counts = new Map<number, number>();
+      for (const r of rows) counts.set(r.department_id, (counts.get(r.department_id) ?? 0) + 1);
+      return counts;
     });
   },
 

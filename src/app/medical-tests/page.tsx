@@ -1,304 +1,137 @@
-
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
-import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit3, Trash2, FlaskConical, ArrowLeft, Upload } from 'lucide-react';
-import { testCatalog as testCatalogRepo } from '@/lib/data';
-import { useAuth } from '@/context/AuthContext';
-import type { StaffRole } from '@/types/staff';
-
+import { Edit3, FlaskConical, PlusCircle, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { PAGE_ROLES } from '@/config/permissions';
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { PageBody, PageHeader, PageLoading } from '@/components/page';
+import { CsvImport } from '@/components/csv-import';
+import { useT } from '@/components/language-provider';
+import { useToast } from '@/hooks/use-toast';
+import { testCatalog as testCatalogRepo } from '@/lib/data';
+import { formatINR } from '@/lib/format';
+import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 
-const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.medicalTests;
-
-export default function MedicalTestsCatalogPage() {
-  const router = useRouter();
+// The tests the hospital offers, with their usual price.
+// Access and the feature switch are checked by PageGuard (src/config/navigation.ts).
+export default function MedicalTestsPage() {
+  const t = useT();
   const { toast } = useToast();
-  const { currentUser, isLoading: authIsLoading } = useAuth();
-
-  const [testCatalog, setTestCatalog] = useState<MedicalTestCatalogItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [itemToDelete, setItemToDelete] = useState<MedicalTestCatalogItem | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [tests, setTests] = useState<MedicalTestCatalogItem[] | null>(null);
+  const [toDelete, setToDelete] = useState<MedicalTestCatalogItem | null>(null);
 
   useEffect(() => {
-    if (!authIsLoading && currentUser && !ALLOWED_ROLES.includes(currentUser.role)) {
-      toast({ title: "Access Denied", description: "You do not have permission to view this page.", variant: "destructive" });
-      router.replace('/dashboard');
-    } else if (!authIsLoading && !currentUser) {
-      router.replace('/login');
-    }
-  }, [authIsLoading, currentUser, router, toast]);
+    testCatalogRepo.list()
+      .then(setTests)
+      .catch(() => {
+        toast({ title: 'Error', description: 'Could not load medical tests.', variant: 'destructive' });
+        setTests([]);
+      });
+  }, [toast]);
 
-  useEffect(() => {
-    if (currentUser && ALLOWED_ROLES.includes(currentUser.role)) {
-      setIsLoading(true);
-      testCatalogRepo.list()
-        .then(setTestCatalog)
-        .catch(error => {
-          console.error("Error loading medical test catalog:", error);
-          toast({ title: "Error", description: "Could not load medical test catalog data.", variant: "destructive" });
-        })
-        .finally(() => setIsLoading(false));
-    } else if (currentUser && !ALLOWED_ROLES.includes(currentUser.role)){
-        setIsLoading(false);
-    } else {
-      setTestCatalog([]);
-      setIsLoading(false);
-    }
-  }, [toast, currentUser]);
-
-  const handleDeleteItem = async () => {
-    if (!itemToDelete) return;
+  const deleteTest = async (item: MedicalTestCatalogItem) => {
     try {
-      await testCatalogRepo.remove(itemToDelete.id);
-      setTestCatalog(testCatalog.filter(item => item.id !== itemToDelete.id));
-      toast({ title: "Success", description: `Test "${itemToDelete.name}" deleted from catalog.` });
-      setItemToDelete(null);
-    } catch (error) {
-      console.error("Error deleting test catalog item:", error);
-      toast({ title: "Error", description: "Could not delete test item.", variant: "destructive" });
+      await testCatalogRepo.remove(item.id);
+      setTests(prev => (prev ?? []).filter(i => i.id !== item.id));
+      toast({ title: 'Deleted', description: `"${item.name}" was removed from the list.` });
+    } catch {
+      toast({ title: 'Could not delete the test', description: 'Please check your connection and try again.', variant: 'destructive' });
     }
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      toast({ title: "File Error", description: "No file selected.", variant: "destructive" });
-      return;
+  const importRows = async (rows: Record<string, string>[]) => {
+    const valid: Omit<MedicalTestCatalogItem, 'id'>[] = [];
+    for (const r of rows) {
+      const defaultPrice = r.defaultprice ? Number(r.defaultprice) : undefined;
+      if (!r.name || !r.category) continue;
+      if (defaultPrice !== undefined && !(Number.isFinite(defaultPrice) && defaultPrice >= 0)) continue;
+      valid.push({ name: r.name, category: r.category, description: r.description ?? '', defaultPrice });
     }
-    if (file.type !== "text/csv") {
-      toast({ title: "File Error", description: "Invalid file type. Please upload a CSV file.", variant: "destructive" });
-      return;
+    if (valid.length) {
+      await testCatalogRepo.createMany(valid);
+      setTests(await testCatalogRepo.list());
     }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const text = e.target?.result as string;
-      if (!text) {
-        toast({ title: "File Error", description: "Could not read file content.", variant: "destructive"});
-        return;
-      }
-      processCSV(text);
-    };
-    reader.onerror = () => {
-        toast({ title: "File Error", description: "Error reading file.", variant: "destructive"});
-    }
-    reader.readAsText(file);
-    if (fileInputRef.current) {
-        fileInputRef.current.value = ""; // Reset file input
-    }
+    return { imported: valid.length, skipped: rows.length - valid.length };
   };
 
-  const processCSV = async (csvText: string) => {
-    const rows = csvText.split(/\r\n|\n/).filter(row => row.trim() !== '');
-    if (rows.length < 2) {
-      toast({ title: "CSV Error", description: "CSV file must contain a header row and at least one data row.", variant: "destructive" });
-      return;
-    }
-
-    const header = rows[0].split(',').map(h => h.trim().toLowerCase());
-    const expectedHeaders = ['name', 'category']; // description and defaultprice are optional
-    
-    if (!expectedHeaders.every(eh => header.includes(eh))) {
-        toast({ title: "CSV Error", description: `CSV header must contain at least: ${expectedHeaders.join(', ')}. Optional: description, defaultprice. Found: ${header.join(', ')}`, variant: "destructive" });
-        return;
-    }
-    
-    const nameIndex = header.indexOf('name');
-    const categoryIndex = header.indexOf('category');
-    const descriptionIndex = header.indexOf('description');
-    const defaultPriceIndex = header.indexOf('defaultprice');
-
-    const newItems: Omit<MedicalTestCatalogItem, 'id'>[] = [];
-
-    let importedCount = 0;
-    let failedCount = 0;
-
-    for (let i = 1; i < rows.length; i++) {
-      const cells = rows[i].split(',').map(cell => cell.trim());
-      
-      const name = cells[nameIndex];
-      const category = cells[categoryIndex];
-      const description = descriptionIndex > -1 ? cells[descriptionIndex] : "";
-      const defaultPriceStr = defaultPriceIndex > -1 ? cells[defaultPriceIndex] : undefined;
-
-      if (!name) { console.warn(`Skipping CSV row ${i+1}: Name is missing.`); failedCount++; continue; }
-      if (!category) { console.warn(`Skipping CSV row ${i+1} for test "${name}": Category is missing.`); failedCount++; continue; }
-      
-      let defaultPrice: number | undefined = undefined;
-      if (defaultPriceStr && defaultPriceStr.trim() !== "") {
-        defaultPrice = parseFloat(defaultPriceStr);
-        if (isNaN(defaultPrice) || defaultPrice < 0) {
-          console.warn(`Skipping CSV row ${i+1} for test "${name}": Invalid Default Price "${defaultPriceStr}".`);
-          failedCount++;
-          continue;
-        }
-      }
-
-      const newItem: Omit<MedicalTestCatalogItem, 'id'> = {
-        name,
-        category,
-        description,
-        defaultPrice,
-      };
-      newItems.push(newItem);
-      importedCount++;
-    }
-
-    if (importedCount > 0) {
-        try {
-            await testCatalogRepo.createMany(newItems);
-            setTestCatalog(await testCatalogRepo.list());
-            toast({ title: "Import Successful", description: `${importedCount} tests imported into catalog. ${failedCount > 0 ? `${failedCount} rows failed.` : ''}` });
-        } catch (e) {
-            console.error("Error saving imported test catalog:", e);
-            toast({ title: "Save Error", description: "Could not save imported test catalog.", variant: "destructive" });
-        }
-    } else if (failedCount > 0) {
-         toast({ title: "Import Failed", description: `No tests imported. ${failedCount} rows had errors. Check console for details.`, variant: "destructive" });
-    } else {
-        toast({ title: "Import Info", description: "No new tests found in CSV to import.", variant: "default" });
-    }
-  };
-
-  if (authIsLoading || isLoading) {
-    return <div className="flex flex-col items-center justify-center min-h-screen p-4"><p>Loading medical test catalog...</p></div>;
-  }
-  if (!currentUser || (currentUser && !ALLOWED_ROLES.includes(currentUser.role))) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Access Denied. Redirecting...</p></div>;
-  }
+  if (!tests) return <PageLoading />;
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8">
-      <header className="mb-8 flex flex-col sm:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-3">
-          <FlaskConical className="h-8 w-8 text-primary" />
-          <h1 className="text-3xl font-bold text-foreground">Medical Tests Catalog</h1>
-        </div>
-        <div className="flex flex-wrap justify-center sm:justify-end gap-2">
-          <Button variant="outline" onClick={() => router.push('/dashboard')}>
-            <ArrowLeft className="mr-2 h-4 w-4" /> Dashboard
-          </Button>
-          <input 
-            type="file" 
-            accept=".csv" 
-            ref={fileInputRef} 
-            onChange={handleFileUpload} 
-            className="hidden" 
-          />
-          <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
-            <Upload className="mr-2 h-4 w-4" /> Import from CSV
-          </Button>
-          <Link href="/medical-tests/form" passHref>
-            <Button>
-              <PlusCircle className="mr-2 h-4 w-4" /> Add New Test
-            </Button>
-          </Link>
-        </div>
-      </header>
+    <PageBody>
+      <PageHeader icon={FlaskConical} title={t('Medical Tests')} description={t('The tests the hospital offers, with their usual price.')}
+        actions={<>
+          <CsvImport what={t('medical tests')} importRows={importRows}
+            columns={[
+              { name: 'Name', required: true },
+              { name: 'Category', required: true, hint: 'e.g. Blood Work, Imaging' },
+              { name: 'Description' },
+              { name: 'DefaultPrice', hint: 'e.g. 1200' },
+            ]}
+            example={'Name,Category,Description,DefaultPrice\nComplete Blood Count (CBC),Blood Work,Standard panel of blood tests,1200.00'} />
+          <Button asChild><Link href="/medical-tests/form"><PlusCircle className="mr-2 h-4 w-4" /> {t('Add Test')}</Link></Button>
+        </>} />
 
-       <Card className="shadow-md mb-6">
-        <CardHeader>
-            <CardTitle className="text-lg">CSV Import Instructions</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm">
-            <p>To import tests from a CSV file, ensure your file has the following headers (case-insensitive):</p>
-            <ul className="list-disc list-inside mt-2 pl-4 bg-muted/50 p-3 rounded-md">
-                <li><code className="font-mono bg-gray-200 dark:bg-gray-700 px-1 rounded">Name</code> (Required)</li>
-                <li><code className="font-mono bg-gray-200 dark:bg-gray-700 px-1 rounded">Category</code> (Required)</li>
-                <li><code className="font-mono bg-gray-200 dark:bg-gray-700 px-1 rounded">Description</code> (Optional)</li>
-                <li><code className="font-mono bg-gray-200 dark:bg-gray-700 px-1 rounded">DefaultPrice</code> (Optional, non-negative number)</li>
-            </ul>
-            <p className="mt-2">Example:</p>
-            <pre className="mt-1 p-2 bg-muted/50 rounded-md text-xs overflow-x-auto">
-                Name,Category,Description,DefaultPrice<br/>
-                Complete Blood Count (CBC),Blood Work,Standard panel of blood tests,1200.00<br/>
-                Chest X-Ray,Imaging,Standard chest x-ray views,800.00
-            </pre>
-        </CardContent>
-      </Card>
-
-      {testCatalog.length === 0 ? (
-        <Card className="text-center shadow-lg">
-          <CardHeader>
-            <CardTitle>No Medical Tests in Catalog</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CardDescription className="mb-4">
-              The medical test catalog is empty. Add tests manually or import them from a CSV file.
-            </CardDescription>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle>All Cataloged Medical Tests</CardTitle>
-            <CardDescription>List of all medical tests available in the catalog.</CardDescription>
-          </CardHeader>
-          <CardContent>
+      <Card>
+        <CardContent className="pt-6">
+          {tests.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t('No medical tests yet. Add one, or import a list from a CSV file.')}</p>
+          ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Test Name</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="hidden sm:table-cell text-right">Default Price</TableHead>
+                  <TableHead>Test name</TableHead>
+                  <TableHead className="hidden sm:table-cell">Category</TableHead>
+                  <TableHead className="text-right">Price</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {testCatalog.sort((a,b) => a.name.localeCompare(b.name)).map((item) => (
+                {[...tests].sort((a, b) => a.name.localeCompare(b.name)).map(item => (
                   <TableRow key={item.id}>
-                    <TableCell className="font-medium">{item.name}</TableCell>
-                    <TableCell>{item.category}</TableCell>
-                    <TableCell className="hidden sm:table-cell text-right">
-                      {item.defaultPrice !== undefined ? `₹${item.defaultPrice.toFixed(2)}` : "N/A"}
+                    <TableCell>
+                      <span className="font-medium">{item.name}</span>
+                      <span className="block text-xs text-muted-foreground sm:hidden">{item.category}</span>
                     </TableCell>
-                    <TableCell className="text-right space-x-2">
-                      <Link href={`/medical-tests/form?id=${item.id}`} passHref>
-                        <Button variant="outline" size="sm" aria-label={`Edit ${item.name}`}>
-                          <Edit3 className="h-4 w-4" />
+                    <TableCell className="hidden sm:table-cell">{item.category}</TableCell>
+                    <TableCell className="text-right tabular-nums">{item.defaultPrice != null ? formatINR(item.defaultPrice) : '—'}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" asChild aria-label={`Edit ${item.name}`}>
+                          <Link href={`/medical-tests/form?id=${item.id}`}><Edit3 className="h-4 w-4" /></Link>
                         </Button>
-                      </Link>
-                      <Button 
-                        variant="destructive" 
-                        size="sm" 
-                        onClick={() => {
-                          setItemToDelete(item);
-                          const confirmed = window.confirm(`Are you sure you want to delete "${item.name}"? This action cannot be undone.`);
-                          if (confirmed) {
-                            handleDeleteItem();
-                          } else {
-                            setItemToDelete(null);
-                          }
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                        <Button variant="destructive" size="sm" onClick={() => setToDelete(item)} aria-label={`Delete ${item.name}`}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={!!toDelete} onOpenChange={open => { if (!open) setToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('Delete this test?')}</AlertDialogTitle>
+            <AlertDialogDescription>&quot;{toDelete?.name}&quot; will be removed from the list of tests.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('Cancel')}</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => { if (toDelete) deleteTest(toDelete); }}>
+              {t('Delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </PageBody>
   );
 }

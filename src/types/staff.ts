@@ -8,4 +8,5 @@ export interface StaffMember {
   role: StaffRole;
   hireDate: string; // dd/MM/yyyy
   salary?: number;
+  preferredLanguage?: 'en' | 'te';
 }

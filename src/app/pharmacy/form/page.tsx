@@ -1,234 +1,160 @@
-
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Pill, Save } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
-import { Medication } from '@/types/medication';
-import { TreatmentTemplate, TREATMENT_TEMPLATES } from '@/config/treatmentTemplates';
-import { ArrowLeft, Save, Pill } from 'lucide-react';
+import { PageBody, PageHeader, PageLoading } from '@/components/page';
+import { useT } from '@/components/language-provider';
+import { useToast } from '@/hooks/use-toast';
+import { TREATMENT_TEMPLATES } from '@/config/treatmentTemplates';
 import { medications as medicationsRepo, treatmentTemplates as templatesRepo } from '@/lib/data';
-import { useAuth } from '@/context/AuthContext';
-import type { StaffRole } from '@/types/staff';
-import { PAGE_ROLES } from '@/config/permissions';
+import type { Medication } from '@/types/medication';
 
-const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.medications;
-
-export default function MedicationFormPage() {
+// Add or edit a pharmacy item. Access is checked by PageGuard.
+export default function PharmacyItemFormPage() {
+  const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const { currentUser, isLoading: authIsLoading } = useAuth();
+  const editId = searchParams.get('id');
 
-  const medicationIdToEdit = searchParams.get('id');
-  const isEditMode = Boolean(medicationIdToEdit);
-
-  const [name, setName] = useState("");
-  const [treatment, setTreatment] = useState<string>(""); // Will store template name
-  const [listPrice, setListPrice] = useState<number | string>("");
-  const [quantityInPackage, setQuantityInPackage] = useState<number | string>("");
-  const [unitOfMeasure, setUnitOfMeasure] = useState("");
-  const [additionalNotes, setAdditionalNotes] = useState("");
-  const [reorderLevel, setReorderLevel] = useState("");
-  
-  const [allTreatmentTemplates, setAllTreatmentTemplates] = useState<TreatmentTemplate[]>([]);
-  const [currentMedicationId, setCurrentMedicationId] = useState<string | null>(null);
-  const [formIsLoading, setFormIsLoading] = useState(true);
+  const [name, setName] = useState('');
+  const [treatment, setTreatment] = useState('');
+  const [listPrice, setListPrice] = useState('');
+  const [quantityInPackage, setQuantityInPackage] = useState('');
+  const [unitOfMeasure, setUnitOfMeasure] = useState('');
+  const [additionalNotes, setAdditionalNotes] = useState('');
+  const [reorderLevel, setReorderLevel] = useState('');
+  const [templateNames, setTemplateNames] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    if (!authIsLoading && currentUser && !ALLOWED_ROLES.includes(currentUser.role)) {
-      toast({ title: "Access Denied", description: "You do not have permission to access this page.", variant: "destructive" });
-      router.replace('/dashboard');
-    } else if (!authIsLoading && !currentUser) {
-      router.replace('/login');
-    }
-  }, [authIsLoading, currentUser, router, toast]);
-
-  useEffect(() => {
-    if (!currentUser || (currentUser && !ALLOWED_ROLES.includes(currentUser.role) && !authIsLoading )) {
-        setFormIsLoading(false);
-        return;
-    }
-    setFormIsLoading(true);
-
-    templatesRepo.list()
-      .then(userTemplates => setAllTreatmentTemplates([...TREATMENT_TEMPLATES, ...userTemplates]))
-      .catch(e => {
-        console.error("Error loading user-defined treatment templates:", e);
-        setAllTreatmentTemplates([...TREATMENT_TEMPLATES]);
-        toast({ title: "Warning", description: "Could not load custom treatment templates.", variant: "default" });
+    const loadTemplates = templatesRepo.list()
+      .then(custom => setTemplateNames([...new Set([...TREATMENT_TEMPLATES, ...custom].map(tpl => tpl.name))]))
+      .catch(() => {
+        setTemplateNames(TREATMENT_TEMPLATES.map(tpl => tpl.name));
+        toast({ title: 'Could not load custom treatment templates' });
       });
+    const loadItem = editId
+      ? medicationsRepo.get(editId).then(med => {
+          if (!med) {
+            toast({ title: 'Pharmacy item not found', variant: 'destructive' });
+            router.push('/pharmacy');
+            return;
+          }
+          setName(med.name);
+          setTreatment(med.treatment);
+          setListPrice(String(med.listPrice));
+          setQuantityInPackage(med.quantityInPackage != null ? String(med.quantityInPackage) : '');
+          setUnitOfMeasure(med.unitOfMeasure);
+          setAdditionalNotes(med.additionalNotes || '');
+          setReorderLevel(med.reorderLevel != null ? String(med.reorderLevel) : '');
+        }).catch(() => toast({ title: 'Could not load the pharmacy item', variant: 'destructive' }))
+      : Promise.resolve();
+    Promise.all([loadTemplates, loadItem]).finally(() => setIsLoading(false));
+  }, [editId, router, toast]);
 
-    if (!(isEditMode && medicationIdToEdit)) {
-      setFormIsLoading(false);
-      return;
-    }
-    medicationsRepo.get(medicationIdToEdit).then(medToEdit => {
-        if (medToEdit) {
-          setCurrentMedicationId(medToEdit.id);
-          setName(medToEdit.name);
-          setTreatment(medToEdit.treatment);
-          setListPrice(medToEdit.listPrice);
-          setQuantityInPackage(medToEdit.quantityInPackage !== undefined ? String(medToEdit.quantityInPackage) : "");
-          setUnitOfMeasure(medToEdit.unitOfMeasure);
-          setAdditionalNotes(medToEdit.additionalNotes || "");
-          setReorderLevel(medToEdit.reorderLevel != null ? String(medToEdit.reorderLevel) : "");
-        } else {
-          toast({ title: "Error", description: "Pharmacy item not found.", variant: "destructive" });
-          router.push('/pharmacy');
-        }
-    }).catch(error => {
-      console.error("Error loading medication:", error);
-      toast({ title: "Error", description: "Could not load the pharmacy item.", variant: "destructive" });
-    }).finally(() => setFormIsLoading(false));
-  }, [isEditMode, medicationIdToEdit, router, toast, currentUser, authIsLoading]);
+  const invalid = (title: string, description: string) => toast({ title, description, variant: 'destructive' });
 
   const handleSubmit = async () => {
-    if (!name.trim()) { toast({ title: "Validation Error", description: "Name is required.", variant: "destructive" }); return; }
-    if (!treatment) { toast({ title: "Validation Error", description: "Treatment / Purpose is required (select a template).", variant: "destructive" }); return; }
-    
-    const price = parseFloat(String(listPrice));
-    if (isNaN(price) || price < 0) { toast({ title: "Validation Error", description: "List Price must be a valid non-negative number.", variant: "destructive" }); return; }
-    
-    let numQuantityInPackage: number | undefined = undefined;
-    if (String(quantityInPackage).trim() !== "") {
-        numQuantityInPackage = parseFloat(String(quantityInPackage));
-        if (isNaN(numQuantityInPackage) || numQuantityInPackage <= 0) {
-            toast({ title: "Validation Error", description: "Quantity in Package must be a positive number if provided.", variant: "destructive" }); return;
-        }
-        if (numQuantityInPackage % 1 !== 0) {
-            toast({ title: "Validation Error", description: "Quantity in Package must be a whole number.", variant: "destructive" }); return;
-        }
+    if (!name.trim()) return invalid('Enter the name', 'Name is required.');
+    if (!treatment) return invalid('Choose the treatment / purpose', 'Select a treatment template.');
+    const price = Number(listPrice);
+    if (listPrice.trim() === '' || !Number.isFinite(price) || price < 0) return invalid('Check the price', 'List price must be 0 or more.');
+    let quantity: number | undefined;
+    if (quantityInPackage.trim() !== '') {
+      quantity = Number(quantityInPackage);
+      if (!Number.isInteger(quantity) || quantity <= 0) return invalid('Check the quantity', 'Quantity in package must be a whole number above 0.');
     }
+    if (!unitOfMeasure.trim()) return invalid('Enter the unit', 'Unit of measure is required.');
+    const reorderValue = reorderLevel.trim() === '' ? null : Number(reorderLevel);
+    if (reorderValue !== null && (!Number.isFinite(reorderValue) || reorderValue < 0)) return invalid('Check the refill level', 'Enter 0 or more, or leave it empty.');
 
-    if (!unitOfMeasure.trim()) { toast({ title: "Validation Error", description: "Unit of Measure is required.", variant: "destructive" }); return; }
-
-    const reorderValue = reorderLevel.trim() === "" ? null : Number(reorderLevel);
-    if (reorderValue !== null && (!Number.isFinite(reorderValue) || reorderValue < 0)) {
-      toast({ title: "Validation Error", description: "The refill level must be 0 or more, or left empty.", variant: "destructive" }); return;
-    }
-
-    const medicationData: Omit<Medication, 'id'> = {
+    const data: Omit<Medication, 'id'> = {
       name: name.trim(),
-      treatment: treatment, 
+      treatment,
       listPrice: price,
-      quantityInPackage: numQuantityInPackage,
+      quantityInPackage: quantity,
       unitOfMeasure: unitOfMeasure.trim(),
       additionalNotes: additionalNotes.trim(),
       reorderLevel: reorderValue,
     };
-
+    setIsSaving(true);
     try {
-      if (isEditMode && currentMedicationId) {
-        await medicationsRepo.update(currentMedicationId, medicationData);
-        toast({ title: "Success", description: "Pharmacy item updated." });
-      } else {
-        await medicationsRepo.create(medicationData);
-        toast({ title: "Success", description: "Pharmacy item added." });
-      }
+      if (editId) await medicationsRepo.update(editId, data);
+      else await medicationsRepo.create(data);
+      toast({ title: 'Saved', description: editId ? 'Pharmacy item updated.' : 'Pharmacy item added.' });
       router.push('/pharmacy');
-    } catch (e) {
-      console.error("Failed to save medication", e);
-      toast({
-        title: "Save Error",
-        description: "Could not save medication. Please check your connection and try again.",
-        variant: "destructive",
-      });
+    } catch {
+      toast({ title: 'Could not save the pharmacy item', description: 'Please check your connection and try again.', variant: 'destructive' });
+      setIsSaving(false);
     }
   };
-  
-  if (authIsLoading || formIsLoading) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Loading medication form...</p></div>;
-  }
 
-  if (!currentUser || (currentUser && !ALLOWED_ROLES.includes(currentUser.role))) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Access Denied. Redirecting...</p></div>;
-  }
+  if (isLoading) return <PageLoading />;
+
+  // An item imported with a treatment that is not a template still shows its value.
+  const treatmentOptions = treatment && !templateNames.includes(treatment) ? [treatment, ...templateNames] : templateNames;
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8 flex flex-col items-center">
-      <Card className="w-full max-w-lg mt-6 shadow-xl">
-        <CardHeader>
-          <CardTitle className="text-2xl flex items-center">
-            <Pill className="mr-3 h-7 w-7 text-primary"/>
-            {isEditMode ? "Edit Pharmacy Item" : "Add Pharmacy Item"}
-          </CardTitle>
-          <CardDescription>
-            {isEditMode ? "Update the details for this medication." : "Fill in the details to add a new medication."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-5">
+    <PageBody width="narrow">
+      <PageHeader icon={Pill} back={{ href: '/pharmacy', label: t('Pharmacy') }}
+        title={editId ? t('Edit Pharmacy Item') : t('Add Pharmacy Item')}
+        description={editId ? t('Update the details of this pharmacy item.') : t('Fill in the details of the new pharmacy item.')} />
+      <Card>
+        <CardContent className="grid gap-5 pt-6">
           <div>
             <Label htmlFor="name">Medicine / item name *</Label>
-            <Input id="name" value={name} onChange={(e) => setName(e.target.value)} required 
-                   placeholder="e.g., Amoxicillin 500mg" />
+            <Input id="name" value={name} onChange={e => setName(e.target.value)} placeholder="e.g., Amoxicillin 500mg" />
           </div>
           <div>
-            <Label htmlFor="treatment">Treatment / Purpose *</Label>
+            <Label htmlFor="treatment">Treatment / purpose *</Label>
             <Select onValueChange={setTreatment} value={treatment}>
-                <SelectTrigger id="treatment">
-                    <SelectValue placeholder="Select Treatment Template/Purpose" />
-                </SelectTrigger>
-                <SelectContent>
-                    {allTreatmentTemplates.length > 0 ? (
-                        allTreatmentTemplates.map(template => (
-                            <SelectItem key={template.id} value={template.name}>
-                                {template.name}
-                            </SelectItem>
-                        ))
-                    ) : (
-                        <div className="p-2 text-sm text-muted-foreground text-center">No treatment templates found.</div>
-                    )}
-                </SelectContent>
+              <SelectTrigger id="treatment"><SelectValue placeholder="Select a treatment template" /></SelectTrigger>
+              <SelectContent>
+                {treatmentOptions.map(option => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+              </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-                <Label htmlFor="listPrice">List Price (₹) for Package *</Label>
-                <Input id="listPrice" type="number" value={String(listPrice)} 
-                       onChange={(e) => setListPrice(e.target.value)} 
-                       required placeholder="e.g., 150.75" min="0" step="0.01"/>
+              <Label htmlFor="listPrice">List price (₹) for the package *</Label>
+              <Input id="listPrice" type="number" inputMode="decimal" value={listPrice} onChange={e => setListPrice(e.target.value)} placeholder="e.g., 150.75" min="0" step="0.01" />
             </div>
-             <div>
-                <Label htmlFor="quantityInPackage">Quantity in Package (Optional, Whole Number)</Label>
-                <Input id="quantityInPackage" type="number" value={String(quantityInPackage)} 
-                       onChange={(e) => setQuantityInPackage(e.target.value)} 
-                       placeholder="e.g., 10, 100" min="0" step="1"/>
+            <div>
+              <Label htmlFor="quantityInPackage">Quantity in package (optional, whole number)</Label>
+              <Input id="quantityInPackage" type="number" inputMode="numeric" value={quantityInPackage} onChange={e => setQuantityInPackage(e.target.value)} placeholder="e.g., 10, 100" min="0" step="1" />
             </div>
           </div>
-           <div>
-                <Label htmlFor="unitOfMeasure">Unit of Measure *</Label>
-                <Input id="unitOfMeasure" value={unitOfMeasure} onChange={(e) => setUnitOfMeasure(e.target.value)} required 
-                       placeholder="e.g., tablet, ml, bottle, strip"/>
-            </div>
           <div>
-            <Label htmlFor="reorderLevel">Refill when stock falls to (Optional)</Label>
-            <Input id="reorderLevel" type="number" inputMode="decimal" min="0" step="any" value={reorderLevel}
-                   onChange={(e) => setReorderLevel(e.target.value)} placeholder="e.g., 10" />
-            <p className="text-xs text-muted-foreground mt-1">In the unit above (the unit the price is for). The Inventory page lists the item under &quot;Needs refill&quot; at or below this.</p>
+            <Label htmlFor="unitOfMeasure">Unit of measure *</Label>
+            <Input id="unitOfMeasure" value={unitOfMeasure} onChange={e => setUnitOfMeasure(e.target.value)} placeholder="e.g., tablet, ml, bottle, strip" />
           </div>
           <div>
-            <Label htmlFor="additionalNotes">Additional Notes (Optional)</Label>
-            <Textarea id="additionalNotes" value={additionalNotes} 
-                      onChange={(e) => setAdditionalNotes(e.target.value)} 
-                      placeholder="e.g., Storage instructions, common side effects, manufacturer, etc."/>
+            <Label htmlFor="reorderLevel">Refill when stock falls to (optional)</Label>
+            <Input id="reorderLevel" type="number" inputMode="decimal" min="0" step="any" value={reorderLevel} onChange={e => setReorderLevel(e.target.value)} placeholder="e.g., 10" />
+            <p className="mt-1 text-xs text-muted-foreground">In the unit above (the unit the price is for). The Inventory page lists the item under &quot;Needs refill&quot; at or below this.</p>
+          </div>
+          <div>
+            <Label htmlFor="additionalNotes">Additional notes (optional)</Label>
+            <Textarea id="additionalNotes" value={additionalNotes} onChange={e => setAdditionalNotes(e.target.value)} placeholder="e.g., Storage instructions, common side effects, manufacturer" />
           </div>
         </CardContent>
-        <CardFooter className="flex justify-between mt-4">
-          <Button variant="outline" onClick={() => router.push('/pharmacy')}>
-            <ArrowLeft className="mr-2 h-4 w-4" /> Cancel
-          </Button>
-          <Button onClick={handleSubmit}>
-            <Save className="mr-2 h-4 w-4" /> {isEditMode ? "Save Changes" : "Add Pharmacy Item"}
+        <CardFooter className="flex justify-between gap-2">
+          <Button variant="outline" asChild><Link href="/pharmacy">{t('Cancel')}</Link></Button>
+          <Button onClick={handleSubmit} disabled={isSaving}>
+            <Save className="mr-2 h-4 w-4" /> {isSaving ? t('Saving…') : editId ? t('Save Changes') : t('Add Pharmacy Item')}
           </Button>
         </CardFooter>
       </Card>
-    </div>
+    </PageBody>
   );
 }

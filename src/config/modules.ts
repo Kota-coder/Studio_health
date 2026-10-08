@@ -1,4 +1,4 @@
-// Features a hospital can switch off (Organization Setup → Hospital Profile → Menus).
+// Features a hospital can switch off (Setup → Hospital Profile → Menus and features).
 // A switched-off feature disappears everywhere: its menu item, its pages (which show a short
 // notice instead) and its parts of other screens (e.g. Billing off removes the bills card and
 // "Bill Test" buttons on the patient page). Patients, Staff Management and Hospital Profile
@@ -9,28 +9,27 @@ export interface ModuleDefinition {
   key: string;
   label: string;
   description: string;
-  paths: string[]; // URL prefixes belonging to the feature
   requires?: string[]; // also off when any of these is off
   requiresAny?: string[]; // also off when all of these are off
 }
 
 export const MODULES: ModuleDefinition[] = [
-  { key: 'billing', label: 'Billing', description: 'Patient bills, "Bill Test" and "Bill Meds" on the patient page.', paths: ['/billing'] },
-  { key: 'payments', label: 'Payments', description: 'Money paid out: salaries, supplies, doctor and referral fees.', paths: ['/payments'] },
-  { key: 'doctorFees', label: 'Doctor Fees', description: "The attending doctor's fee per case, paid through Payments.", paths: [], requires: ['departments', 'payments'] },
-  { key: 'referringDoctors', label: 'Referrals', description: 'Referring doctors, and who referred each patient.', paths: ['/referring-doctors'] },
-  { key: 'referralFees', label: 'Referral Fees', description: 'Fees paid to referring doctors, through Payments.', paths: [], requires: ['referringDoctors', 'payments'] },
-  { key: 'financialDashboard', label: 'Financial Dashboard', description: 'Totals and charts for money in and out.', paths: ['/financial-dashboard'], requiresAny: ['billing', 'payments'] },
-  { key: 'paymentMethods', label: 'Payment Methods', description: 'Managing the payment methods offered.', paths: ['/payment-methods'], requiresAny: ['billing', 'payments'] },
-  { key: 'duty', label: 'Duty Roster & Attendance', description: 'Shifts, clock-in and attendance reports.', paths: ['/duty'] },
-  { key: 'departments', label: 'Departments', description: 'Departments and care teams (attending doctor and nurse).', paths: ['/departments'] },
-  { key: 'patientCare', label: 'Patient Care Templates', description: 'Structured templates for care notes.', paths: ['/patient-care'] },
-  { key: 'medicalTests', label: 'Medical Tests Catalog', description: 'Managing the tests offered and their prices.', paths: ['/medical-tests'] },
-  { key: 'medications', label: 'Pharmacy', description: 'Medicines the pharmacy sells; "Add Medication" on care notes.', paths: ['/pharmacy'] },
-  { key: 'materials', label: 'Materials', description: 'Consumables and supplies.', paths: ['/materials'] },
-  { key: 'inventory', label: 'Inventory', description: 'Stock on hand, its value, and what needs refilling.', paths: ['/inventory'], requiresAny: ['medications', 'materials'] },
-  { key: 'vendors', label: 'Material Vendors', description: 'Suppliers of materials and medicines.', paths: ['/vendors'] },
-  { key: 'sampleData', label: 'Sample Data', description: 'Loading demo data for trying the app out.', paths: ['/admin'] },
+  { key: 'billing', label: 'Billing', description: 'Patient bills, "Bill Test" and "Bill Meds" on the patient page.' },
+  { key: 'payments', label: 'Payments', description: 'Money paid out: salaries, supplies, doctor and referral fees.' },
+  { key: 'doctorFees', label: 'Doctor Fees', description: "The attending doctor's fee per case, paid through Payments.", requires: ['departments', 'payments'] },
+  { key: 'referringDoctors', label: 'Referrals', description: 'Referring doctors, and who referred each patient.' },
+  { key: 'referralFees', label: 'Referral Fees', description: 'Fees paid to referring doctors, through Payments.', requires: ['referringDoctors', 'payments'] },
+  { key: 'financialDashboard', label: 'Financial Dashboard', description: 'Totals and charts for money in and out.', requiresAny: ['billing', 'payments'] },
+  { key: 'paymentMethods', label: 'Payment Methods', description: 'Managing the payment methods offered.', requiresAny: ['billing', 'payments'] },
+  { key: 'duty', label: 'Duty Roster & Attendance', description: 'Shifts, clock-in and attendance reports.' },
+  { key: 'departments', label: 'Departments', description: 'Departments and care teams (attending doctor and nurse).' },
+  { key: 'patientCare', label: 'Care Note Templates', description: 'Structured templates for care notes.' },
+  { key: 'medicalTests', label: 'Medical Tests', description: 'Managing the tests offered and their prices.' },
+  { key: 'medications', label: 'Pharmacy', description: 'Medicines the pharmacy sells; "Add Medication" on care notes.' },
+  { key: 'materials', label: 'Materials', description: 'Consumables and supplies.' },
+  { key: 'inventory', label: 'Inventory', description: 'Stock on hand, its value, and what needs refilling.', requiresAny: ['medications', 'materials'] },
+  { key: 'vendors', label: 'Vendors', description: 'Suppliers of medicines and materials.' },
+  { key: 'sampleData', label: 'Sample Data', description: 'Loading demo data for trying the app out.' },
 ];
 
 const BY_KEY = new Map(MODULES.map(m => [m.key, m]));
@@ -62,6 +61,4 @@ export function blockedBy(disabled: string[] | null | undefined, key: string): s
   return null;
 }
 
-export function moduleForPath(pathname: string): ModuleDefinition | undefined {
-  return MODULES.find(m => m.paths.some(p => pathname === p || pathname.startsWith(`${p}/`)));
-}
+export const moduleByKey = (key?: string) => (key ? BY_KEY.get(key) : undefined);

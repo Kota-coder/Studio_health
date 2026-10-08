@@ -1,166 +1,112 @@
-
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { FlaskConical, Save } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useToast } from "@/hooks/use-toast";
-import { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
-import { ArrowLeft, Save, FlaskConical } from 'lucide-react';
+import { PageBody, PageHeader, PageLoading } from '@/components/page';
+import { useT } from '@/components/language-provider';
+import { useToast } from '@/hooks/use-toast';
 import { testCatalog as testCatalogRepo } from '@/lib/data';
-import { useAuth } from '@/context/AuthContext';
-import type { StaffRole } from '@/types/staff';
-import { PAGE_ROLES } from '@/config/permissions';
+import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 
-const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.medicalTests;
-
-export default function MedicalTestCatalogFormPage() {
+// Add or edit a medical test. Access is checked by PageGuard.
+export default function MedicalTestFormPage() {
+  const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const { currentUser, isLoading: authIsLoading } = useAuth();
+  const editId = searchParams.get('id');
 
-  const itemIdToEdit = searchParams.get('id');
-  const isEditMode = Boolean(itemIdToEdit);
-
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState("");
-  const [description, setDescription] = useState("");
-  const [defaultPrice, setDefaultPrice] = useState<string>(""); // Stored as string for input
-
-  const [currentItemId, setCurrentItemId] = useState<string | null>(null);
-  const [formIsLoading, setFormIsLoading] = useState(true);
+  const [name, setName] = useState('');
+  const [category, setCategory] = useState('');
+  const [description, setDescription] = useState('');
+  const [defaultPrice, setDefaultPrice] = useState('');
+  const [isLoading, setIsLoading] = useState(!!editId);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    if (!authIsLoading && currentUser && !ALLOWED_ROLES.includes(currentUser.role)) {
-      toast({ title: "Access Denied", description: "You do not have permission to access this page.", variant: "destructive" });
-      router.replace('/dashboard');
-    } else if (!authIsLoading && !currentUser) {
-      router.replace('/login');
-    }
-  }, [authIsLoading, currentUser, router, toast]);
-
-  useEffect(() => {
-    if (!currentUser || (currentUser && !ALLOWED_ROLES.includes(currentUser.role) && !authIsLoading )) {
-        setFormIsLoading(false);
+    if (!editId) return;
+    testCatalogRepo.get(editId).then(item => {
+      if (!item) {
+        toast({ title: 'Medical test not found', variant: 'destructive' });
+        router.push('/medical-tests');
         return;
-    }
-    setFormIsLoading(true);
-    if (!(isEditMode && itemIdToEdit)) {
-      setFormIsLoading(false);
-      return;
-    }
-    testCatalogRepo.get(itemIdToEdit).then(itemToEdit => {
-        if (itemToEdit) {
-          setCurrentItemId(itemToEdit.id);
-          setName(itemToEdit.name);
-          setCategory(itemToEdit.category);
-          setDescription(itemToEdit.description || "");
-          setDefaultPrice(itemToEdit.defaultPrice !== undefined ? String(itemToEdit.defaultPrice) : "");
-        } else {
-          toast({ title: "Error", description: "Medical test item not found.", variant: "destructive" });
-          router.push('/medical-tests');
-        }
-    }).catch(error => {
-      console.error("Error loading medical test item:", error);
-      toast({ title: "Error", description: "Could not load medical test item.", variant: "destructive" });
-    }).finally(() => setFormIsLoading(false));
-  }, [isEditMode, itemIdToEdit, router, toast, currentUser, authIsLoading]);
+      }
+      setName(item.name);
+      setCategory(item.category);
+      setDescription(item.description || '');
+      setDefaultPrice(item.defaultPrice != null ? String(item.defaultPrice) : '');
+    }).catch(() => toast({ title: 'Could not load the medical test', variant: 'destructive' }))
+      .finally(() => setIsLoading(false));
+  }, [editId, router, toast]);
+
+  const invalid = (title: string, description: string) => toast({ title, description, variant: 'destructive' });
 
   const handleSubmit = async () => {
-    if (!name.trim()) { toast({ title: "Validation Error", description: "Test Name is required.", variant: "destructive" }); return; }
-    if (!category.trim()) { toast({ title: "Validation Error", description: "Category is required.", variant: "destructive" }); return; }
-    
-    let numDefaultPrice: number | undefined = undefined;
-    if (defaultPrice.trim() !== "") {
-        numDefaultPrice = parseFloat(defaultPrice);
-        if (isNaN(numDefaultPrice) || numDefaultPrice < 0) {
-            toast({ title: "Validation Error", description: "Default Price must be a valid non-negative number if provided.", variant: "destructive" }); return;
-        }
+    if (!name.trim()) return invalid('Enter the name', 'Test name is required.');
+    if (!category.trim()) return invalid('Enter the category', 'Category is required.');
+    let price: number | undefined;
+    if (defaultPrice.trim() !== '') {
+      price = Number(defaultPrice);
+      if (!Number.isFinite(price) || price < 0) return invalid('Check the price', 'Price must be 0 or more, or left empty.');
     }
-
-    const testItemData: Omit<MedicalTestCatalogItem, 'id'> = {
+    const data: Omit<MedicalTestCatalogItem, 'id'> = {
       name: name.trim(),
       category: category.trim(),
       description: description.trim() || undefined,
-      defaultPrice: numDefaultPrice,
+      defaultPrice: price,
     };
-
+    setIsSaving(true);
     try {
-      if (isEditMode && currentItemId) {
-        await testCatalogRepo.update(currentItemId, testItemData);
-        toast({ title: "Success", description: "Medical test item updated." });
-      } else {
-        await testCatalogRepo.create(testItemData);
-        toast({ title: "Success", description: "New medical test added to catalog." });
-      }
+      if (editId) await testCatalogRepo.update(editId, data);
+      else await testCatalogRepo.create(data);
+      toast({ title: 'Saved', description: editId ? 'Medical test updated.' : 'Medical test added.' });
       router.push('/medical-tests');
-    } catch (e) {
-      console.error("Failed to save medical test item", e);
-      toast({
-        title: "Save Error",
-        description: "Could not save medical test item. Please check your connection and try again.",
-        variant: "destructive",
-      });
+    } catch {
+      toast({ title: 'Could not save the medical test', description: 'Please check your connection and try again.', variant: 'destructive' });
+      setIsSaving(false);
     }
   };
-  
-  if (authIsLoading || formIsLoading) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Loading test catalog form...</p></div>;
-  }
-  if (!currentUser || (currentUser && !ALLOWED_ROLES.includes(currentUser.role))) {
-     return <div className="flex justify-center items-center min-h-screen"><p>Access Denied. Redirecting...</p></div>;
-  }
+
+  if (isLoading) return <PageLoading />;
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8 flex flex-col items-center">
-      <Card className="w-full max-w-lg mt-6 shadow-xl">
-        <CardHeader>
-          <CardTitle className="text-2xl flex items-center">
-            <FlaskConical className="mr-3 h-7 w-7 text-primary"/>
-            {isEditMode ? "Edit Medical Test" : "Add New Medical Test to Catalog"}
-          </CardTitle>
-          <CardDescription>
-            {isEditMode ? "Update the details for this medical test." : "Define a new medical test for the catalog."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-5">
+    <PageBody width="narrow">
+      <PageHeader icon={FlaskConical} back={{ href: '/medical-tests', label: t('Medical Tests') }}
+        title={editId ? t('Edit Test') : t('Add Test')}
+        description={editId ? t('Update the details of this test.') : t('Fill in the details of the new test.')} />
+      <Card>
+        <CardContent className="grid gap-5 pt-6">
           <div>
-            <Label htmlFor="testName">Test Name *</Label>
-            <Input id="testName" value={name} onChange={(e) => setName(e.target.value)} required 
-                   placeholder="e.g., Complete Blood Count (CBC)" />
+            <Label htmlFor="testName">Test name *</Label>
+            <Input id="testName" value={name} onChange={e => setName(e.target.value)} placeholder="e.g., Complete Blood Count (CBC)" />
           </div>
           <div>
             <Label htmlFor="category">Category *</Label>
-            <Input id="category" value={category} onChange={(e) => setCategory(e.target.value)} required 
-                   placeholder="e.g., Blood Work, Imaging, Cardiology"/>
+            <Input id="category" value={category} onChange={e => setCategory(e.target.value)} placeholder="e.g., Blood Work, Imaging, Cardiology" />
           </div>
           <div>
-            <Label htmlFor="description">Description (Optional)</Label>
-            <Textarea id="description" value={description} 
-                      onChange={(e) => setDescription(e.target.value)} 
-                      placeholder="Briefly describe the test, its purpose, or components."/>
+            <Label htmlFor="description">Description (optional)</Label>
+            <Textarea id="description" value={description} onChange={e => setDescription(e.target.value)} placeholder="What the test is for, or what it includes" />
           </div>
           <div>
-            <Label htmlFor="defaultPrice">Default Price (₹) (Optional)</Label>
-            <Input id="defaultPrice" type="number" value={defaultPrice} 
-                   onChange={(e) => setDefaultPrice(e.target.value)} 
-                   placeholder="e.g., 1200.00" min="0" step="0.01"/>
+            <Label htmlFor="defaultPrice">Price (₹) (optional)</Label>
+            <Input id="defaultPrice" type="number" inputMode="decimal" value={defaultPrice} onChange={e => setDefaultPrice(e.target.value)} placeholder="e.g., 1200.00" min="0" step="0.01" />
           </div>
         </CardContent>
-        <CardFooter className="flex justify-between mt-4">
-          <Button variant="outline" onClick={() => router.push('/medical-tests')}>
-            <ArrowLeft className="mr-2 h-4 w-4" /> Cancel
-          </Button>
-          <Button onClick={handleSubmit}>
-            <Save className="mr-2 h-4 w-4" /> {isEditMode ? "Save Changes" : "Add Test to Catalog"}
+        <CardFooter className="flex justify-between gap-2">
+          <Button variant="outline" asChild><Link href="/medical-tests">{t('Cancel')}</Link></Button>
+          <Button onClick={handleSubmit} disabled={isSaving}>
+            <Save className="mr-2 h-4 w-4" /> {isSaving ? t('Saving…') : editId ? t('Save Changes') : t('Add Test')}
           </Button>
         </CardFooter>
       </Card>
-    </div>
+    </PageBody>
   );
 }

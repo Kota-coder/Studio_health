@@ -5,6 +5,8 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { getSupabase } from '@/lib/supabase/client';
+import { useLanguage } from '@/components/language-provider';
+import { isLang } from '@/lib/i18n';
 
 interface AuthContextType {
   currentUser: StaffMember | null;
@@ -19,7 +21,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 async function loadStaffForUser(authUserId: string): Promise<StaffMember | null> {
   const { data, error } = await getSupabase()
     .from('staff')
-    .select('id, name, phone_number, email, role, hire_date, salary')
+    .select('id, name, phone_number, email, role, hire_date, preferred_language')
     .eq('auth_user_id', authUserId)
     .eq('active', true)
     .maybeSingle();
@@ -35,7 +37,7 @@ async function loadStaffForUser(authUserId: string): Promise<StaffMember | null>
     email: data.email,
     role: data.role,
     hireDate: data.hire_date,
-    salary: data.salary ?? undefined,
+    preferredLanguage: isLang(data.preferred_language) ? data.preferred_language : 'en',
   };
 }
 
@@ -45,6 +47,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const loadedFor = useRef<string | null>(null); // auth user whose staff record is loaded
   const router = useRouter();
   const { toast } = useToast();
+  const { lang, setLang } = useLanguage();
+  const langRef = useRef(lang);
+  langRef.current = lang;
 
   useEffect(() => {
     const supabase = getSupabase();
@@ -58,6 +63,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const staffMember = authUserId ? await loadStaffForUser(authUserId) : null;
       if (!staffMember) loadedFor.current = null;
       if (!cancelled) {
+        // Their language follows them to any device.
+        if (staffMember?.preferredLanguage && staffMember.preferredLanguage !== langRef.current) {
+          setLang(staffMember.preferredLanguage, { save: false });
+        }
         setCurrentUser(staffMember);
         setIsLoading(false);
       }
@@ -102,6 +111,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     loadedFor.current = data.user.id;
+    // A language chosen on the login page becomes their preference.
+    if (staffMember.preferredLanguage !== langRef.current) {
+      await supabase.rpc('set_my_language', { lang: langRef.current });
+    }
     setCurrentUser(staffMember);
     setIsLoading(false);
     toast({ title: "Login Successful", description: `Welcome, ${staffMember.name}!` });
@@ -132,4 +145,12 @@ export const useAuth = (): AuthContextType => {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
+};
+
+// The signed-in staff member, for pages inside <PageGuard> (which only renders them once
+// someone is signed in and allowed to open the page).
+export const useStaff = (): StaffMember => {
+  const { currentUser } = useAuth();
+  if (!currentUser) throw new Error('useStaff is only for pages behind PageGuard');
+  return currentUser;
 };

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { useT } from '@/components/language-provider';
 import { useToast } from '@/hooks/use-toast';
 import { inventory, materials, medications } from '@/lib/data';
 import { formatQty } from '@/lib/inventory';
@@ -30,6 +31,7 @@ export function RecordStockDialog({ item, open, onOpenChange, onSaved }: {
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
 }) {
+  const t = useT();
   const { toast } = useToast();
   const [entryType, setEntryType] = useState<EntryType>('used');
   const [quantity, setQuantity] = useState('');
@@ -51,7 +53,7 @@ export function RecordStockDialog({ item, open, onOpenChange, onSaved }: {
 
   if (!item) return null;
   const stockIn = entryType === 'received' || entryType === 'opening';
-  const hint = ENTRY_TYPES.find(t => t.value === entryType)?.hint;
+  const hint = ENTRY_TYPES.find(e => e.value === entryType)?.hint;
   const unit = item.unit ? ` ${item.unit}` : '';
 
   const save = async () => {
@@ -97,7 +99,7 @@ export function RecordStockDialog({ item, open, onOpenChange, onSaved }: {
       onOpenChange(false);
       onSaved();
     } catch (error) {
-      toast({ title: 'Save Error', description: error instanceof Error ? error.message : 'Could not save.', variant: 'destructive' });
+      toast({ title: 'Could not save', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
@@ -115,7 +117,7 @@ export function RecordStockDialog({ item, open, onOpenChange, onSaved }: {
             <Label htmlFor="stockEntryType">Record</Label>
             <Select value={entryType} onValueChange={v => setEntryType(v as EntryType)}>
               <SelectTrigger id="stockEntryType"><SelectValue /></SelectTrigger>
-              <SelectContent>{ENTRY_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
+              <SelectContent>{ENTRY_TYPES.map(e => <SelectItem key={e.value} value={e.value}>{e.label}</SelectItem>)}</SelectContent>
             </Select>
             {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
           </div>
@@ -147,8 +149,8 @@ export function RecordStockDialog({ item, open, onOpenChange, onSaved }: {
           </div>
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={save} disabled={isSaving}>{isSaving ? 'Saving…' : 'Save'}</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('Cancel')}</Button>
+          <Button onClick={save} disabled={isSaving}>{isSaving ? t('Saving…') : t('Save')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

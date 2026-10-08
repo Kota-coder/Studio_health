@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import { isPublicPath } from '@/config/public-paths';
 
-// Pages reachable without a session.
-const PUBLIC_PATHS = ['/login', '/auth/confirm', '/set-password', '/forgot-password', '/reset-password', '/signup'];
 
 const SETUP_MESSAGE = `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Seva setup needed</title>
@@ -43,7 +42,7 @@ export async function middleware(request: NextRequest) {
   const user = claimsData?.claims?.sub ? claimsData.claims : null;
 
   const { pathname } = request.nextUrl;
-  if (!user && !PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(`${p}/`))) {
+  if (!user && !isPublicPath(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     url.search = '';

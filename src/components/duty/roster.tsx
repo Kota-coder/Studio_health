@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { useT } from '@/components/language-provider';
 import { useToast } from '@/hooks/use-toast';
 import { shifts as shiftsRepo } from '@/lib/data';
 import { SHIFT_COLORS, SHIFT_PRESETS, SHIFT_TYPES, dateKey, formatHours, overlaps, shiftHours, shiftWindow, weekStartOf } from '@/lib/duty';
@@ -56,6 +57,7 @@ interface RosterProps {
 
 // Weekly duty roster: one row per person, one column per day.
 export function Roster({ staff, departments, members, canEdit, currentUserId, refreshKey }: RosterProps) {
+  const t = useT();
   const { toast } = useToast();
   const [weekStart, setWeekStart] = useState(() => weekStartOf(new Date()));
   const [weekShifts, setWeekShifts] = useState<StaffShift[]>([]);
@@ -77,7 +79,7 @@ export function Roster({ staff, departments, members, canEdit, currentUserId, re
       // The day before too, so overnight shifts from Sunday are known when checking overlaps.
       setWeekShifts(await shiftsRepo.list(dateKey(addDays(weekStart, -1)), to));
     } catch (error) {
-      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Could not load the roster.', variant: 'destructive' });
+      toast({ title: 'Could not load the roster', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -144,7 +146,7 @@ export function Roster({ staff, departments, members, canEdit, currentUserId, re
       setDraft(null);
       await load();
     } catch (error) {
-      toast({ title: 'Save Error', description: error instanceof Error ? error.message : 'Could not save the shift.', variant: 'destructive' });
+      toast({ title: 'Could not save the shift', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
@@ -159,7 +161,7 @@ export function Roster({ staff, departments, members, canEdit, currentUserId, re
       setDraft(null);
       await load();
     } catch (error) {
-      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Could not remove the shift.', variant: 'destructive' });
+      toast({ title: 'Could not remove the shift', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
@@ -187,7 +189,7 @@ export function Roster({ staff, departments, members, canEdit, currentUserId, re
       toast({ title: 'Week copied', description: `${toCreate.length} shift${toCreate.length > 1 ? 's' : ''} added${previous.length > toCreate.length ? `, ${previous.length - toCreate.length} skipped` : ''}.` });
       await load();
     } catch (error) {
-      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Could not copy the week.', variant: 'destructive' });
+      toast({ title: 'Could not copy the week', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
     }
   };
 
@@ -199,7 +201,7 @@ export function Roster({ staff, departments, members, canEdit, currentUserId, re
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" aria-label="Previous week" onClick={() => setWeekStart(d => addDays(d, -7))}><ChevronLeft className="h-4 w-4" /></Button>
-          <Button variant="outline" onClick={() => setWeekStart(weekStartOf(new Date()))}>This week</Button>
+          <Button variant="outline" onClick={() => setWeekStart(weekStartOf(new Date()))}>{t('This week')}</Button>
           <Button variant="outline" size="icon" aria-label="Next week" onClick={() => setWeekStart(d => addDays(d, 7))}><ChevronRight className="h-4 w-4" /></Button>
           <span className="ml-1 font-medium">{format(days[0], 'd MMM')} – {format(days[6], 'd MMM yyyy')}</span>
         </div>
@@ -229,7 +231,7 @@ export function Roster({ staff, departments, members, canEdit, currentUserId, re
           </div>
           {canEdit && (
             <Button variant="outline" onClick={copyPreviousWeek} className="col-span-2 sm:col-span-1">
-              <Copy className="mr-2 h-4 w-4" /> Copy last week
+              <Copy className="mr-2 h-4 w-4" /> {t('Copy last week')}
             </Button>
           )}
         </div>
@@ -238,7 +240,7 @@ export function Roster({ staff, departments, members, canEdit, currentUserId, re
       <div className="flex flex-wrap gap-2 text-xs">
         {SHIFT_TYPES.map(type => (
           <span key={type} className={cn('rounded border px-2 py-0.5', SHIFT_COLORS[type])}>
-            {type}{type !== 'Custom' ? ` ${SHIFT_PRESETS[type].start}–${SHIFT_PRESETS[type].end}` : ''}
+            {t(type)}{type !== 'Custom' ? ` ${SHIFT_PRESETS[type].start}–${SHIFT_PRESETS[type].end}` : ''}
           </span>
         ))}
       </div>
@@ -275,7 +277,7 @@ export function Roster({ staff, departments, members, canEdit, currentUserId, re
                           <span className="block text-xs opacity-80">{person.role}{shift.departmentId ? ` · ${departmentName(shift.departmentId)}` : ''}{shift.notes ? ` · ${shift.notes}` : ''}</span>
                         </span>
                         <span className="shrink-0 text-right">
-                          <span className="block font-medium">{shift.shiftType}</span>
+                          <span className="block font-medium">{t(shift.shiftType)}</span>
                           <span className="block tabular-nums text-xs">{shift.startTime}–{shift.endTime}</span>
                         </span>
                       </>
@@ -293,7 +295,7 @@ export function Roster({ staff, departments, members, canEdit, currentUserId, re
               )}
               {canEdit && rows.length > 0 && (
                 <Button variant="outline" className="w-full" onClick={() => openAdd(rows[0].id, day)}>
-                  <Plus className="mr-2 h-4 w-4" /> Add shift on {format(day, 'EEE d')}
+                  <Plus className="mr-2 h-4 w-4" /> {t('Add shift on {day}', { day: format(day, 'EEE d') })}
                 </Button>
               )}
             </>
@@ -334,7 +336,7 @@ export function Roster({ staff, departments, members, canEdit, currentUserId, re
                           const label = `${shift.shiftType} ${shift.startTime}–${shift.endTime}${shift.departmentId ? ` · ${departmentName(shift.departmentId) ?? ''}` : ''}${shift.notes ? ` · ${shift.notes}` : ''}`;
                           const content = (
                             <>
-                              <span className="block font-medium">{shift.shiftType}</span>
+                              <span className="block font-medium">{t(shift.shiftType)}</span>
                               <span className="block tabular-nums">{shift.startTime}–{shift.endTime}</span>
                               {shift.departmentId && <span className="block truncate opacity-80">{departmentName(shift.departmentId)}</span>}
                             </>
@@ -369,7 +371,7 @@ export function Roster({ staff, departments, members, canEdit, currentUserId, re
       <Dialog open={!!draft} onOpenChange={open => { if (!open) setDraft(null); }}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{draft?.id ? 'Edit shift' : 'Add shift'}</DialogTitle>
+            <DialogTitle>{draft?.id ? t('Edit shift') : t('Add shift')}</DialogTitle>
             <DialogDescription>{staff.find(s => String(s.id) === draft?.staffId)?.name}</DialogDescription>
           </DialogHeader>
           {draft && (
@@ -396,7 +398,7 @@ export function Roster({ staff, departments, members, canEdit, currentUserId, re
                   }}>
                     <SelectTrigger id="shiftType"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {SHIFT_TYPES.map(t => <SelectItem key={t} value={t}>{t}{t !== 'Custom' ? ` (${SHIFT_PRESETS[t].start}–${SHIFT_PRESETS[t].end})` : ''}</SelectItem>)}
+                      {SHIFT_TYPES.map(type => <SelectItem key={type} value={type}>{t(type)}{type !== 'Custom' ? ` (${SHIFT_PRESETS[type].start}–${SHIFT_PRESETS[type].end})` : ''}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -451,11 +453,11 @@ export function Roster({ staff, departments, members, canEdit, currentUserId, re
           )}
           <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-between">
             {draft?.id
-              ? <Button variant="ghost" className="text-destructive" onClick={handleDelete} disabled={isSaving}><Trash2 className="mr-2 h-4 w-4" /> Remove</Button>
+              ? <Button variant="ghost" className="text-destructive" onClick={handleDelete} disabled={isSaving}><Trash2 className="mr-2 h-4 w-4" /> {t('Remove')}</Button>
               : <span />}
             <div className="flex flex-col-reverse gap-2 sm:flex-row">
-              <Button variant="outline" onClick={() => setDraft(null)}>Cancel</Button>
-              <Button onClick={handleSave} disabled={isSaving}>{isSaving ? 'Saving…' : 'Save shift'}</Button>
+              <Button variant="outline" onClick={() => setDraft(null)}>{t('Cancel')}</Button>
+              <Button onClick={handleSave} disabled={isSaving}>{isSaving ? t('Saving…') : t('Save shift')}</Button>
             </div>
           </DialogFooter>
         </DialogContent>

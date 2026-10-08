@@ -1,326 +1,180 @@
-
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Patient, PatientAdmissionCondition, AuditLogEntry } from '@/types/patient';
-import { ReferringDoctor } from '@/types/referringDoctor'; // Updated to use ReferringDoctor
-import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Save, Paperclip, UploadCloud, UserPlus, X } from 'lucide-react';
-import { useAuth } from '@/context/AuthContext';
+import { useParams, useRouter } from 'next/navigation';
+import { ClipboardPlus, Save, UserPlus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { PageBody, PageHeader, PageLoading } from '@/components/page';
+import { useT } from '@/components/language-provider';
+import { AttachmentPicker } from '@/components/patient/attachment-picker';
 import { useFeatures } from '@/hooks/use-features';
-import type { StaffMember } from '@/types/staff';
-import { compressImageFiles } from '@/lib/images';
-import { uploadNewImages } from '@/lib/storage';
-import { StoredImage } from '@/components/stored-image';
+import { useToast } from '@/hooks/use-toast';
 import { patients as patientsRepo, referringDoctors as referringDoctorsRepo } from '@/lib/data';
+import { patientDisplayId } from '@/lib/format';
+import { uploadNewImages } from '@/lib/storage';
+import type { Patient, PatientAdmissionCondition } from '@/types/patient';
+import type { ReferringDoctor } from '@/types/referringDoctor';
 
-const REASON_FOR_VISIT_OPTIONS: string[] = [
-  "Routine Checkup",
-  "New Symptom",
-  "Follow-up",
-  "Emergency",
-  "Injury",
-  "Pre-operative Assessment",
-  "Post-operative Care",
-  "Referral",
-  "Second Opinion",
-  "Medication Refill",
-  "Other"
+const REASONS_FOR_VISIT = [
+  'Routine Checkup', 'New Symptom', 'Follow-up', 'Emergency', 'Injury', 'Pre-operative Assessment',
+  'Post-operative Care', 'Referral', 'Second Opinion', 'Medication Refill', 'Other',
 ];
+const ADMISSION_CONDITIONS: PatientAdmissionCondition[] = ['Stable', 'Guarded', 'Serious', 'Critical', 'Undetermined'];
 
-const PATIENT_ADMISSION_CONDITIONS: PatientAdmissionCondition[] = [
-  "Stable",
-  "Guarded",
-  "Serious",
-  "Critical",
-  "Undetermined"
-];
-
-// Helper function to add audit log entries
-
-
+// Admission details for a patient: reason for visit, condition, referring doctor, observations.
+// Access is checked by PageGuard (src/config/navigation.ts).
 export default function AdmissionNotesPage() {
   const params = useParams();
   const router = useRouter();
+  const t = useT();
   const { toast } = useToast();
-  const { currentUser, isLoading: authIsLoading } = useAuth();
   const { isOn } = useFeatures();
-  const patientId = params.patientId ? parseInt(params.patientId as string, 10) : null;
+  const referralsOn = isOn('referringDoctors');
+  const patientId = parseInt(String(params.patientId ?? ''), 10);
 
   const [patient, setPatient] = useState<Patient | null>(null);
-  const [selectedReferredDoctorId, setSelectedReferredDoctorId] = useState<string>(""); // To store ID of ReferringDoctor
-  const [reasonForVisit, setReasonForVisit] = useState<string>("");
-  const [admissionCondition, setAdmissionCondition] = useState<PatientAdmissionCondition>("");
-  const [initialObservationsText, setInitialObservationsText] = useState<string>("");
+  const [referringDoctors, setReferringDoctors] = useState<ReferringDoctor[]>([]);
+  const [referredDoctorId, setReferredDoctorId] = useState('');
+  const [reasonForVisit, setReasonForVisit] = useState('');
+  const [admissionCondition, setAdmissionCondition] = useState<PatientAdmissionCondition>('');
+  const [observations, setObservations] = useState('');
+  const [attachments, setAttachments] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
-  const [initialObservationAttachments, setInitialObservationAttachments] = useState<string[]>([]);
-  const [referringDoctorsList, setReferringDoctorsList] = useState<ReferringDoctor[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   useEffect(() => {
-    if (!authIsLoading && !currentUser) {
-      router.replace('/login');
-    }
-  }, [authIsLoading, currentUser, router]);
-
-  useEffect(() => {
-    if (!currentUser) {
-        setIsLoading(false);
-        return;
-    }
-    if (!patientId) {
-      setIsLoading(false);
-      toast({ title: "Error", description: "Patient ID is missing.", variant: "destructive" });
+    if (Number.isNaN(patientId)) {
       router.push('/dashboard');
       return;
     }
-    setIsLoading(true);
     let cancelled = false;
-    Promise.all([patientsRepo.get(patientId), referringDoctorsRepo.list()])
-      .then(([foundPatient, doctors]) => {
+    Promise.all([patientsRepo.get(patientId), referralsOn ? referringDoctorsRepo.list() : Promise.resolve([])])
+      .then(([found, doctors]) => {
         if (cancelled) return;
-        setReferringDoctorsList(doctors);
-        if (foundPatient) {
-          setPatient(foundPatient);
-          setSelectedReferredDoctorId(foundPatient.referredDoctorId?.toString() || "");
-          setReasonForVisit(foundPatient.reasonForVisit || "");
-          setAdmissionCondition(foundPatient.admissionCondition || "");
-          setInitialObservationsText(foundPatient.initialObservationsText || "");
-          setInitialObservationAttachments(foundPatient.initialObservationAttachments || []);
-          setIsInitialLoad(!foundPatient.admissionDate);
-        } else {
-          toast({ title: "Error", description: "Patient not found.", variant: "destructive" });
+        if (!found) {
+          toast({ title: 'Patient not found', variant: 'destructive' });
           router.push('/dashboard');
+          return;
         }
+        setReferringDoctors(doctors);
+        setPatient(found);
+        setReferredDoctorId(found.referredDoctorId?.toString() || '');
+        setReasonForVisit(found.reasonForVisit || '');
+        setAdmissionCondition(found.admissionCondition || '');
+        setObservations(found.initialObservationsText || '');
+        setAttachments(found.initialObservationAttachments || []);
       })
       .catch(error => {
-        console.error("Error loading admission data:", error);
-        toast({ title: "Error", description: "Could not load data.", variant: "destructive" });
-      })
-      .finally(() => { if (!cancelled) setIsLoading(false); });
+        console.error('Error loading admission data:', error);
+        toast({ title: 'Could not load the patient', variant: 'destructive' });
+      });
     return () => { cancelled = true; };
-  }, [patientId, router, toast, currentUser]);
+  }, [patientId, referralsOn, router, toast]);
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (files && files.length > 0) {
-        const fileArray = Array.from(files);
-        const readers = compressImageFiles(fileArray);
+  if (!patient) return <PageLoading />;
+  const patientPage = `/patients/${patientDisplayId(patient.id)}`;
 
-        readers.then(results => {
-            setInitialObservationAttachments(prev => [...prev, ...results]);
-        });
-    }
-    if (event.target) event.target.value = "";
-  };
-
-  const removeInitialObservationAttachment = (index: number) => {
-    setInitialObservationAttachments(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const clearAllInitialObservationAttachments = () => {
-    setInitialObservationAttachments([]);
-  };
-
-  const handleSaveAdmissionDetails = async () => {
-    if (!patient || !currentUser) {
-      toast({ title: "Error", description: "Patient data not loaded or user not logged in.", variant: "destructive" });
-      return;
-    }
-     if (!reasonForVisit.trim()) {
-      toast({ title: "Validation Error", description: "Reason for visit is required.", variant: "destructive" });
+  const save = async () => {
+    if (!reasonForVisit.trim()) {
+      toast({ title: 'Missing details', description: 'Reason for visit is required.', variant: 'destructive' });
       return;
     }
     if (!admissionCondition) {
-       toast({ title: "Validation Error", description: "Patient condition at admission is required.", variant: "destructive" });
+      toast({ title: 'Missing details', description: 'Patient condition at admission is required.', variant: 'destructive' });
       return;
     }
-
-    const logActionType = isInitialLoad ? "Admission Details Recorded" : "Admission Details Updated";
-    const logChangeDetails = isInitialLoad
-      ? `Initial admission details recorded. Reason: ${reasonForVisit.trim()}`
-      : "Patient admission details updated.";
-
+    const firstRecord = !patient.admissionDate;
     setIsSaving(true);
     try {
-      const changes = {
+      await patientsRepo.update(patient.id, {
         admissionDate: patient.admissionDate || new Date().toISOString(),
-        referredDoctorId: selectedReferredDoctorId ? parseInt(selectedReferredDoctorId, 10) : null,
+        referredDoctorId: referredDoctorId ? parseInt(referredDoctorId, 10) : null,
         reasonForVisit: reasonForVisit.trim(),
-        admissionCondition: admissionCondition,
-        initialObservationsText: initialObservationsText.trim(),
-        initialObservationAttachments: await uploadNewImages(initialObservationAttachments, `patients/${patient.id}/admission`),
-      };
-      await patientsRepo.update(patient.id, changes, { actionType: logActionType, details: logChangeDetails });
-      setPatient({ ...patient, ...changes });
-      toast({ title: "Success", description: "Admission details saved." });
-      router.push(`/patients/${patient.id}`);
+        admissionCondition,
+        initialObservationsText: observations.trim(),
+        initialObservationAttachments: await uploadNewImages(attachments, `patients/${patient.id}/admission`),
+      }, {
+        actionType: firstRecord ? 'Admission Details Recorded' : 'Admission Details Updated',
+        details: firstRecord ? `Initial admission details recorded. Reason: ${reasonForVisit.trim()}` : 'Patient admission details updated.',
+      });
+      toast({ title: 'Admission details saved' });
+      router.push(patientPage);
     } catch (e) {
-      console.error("Error saving admission details:", e);
-      toast({ title: "Save Error", description: e instanceof Error ? e.message : "Could not save admission details.", variant: "destructive" });
-    } finally {
+      console.error('Error saving admission details:', e);
+      toast({ title: 'Could not save admission details', description: e instanceof Error ? e.message : undefined, variant: 'destructive' });
       setIsSaving(false);
     }
   };
 
-  if (authIsLoading || isLoading) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Loading admission details form...</p></div>;
-  }
-
-  if (!currentUser) {
-     return <div className="flex justify-center items-center min-h-screen"><p>Redirecting to login...</p></div>;
-  }
-
-  if (!patient && !isLoading) {
-    return (
-      <div className="container mx-auto p-8 text-center">
-        <h1 className="text-2xl font-semibold mb-4">Patient Not Found</h1>
-        <p>Redirecting to dashboard...</p>
-      </div>
-    );
-  }
-
-  if (!patient) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Loading patient data...</p></div>;
-  }
-
-
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8 flex flex-col items-center">
-      <Card className="w-full max-w-2xl mt-6 shadow-lg">
-        <CardHeader>
-          <CardTitle className="text-2xl">Patient Admission Notes</CardTitle>
-          <CardDescription>
-            Record admission details for {patient.firstName} {patient.lastName} (ID: {patient.id.toString().padStart(3,'0')})
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-6">
-          {isOn('referringDoctors') && (
-          <div>
-            <Label htmlFor="referredDoctor" className="mb-1 block">Referring Doctor</Label>
-            <div className="flex items-center gap-2">
-              <Select onValueChange={setSelectedReferredDoctorId} value={selectedReferredDoctorId || ""} >
-                <SelectTrigger id="referredDoctor" className="flex-grow">
-                  <SelectValue placeholder="Select a referring doctor" />
-                </SelectTrigger>
-                <SelectContent>
-                  {referringDoctorsList.length > 0 ? (
-                    referringDoctorsList.map(doc => (
-                      <SelectItem key={doc.id} value={doc.id.toString()}>
-                        {doc.name} - {doc.location}
-                      </SelectItem>
-                    ))
-                  ) : (
-                    <div className="p-2 text-sm text-muted-foreground text-center">No referring doctors found. <Link href="/referring-doctors/form" className="underline text-primary">Add one?</Link></div>
-                  )}
-                </SelectContent>
-              </Select>
-              <Link href="/referring-doctors/form" passHref>
-                <Button variant="outline" size="icon" aria-label="Add new referring doctor" title="Add New Referring Doctor">
-                  <UserPlus className="h-4 w-4" />
+    <PageBody width="narrow">
+      <PageHeader icon={ClipboardPlus} title={t('Patient Admission Notes')}
+        description={`${patient.firstName} ${patient.lastName} (ID: ${patientDisplayId(patient.id)})`}
+        back={{ href: patientPage, label: `${patient.firstName} ${patient.lastName}` }} />
+
+      <Card className="shadow-lg">
+        <CardContent className="grid gap-6 pt-6">
+          {referralsOn && (
+            <div>
+              <Label htmlFor="referredDoctor">Referring Doctor</Label>
+              <div className="flex items-center gap-2">
+                <Select onValueChange={setReferredDoctorId} value={referredDoctorId}>
+                  <SelectTrigger id="referredDoctor" className="min-w-0 flex-1"><SelectValue placeholder="Select a referring doctor" /></SelectTrigger>
+                  <SelectContent>
+                    {referringDoctors.length > 0 ? referringDoctors.map(doc => (
+                      <SelectItem key={doc.id} value={doc.id.toString()}>{doc.name} - {doc.location}</SelectItem>
+                    )) : (
+                      <div className="p-2 text-center text-sm text-muted-foreground">No referring doctors found. <Link href="/referring-doctors/form" className="text-primary underline">Add one?</Link></div>
+                    )}
+                  </SelectContent>
+                </Select>
+                <Button variant="outline" size="icon" asChild aria-label="Add new referring doctor" title="Add New Referring Doctor">
+                  <Link href="/referring-doctors/form"><UserPlus className="h-4 w-4" /></Link>
                 </Button>
-              </Link>
+              </div>
             </div>
-          </div>
           )}
 
           <div>
             <Label htmlFor="reasonForVisit">Reason for Visit *</Label>
             <Select onValueChange={setReasonForVisit} value={reasonForVisit}>
-              <SelectTrigger id="reasonForVisit">
-                <SelectValue placeholder="Select reason for visit" />
-              </SelectTrigger>
+              <SelectTrigger id="reasonForVisit"><SelectValue placeholder="Select reason for visit" /></SelectTrigger>
               <SelectContent>
-                {REASON_FOR_VISIT_OPTIONS.map(reason => (
-                  <SelectItem key={reason} value={reason}>{reason}</SelectItem>
-                ))}
+                {REASONS_FOR_VISIT.map(reason => <SelectItem key={reason} value={reason}>{reason}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
 
           <div>
             <Label htmlFor="admissionCondition">Patient Condition at Admission *</Label>
-            <Select onValueChange={(value) => setAdmissionCondition(value as PatientAdmissionCondition)} value={admissionCondition}>
-              <SelectTrigger id="admissionCondition">
-                <SelectValue placeholder="Select patient condition" />
-              </SelectTrigger>
+            <Select onValueChange={value => setAdmissionCondition(value as PatientAdmissionCondition)} value={admissionCondition}>
+              <SelectTrigger id="admissionCondition"><SelectValue placeholder="Select patient condition" /></SelectTrigger>
               <SelectContent>
-                {PATIENT_ADMISSION_CONDITIONS.map(condition => (
-                  <SelectItem key={condition} value={condition}>{condition}</SelectItem>
-                ))}
+                {ADMISSION_CONDITIONS.map(condition => <SelectItem key={condition} value={condition}>{condition}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
 
           <div>
             <Label htmlFor="initialObservationsText">Initial Observations</Label>
-            <Textarea
-              id="initialObservationsText"
-              value={initialObservationsText}
-              onChange={(e) => setInitialObservationsText(e.target.value)}
-              placeholder="Enter any initial observations, symptoms, or notes..."
-              rows={4}
-            />
+            <Textarea id="initialObservationsText" value={observations} onChange={e => setObservations(e.target.value)}
+              placeholder="Enter any initial observations, symptoms, or notes..." rows={4} />
           </div>
 
-          <div>
-            <Label htmlFor="initialObservationAttachment">Initial Observation Attachments (Optional, images are resized automatically)</Label>
-            <div className="flex items-center gap-3 mt-1">
-                <Input
-                id="initialObservationAttachment"
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleFileChange}
-                className="hidden"
-                />
-                <Button type="button" variant="outline" onClick={() => document.getElementById('initialObservationAttachment')?.click()} className="flex-1">
-                    <UploadCloud className="mr-2 h-4 w-4" /> {initialObservationAttachments.length > 0 ? `Add More (${initialObservationAttachments.length})` : "Upload Files"}
-                </Button>
-                {initialObservationAttachments.length > 0 && (
-                    <Button type="button" variant="ghost" size="sm" onClick={clearAllInitialObservationAttachments} className="text-xs text-destructive">
-                        Clear All
-                    </Button>
-                )}
-            </div>
-
-            {initialObservationAttachments.length > 0 && (
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                {initialObservationAttachments.map((attachment, index) => (
-                    <div key={index} className="relative border rounded-md p-1">
-                        <StoredImage path={attachment} alt={`Observation Attachment ${index + 1}`} className="rounded-md w-full h-20 object-cover" />
-                        <Button
-                            variant="destructive"
-                            size="icon"
-                            className="absolute -top-2 -right-2 h-5 w-5 rounded-full"
-                            onClick={() => removeInitialObservationAttachment(index)}
-                        >
-                            <X className="h-3 w-3" />
-                        </Button>
-                    </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <AttachmentPicker id="initialObservationAttachment" label="Initial Observation Attachments (Optional, images are resized automatically)"
+            value={attachments} onChange={setAttachments} />
         </CardContent>
-        <CardFooter className="flex justify-between mt-4">
-          <Button variant="outline" onClick={() => router.push(`/patients/${patientId}`)}>
-            <ArrowLeft className="mr-2 h-4 w-4" /> Cancel & Back to Patient
-          </Button>
-          <Button onClick={handleSaveAdmissionDetails} disabled={isSaving}>
-            <Save className="mr-2 h-4 w-4" /> {isSaving ? "Saving..." : "Save Admission Details"}
+        <CardFooter className="flex flex-wrap justify-end gap-2">
+          <Button variant="outline" asChild><Link href={patientPage}>{t('Cancel')}</Link></Button>
+          <Button onClick={save} disabled={isSaving}>
+            <Save className="mr-2 h-4 w-4" /> {isSaving ? t('Saving…') : t('Save Admission Details')}
           </Button>
         </CardFooter>
       </Card>
-    </div>
+    </PageBody>
   );
 }

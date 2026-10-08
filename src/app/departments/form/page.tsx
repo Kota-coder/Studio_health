@@ -2,25 +2,24 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Building2, Save, Trash2 } from 'lucide-react';
+import { Building2, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { useAuth } from '@/context/AuthContext';
+import { PageBody, PageHeader, PageLoading } from '@/components/page';
+import { useT } from '@/components/language-provider';
 import { useFeatures } from '@/hooks/use-features';
 import { useToast } from '@/hooks/use-toast';
-import { PAGE_ROLES } from '@/config/permissions';
 import { departments as departmentsRepo, staff as staffRepo } from '@/lib/data';
-import type { StaffMember, StaffRole } from '@/types/staff';
+import type { StaffMember } from '@/types/staff';
 
-const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.departments;
-
-function StaffChecklist({ title, people, selected, onToggle }: {
+function StaffChecklist({ title, empty, people, selected, onToggle }: {
   title: string;
+  empty: string;
   people: StaffMember[];
   selected: Set<number>;
   onToggle: (id: number) => void;
@@ -29,7 +28,7 @@ function StaffChecklist({ title, people, selected, onToggle }: {
     <div>
       <Label className="text-base">{title}</Label>
       {people.length === 0 ? (
-        <p className="text-sm text-muted-foreground mt-1">No {title.toLowerCase()} in Staff Management yet.</p>
+        <p className="text-sm text-muted-foreground mt-1">{empty}</p>
       ) : (
         <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
           {people.map(person => (
@@ -47,8 +46,8 @@ function StaffChecklist({ title, people, selected, onToggle }: {
 function DepartmentForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const t = useT();
   const { toast } = useToast();
-  const { currentUser, isLoading: authIsLoading } = useAuth();
   const { isOn } = useFeatures();
   const departmentId = searchParams.get('id') ? Number(searchParams.get('id')) : null;
   const isEditMode = departmentId !== null;
@@ -64,22 +63,14 @@ function DepartmentForm() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  const allowed = !!currentUser && ALLOWED_ROLES.includes(currentUser.role);
-
   useEffect(() => {
-    if (!authIsLoading && !currentUser) router.replace('/login');
-    else if (!authIsLoading && currentUser && !allowed) router.replace('/dashboard');
-  }, [authIsLoading, currentUser, allowed, router]);
-
-  useEffect(() => {
-    if (!allowed) return;
     const load = async () => {
       try {
         setStaff(await staffRepo.list());
         if (departmentId !== null) {
           const [department, members] = await Promise.all([departmentsRepo.get(departmentId), departmentsRepo.listMembers()]);
           if (!department) {
-            toast({ title: "Error", description: "Department not found.", variant: "destructive" });
+            toast({ title: 'Department not found', variant: 'destructive' });
             router.push('/departments');
             return;
           }
@@ -90,14 +81,13 @@ function DepartmentForm() {
           setMemberIds(new Set(members[departmentId] ?? []));
         }
       } catch (error) {
-        console.error("Error loading department:", error);
-        toast({ title: "Error", description: "Could not load department details.", variant: "destructive" });
+        toast({ title: 'Could not load the department', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
       } finally {
         setIsLoading(false);
       }
     };
     load();
-  }, [allowed, departmentId, router, toast]);
+  }, [departmentId, router, toast]);
 
   const toggleMember = (id: number) => setMemberIds(prev => {
     const next = new Set(prev);
@@ -128,12 +118,12 @@ function DepartmentForm() {
         ? (await departmentsRepo.update(departmentId, fields)).id
         : (await departmentsRepo.create(fields)).id;
       await departmentsRepo.setMembers(id, [...memberIds]);
-      toast({ title: "Saved", description: `Department ${fields.name} saved.` });
+      toast({ title: `Department ${fields.name} saved` });
       router.push('/departments');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not save the department.';
       toast({
-        title: "Save Error",
+        title: 'Could not save the department',
         description: message.includes('duplicate key') ? 'A department with this name already exists.' : message,
         variant: "destructive",
       });
@@ -146,31 +136,24 @@ function DepartmentForm() {
     if (departmentId === null || !confirm(`Delete the ${name} department? Its patients stay, but without a department.`)) return;
     try {
       await departmentsRepo.remove(departmentId);
-      toast({ title: "Deleted", description: `Department ${name} deleted.` });
+      toast({ title: `Department ${name} deleted` });
       router.push('/departments');
     } catch (error) {
-      toast({ title: "Error", description: error instanceof Error ? error.message : 'Could not delete the department.', variant: "destructive" });
+      toast({ title: 'Could not delete the department', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
     }
   };
 
-  if (authIsLoading || (allowed && isLoading)) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Loading...</p></div>;
-  }
-  if (!allowed) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Access Denied. Redirecting...</p></div>;
-  }
+  if (isLoading) return <PageLoading />;
 
   const doctors = staff.filter(s => s.role === 'Doctor');
   const nurses = staff.filter(s => s.role === 'Nurse');
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8 max-w-3xl">
+    <PageBody width="medium">
+      <PageHeader icon={Building2} back={{ href: '/departments' }} title={isEditMode ? t('Edit Department') : t('New Department')}
+        description={t('Choose the doctors and nurses who work in this department. A person can belong to more than one department.')} />
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Building2 className="h-6 w-6 text-primary" /> {isEditMode ? 'Edit Department' : 'Add Department'}</CardTitle>
-          <CardDescription>Choose the doctors and nurses who work in this department. A person can belong to more than one department.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
+        <CardContent className="space-y-5 pt-6">
           <div>
             <Label htmlFor="name">Department Name *</Label>
             <Input id="name" value={name} placeholder="e.g. Cardiology" aria-invalid={!!nameError} className={nameError ? 'border-destructive' : undefined}
@@ -196,26 +179,26 @@ function DepartmentForm() {
             <Switch id="active" checked={active} onCheckedChange={setActive} />
             <Label htmlFor="active">Active (shown when assigning patients)</Label>
           </div>
-          <StaffChecklist title="Doctors" people={doctors} selected={memberIds} onToggle={toggleMember} />
-          <StaffChecklist title="Nurses" people={nurses} selected={memberIds} onToggle={toggleMember} />
+          <StaffChecklist title={t('Doctors')} empty="No doctors in Staff yet." people={doctors} selected={memberIds} onToggle={toggleMember} />
+          <StaffChecklist title={t('Nurses')} empty="No nurses in Staff yet." people={nurses} selected={memberIds} onToggle={toggleMember} />
         </CardContent>
         <CardFooter className="flex flex-col-reverse sm:flex-row justify-between gap-2">
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => router.push('/departments')}><ArrowLeft className="mr-2 h-4 w-4" /> Cancel</Button>
+            <Button variant="outline" onClick={() => router.push('/departments')}>{t('Cancel')}</Button>
             {isEditMode && (
-              <Button variant="ghost" className="text-destructive" onClick={handleDelete}><Trash2 className="mr-2 h-4 w-4" /> Delete</Button>
+              <Button variant="ghost" className="text-destructive" onClick={handleDelete}><Trash2 className="mr-2 h-4 w-4" /> {t('Delete')}</Button>
             )}
           </div>
-          <Button onClick={handleSave} disabled={isSaving}><Save className="mr-2 h-4 w-4" /> {isSaving ? 'Saving...' : 'Save Department'}</Button>
+          <Button onClick={handleSave} disabled={isSaving}><Save className="mr-2 h-4 w-4" /> {isSaving ? t('Saving…') : t('Save')}</Button>
         </CardFooter>
       </Card>
-    </div>
+    </PageBody>
   );
 }
 
 export default function DepartmentFormPage() {
   return (
-    <Suspense fallback={<div className="flex justify-center items-center min-h-screen"><p>Loading...</p></div>}>
+    <Suspense fallback={<PageLoading />}>
       <DepartmentForm />
     </Suspense>
   );

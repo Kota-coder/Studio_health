@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { ArrowLeft, Check, Hospital, ImageUp, LayoutList, Palette, Save } from 'lucide-react';
+import { Check, Hospital, ImageUp, LayoutList, Palette, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -10,9 +9,9 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useAuth } from '@/context/AuthContext';
+import { PageBody, PageHeader } from '@/components/page';
+import { useT } from '@/components/language-provider';
 import { useToast } from '@/hooks/use-toast';
-import { PAGE_ROLES } from '@/config/permissions';
 import { MODULES, blockedBy } from '@/config/modules';
 import { hospitalProfile as profileRepo } from '@/lib/data';
 import { invalidate } from '@/lib/data/cache';
@@ -23,9 +22,7 @@ import {
 } from '@/lib/branding';
 import { brandingFiles, readFileAsDataUrl, svgToDataUrl } from '@/lib/logo-render';
 import { cn } from '@/lib/utils';
-import type { StaffRole } from '@/types/staff';
 
-const ALLOWED_ROLES: StaffRole[] = PAGE_ROLES.hospitalProfile;
 const SHAPES: Array<{ value: MonogramShape; label: string }> = [
   { value: 'shield', label: 'Shield' }, { value: 'circle', label: 'Circle' },
   { value: 'rounded', label: 'Square' }, { value: 'hexagon', label: 'Hexagon' },
@@ -41,11 +38,9 @@ type LogoChoice = 'keep' | 'design' | 'upload';
 
 // Super Admin: this hospital's name, logo, colour and contact details.
 export default function HospitalProfilePage() {
-  const router = useRouter();
+  const t = useT();
   const { toast } = useToast();
-  const { currentUser, isLoading: authIsLoading } = useAuth();
   const { profile: current, setProfile } = useBranding();
-  const allowed = !!currentUser && ALLOWED_ROLES.includes(currentUser.role);
 
   const [details, setDetails] = useState<Details>(() => pickDetails(current));
   const [logoChoice, setLogoChoice] = useState<LogoChoice>(current.logoFolder ? 'keep' : 'design');
@@ -58,14 +53,8 @@ export default function HospitalProfilePage() {
   const [isSaving, setIsSaving] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (!authIsLoading && !currentUser) router.replace('/login');
-    else if (!authIsLoading && currentUser && !allowed) router.replace('/dashboard');
-  }, [authIsLoading, currentUser, allowed, router]);
-
   // Load the latest saved profile (the one from the page load may be up to 5 minutes old).
   useEffect(() => {
-    if (!allowed) return;
     profileRepo.get().then(p => {
       setDetails(pickDetails(p));
       setLogoChoice(p.logoFolder ? 'keep' : 'design');
@@ -73,7 +62,7 @@ export default function HospitalProfilePage() {
       if (!initialsEdited && p.configuredAt) setInitials(initialsFor(p.name));
     }).catch(error => console.error('Could not load the hospital profile', error));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once
-  }, [allowed]);
+  }, []);
 
   const color = HEX.test(details.brandColor) ? details.brandColor : '#2563eb';
   const designed = useMemo(() => monogramSvg(initials || 'H', color, shape, emblem), [initials, color, shape, emblem]);
@@ -125,34 +114,21 @@ export default function HospitalProfilePage() {
       await fetch('/api/hospital-profile', { method: 'POST' }).catch(() => undefined);
       toast({ title: 'Hospital profile saved', description: 'Reload the page to see the new colours and browser icon.' });
     } catch (error) {
-      toast({ title: 'Save Error', description: error instanceof Error ? error.message : 'Could not save the profile.', variant: 'destructive' });
+      toast({ title: 'Could not save the profile', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
     } finally {
       setIsSaving(false);
     }
   };
 
-  if (authIsLoading) return <div className="flex justify-center items-center min-h-screen"><p>Loading...</p></div>;
-  if (!allowed) return <div className="flex justify-center items-center min-h-screen"><p>Access Denied. Redirecting...</p></div>;
-
   return (
-    <div className="container mx-auto max-w-5xl p-4 sm:p-6 lg:p-8 space-y-6">
-      <header className="flex flex-col sm:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-3">
-          <Hospital className="h-8 w-8 text-primary" />
-          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Hospital Profile</h1>
-        </div>
-        <Button variant="outline" onClick={() => router.push('/dashboard')}><ArrowLeft className="mr-2 h-4 w-4" /> Dashboard</Button>
-      </header>
-      <p className="text-sm text-muted-foreground">
-        Your hospital&apos;s name, logo and colour, shown on the login page, the header, the browser tab, the phone app icon and
-        printed treatment summaries. Each hospital using Seva has its own separate copy of the app and database, so this only
-        affects your hospital.
-      </p>
+    <PageBody className="max-w-5xl">
+      <PageHeader icon={Hospital} title={t('Hospital Profile')}
+        description={t("Your hospital's name, logo and colour, shown on the login page, the header, the browser tab, the phone app icon and printed treatment summaries. Each hospital using Seva has its own separate copy of the app and database, so this only affects your hospital.")} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_20rem]">
         <div className="space-y-6">
           <Card>
-            <CardHeader><CardTitle className="text-lg">Details</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-lg">{t('Details')}</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <Label htmlFor="hpName">Hospital name *</Label>
@@ -193,7 +169,7 @@ export default function HospitalProfilePage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg"><Palette className="h-5 w-5 text-primary" /> Brand colour</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-lg"><Palette className="h-5 w-5 text-primary" /> {t('Brand colour')}</CardTitle>
               <CardDescription>Used for buttons, links, the login page and the logo.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -222,15 +198,15 @@ export default function HospitalProfilePage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg"><ImageUp className="h-5 w-5 text-primary" /> Logo</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-lg"><ImageUp className="h-5 w-5 text-primary" /> {t('Logo')}</CardTitle>
               <CardDescription>Design one from your initials, or upload your hospital&apos;s logo (a square PNG with a transparent background works best).</CardDescription>
             </CardHeader>
             <CardContent>
               <Tabs value={logoChoice === 'keep' ? 'keep' : logoChoice} onValueChange={v => setLogoChoice(v as LogoChoice)}>
                 <TabsList className="grid h-auto w-full grid-cols-3">
-                  <TabsTrigger value="keep" disabled={!current.logoFolder} className="whitespace-normal py-2">Current logo</TabsTrigger>
-                  <TabsTrigger value="design" className="whitespace-normal py-2">Design a logo</TabsTrigger>
-                  <TabsTrigger value="upload" className="whitespace-normal py-2">Upload a logo</TabsTrigger>
+                  <TabsTrigger value="keep" disabled={!current.logoFolder} className="whitespace-normal py-2">{t('Current logo')}</TabsTrigger>
+                  <TabsTrigger value="design" className="whitespace-normal py-2">{t('Design a logo')}</TabsTrigger>
+                  <TabsTrigger value="upload" className="whitespace-normal py-2">{t('Upload a logo')}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="keep" className="pt-4 text-sm text-muted-foreground">Your saved logo stays as it is.</TabsContent>
                 <TabsContent value="design" className="space-y-4 pt-4">
@@ -247,7 +223,7 @@ export default function HospitalProfilePage() {
                 <TabsContent value="upload" className="space-y-3 pt-4">
                   <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden"
                     onChange={e => { handleFile(e.target.files?.[0]); e.target.value = ''; }} />
-                  <Button type="button" variant="outline" onClick={() => fileInput.current?.click()}><ImageUp className="mr-2 h-4 w-4" /> Choose image</Button>
+                  <Button type="button" variant="outline" onClick={() => fileInput.current?.click()}><ImageUp className="mr-2 h-4 w-4" /> {t('Choose image')}</Button>
                   <p className="text-xs text-muted-foreground">PNG, JPG or SVG, up to 5 MB. It is resized and saved as PNG, with app icons made from it.</p>
                 </TabsContent>
               </Tabs>
@@ -256,11 +232,11 @@ export default function HospitalProfilePage() {
 
           <Card id="menus" className="scroll-mt-20">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg"><LayoutList className="h-5 w-5 text-primary" /> Menus and features</CardTitle>
+              <CardTitle className="flex items-center gap-2 text-lg"><LayoutList className="h-5 w-5 text-primary" /> {t('Menus and features')}</CardTitle>
               <CardDescription>
                 Switch off what your hospital doesn&apos;t use. It disappears for everyone: from the menu, from other screens
                 (e.g. Billing off removes bills from the patient page) and its pages show a short notice. Nothing is deleted, and
-                you can switch it back on at any time. Patients, Staff Management and this page are always on.
+                you can switch it back on at any time. Patients, Staff and this page are always on.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -271,7 +247,7 @@ export default function HospitalProfilePage() {
                   return (
                     <li key={m.key} className="flex items-center justify-between gap-4 p-3">
                       <div className="min-w-0">
-                        <p className="text-sm font-medium">{m.label}</p>
+                        <p className="text-sm font-medium">{t(m.label)}</p>
                         <p className="text-xs text-muted-foreground">{m.description}</p>
                         {blocked && <p className="text-xs text-amber-700 dark:text-amber-400">Off until turned on: {blocked}.</p>}
                       </div>
@@ -287,7 +263,7 @@ export default function HospitalProfilePage() {
 
         <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
           <Card>
-            <CardHeader><CardTitle className="text-lg">Preview</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-lg">{t('Preview')}</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
                 {previewSrc && /* eslint-disable-next-line @next/next/no-img-element */ <img src={previewSrc} alt="" className="h-8 w-8 object-contain" />}
@@ -316,11 +292,11 @@ export default function HospitalProfilePage() {
             </CardContent>
           </Card>
           <Button className="w-full" size="lg" onClick={handleSave} disabled={isSaving}>
-            <Save className="mr-2 h-4 w-4" /> {isSaving ? 'Saving…' : 'Save hospital profile'}
+            <Save className="mr-2 h-4 w-4" /> {isSaving ? t('Saving…') : t('Save hospital profile')}
           </Button>
         </aside>
       </div>
-    </div>
+    </PageBody>
   );
 }
 

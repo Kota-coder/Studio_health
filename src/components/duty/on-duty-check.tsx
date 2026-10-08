@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useT } from '@/components/language-provider';
 import { useToast } from '@/hooks/use-toast';
 import { attendance as attendanceRepo, shifts as shiftsRepo } from '@/lib/data';
 import { dateKey, entryWindow, shiftWindow } from '@/lib/duty';
@@ -31,6 +32,7 @@ interface Row {
 
 // Who was on duty at a given moment: planned on the roster, clocked in, or both.
 export function OnDutyCheck({ staff, departments, canSeeAllAttendance, refreshKey }: OnDutyCheckProps) {
+  const t = useT();
   const { toast } = useToast();
   const [date, setDate] = useState(() => dateKey(new Date()));
   const [time, setTime] = useState(() => format(new Date(), 'HH:mm'));
@@ -56,7 +58,7 @@ export function OnDutyCheck({ staff, departments, canSeeAllAttendance, refreshKe
       })));
       setCheckedAt(at);
     } catch (error) {
-      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Could not check the roster.', variant: 'destructive' });
+      toast({ title: 'Could not check the roster', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
@@ -91,9 +93,9 @@ export function OnDutyCheck({ staff, departments, canSeeAllAttendance, refreshKe
         </div>
         <div className="flex gap-2">
           <Button onClick={() => date && time && check(parseISO(`${date}T${time}`))} disabled={isLoading || !date || !time} className="flex-1 sm:flex-none">
-            <Search className="mr-2 h-4 w-4" /> Check
+            <Search className="mr-2 h-4 w-4" /> {t('Check')}
           </Button>
-          <Button variant="outline" onClick={checkNow} disabled={isLoading} className="flex-1 sm:flex-none">Now</Button>
+          <Button variant="outline" onClick={checkNow} disabled={isLoading} className="flex-1 sm:flex-none">{t('Now')}</Button>
         </div>
       </div>
 
@@ -123,7 +125,7 @@ export function OnDutyCheck({ staff, departments, canSeeAllAttendance, refreshKe
                         {entry && ` · clocked in ${format(new Date(entry.clockIn), 'd MMM HH:mm')}${entry.clockOut ? `, out ${format(new Date(entry.clockOut), 'd MMM HH:mm')}` : ' (still on duty)'}`}
                       </p>
                     </div>
-                    <Badge variant={status.cls ? 'default' : 'secondary'} className={cn('w-fit shrink-0', status.cls)}>{status.label}</Badge>
+                    <Badge variant={status.cls ? 'default' : 'secondary'} className={cn('w-fit shrink-0', status.cls)}>{t(status.label)}</Badge>
                   </li>
                 );
               })}

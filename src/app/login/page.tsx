@@ -1,15 +1,17 @@
 
 "use client";
 
-import { useState, useEffect } from 'react';
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { useAuth } from '@/context/AuthContext';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { PageLoading } from '@/components/page';
 import { AuthBrandHeader } from '@/components/auth-brand-header';
-import { useRouter } from 'next/navigation';
+import { useT } from '@/components/language-provider';
+import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { getSupabase } from '@/lib/supabase/client';
 
@@ -18,8 +20,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const { login, currentUser, isLoading } = useAuth();
-  const router = useRouter();
   const { toast } = useToast();
+  const t = useT();
 
   // Invite and reset emails sent with Supabase's default templates put the session in
   // the URL fragment (#access_token=...), which only the browser can read. Sign in with
@@ -41,7 +43,7 @@ export default function LoginPage() {
     }
     getSupabase().auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).then(({ error }) => {
       if (error) {
-        toast({ title: "Link Expired", description: "That email link is invalid or has expired.", variant: "destructive" });
+        toast({ title: "That email link is invalid or has expired", variant: "destructive" });
         setIsHandlingEmailLink(false);
         return;
       }
@@ -57,109 +59,62 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('error') === 'link_invalid' && !window.location.hash.includes('access_token=')) {
-      toast({ title: "Link Expired", description: "That email link is invalid or has expired.", variant: "destructive" });
+      toast({ title: "That email link is invalid or has expired", variant: "destructive" });
     }
   }, [toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password) {
-      toast({ title: "Input Required", description: "Email and password are required.", variant: "destructive" });
+      toast({ title: "Email and password are required", variant: "destructive" });
       return;
     }
     await login(email, password);
   };
 
-  if (isLoading || isHandlingEmailLink || (!isLoading && currentUser)) {
-    return <div className="flex justify-center items-center min-h-screen"><p>Loading...</p></div>;
-  }
+  if (isLoading || isHandlingEmailLink || currentUser) return <PageLoading />;
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
-      <Card className="w-full max-w-md shadow-2xl border-0 overflow-hidden">
-        {/* Header with branding */}
-        <CardHeader className="bg-primary text-primary-foreground p-6 pb-10 sm:p-8 sm:pb-12 relative">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
+      <Card className="w-full max-w-md overflow-hidden border-0 shadow-2xl">
+        <CardHeader className="relative bg-primary p-6 pb-10 text-primary-foreground sm:p-8 sm:pb-12">
           <AuthBrandHeader />
         </CardHeader>
 
-        {/* Login Form */}
-        <CardContent className="pt-8 pb-8 px-4 sm:px-8 -mt-6 relative">
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h2 className="text-2xl font-semibold text-gray-800 mb-2 text-center">Login</h2>
-            <p className="text-gray-500 text-sm mb-6 text-center">Welcome back! Please login to your account.</p>
-            
+        <CardContent className="relative -mt-6 px-4 pb-8 pt-8 sm:px-8">
+          <div className="rounded-lg border bg-card p-6 shadow-sm">
+            <h2 className="mb-2 text-center text-2xl font-semibold">{t('Login')}</h2>
+            <p className="mb-6 text-center text-sm text-muted-foreground">{t('Welcome back! Please login to your account.')}</p>
+
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-gray-700 font-medium">
-                  Email
-                </Label>
-                <Input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  inputMode="email"
-                  placeholder="name@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="h-12 px-4 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
-                />
+                <Label htmlFor="email" className="font-medium">Email</Label>
+                <Input id="email" type="email" autoComplete="email" inputMode="email" placeholder="name@example.com"
+                  value={email} onChange={e => setEmail(e.target.value)} required className="h-12 px-4" />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-gray-700 font-medium">
-                  Password
-                </Label>
+                <Label htmlFor="password" className="font-medium">Password</Label>
                 <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    autoComplete="current-password"
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="h-12 px-4 pr-12 bg-gray-50 border-gray-200 focus:bg-white transition-colors"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                  >
-                    {showPassword ? (
-                      <EyeOff className="h-5 w-5" />
-                    ) : (
-                      <Eye className="h-5 w-5" />
-                    )}
+                  <Input id="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" placeholder="Enter your password"
+                    value={password} onChange={e => setPassword(e.target.value)} required className="h-12 px-4 pr-12" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}>
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                   </button>
                 </div>
               </div>
 
-              <div className="flex items-center justify-end text-sm">
-                <button 
-                  type="button" 
-                  onClick={() => router.push('/forgot-password')}
-                  className="text-primary hover:text-primary font-medium transition-colors"
-                >
-                  Forgot password?
-                </button>
+              <div className="flex justify-end text-sm">
+                <Link href="/forgot-password" className="font-medium text-primary hover:underline">{t('Forgot password?')}</Link>
               </div>
 
-              <Button 
-                type="submit" 
-                className="w-full h-12 bg-primary hover:bg-primary/90 text-white font-semibold text-base transition-colors" 
-                disabled={isLoading}
-              >
-                {isLoading ? 'Logging in...' : 'Login'}
-              </Button>
+              <Button type="submit" className="h-12 w-full text-base font-semibold">{t('Login')}</Button>
             </form>
-
           </div>
 
-          <p className="text-xs text-center text-gray-400 mt-6">
-            New staff receive an email invite from an admin to set their password.
-          </p>
+          <p className="mt-6 text-center text-xs text-muted-foreground">{t('New staff receive an email invite from an admin to set their password.')}</p>
           <p className="mt-2 text-center text-[11px] text-muted-foreground/80">Powered by Seva</p>
         </CardContent>
       </Card>

@@ -56,7 +56,7 @@ Vercel Pro about $20) and about **$10/month** for each further hospital. Check c
    runs the app's server code in Mumbai (`bom1`), next to the database.
 4. **Connect them:** Supabase *Authentication → URL Configuration*: *Site URL* = the web address,
    and add `https://<address>/**` to *Redirect URLs*.
-5. **In the app**, as the Super Admin: **Organization Setup → Hospital Profile** (name, logo,
+5. **In the app**, as the Super Admin: **Setup → Hospital Profile** (name, logo,
    colour, contact details, and which menus to show), then check **Payment Methods** and **Departments**, and invite staff
    from **Staff Management**. Don't load sample data on a live hospital.
 
@@ -81,13 +81,25 @@ A hospital that fails (e.g. wrong password) is reported and the others still upd
 
 ## Features
 
-Who can open each screen is set in `src/config/permissions.ts`; the database enforces the same
-rules with row level security.
+The menu is grouped into **Patients**, **Money**, **Pharmacy & Stock**, **Staff** and **Setup**,
+and shows each person only the screens their role may open (`src/config/permissions.ts`); the
+database enforces the same rules with row level security.
+
+- **Home dashboard by role:** "today at a glance" tiles show only what the person's role may see,
+  worked out by the database (`home_summary()`, one ~1 KB call): patients in care and critical
+  ones (doctors and nurses also see *their* patients, and start on "My Patients"), their duty and
+  next shift, bills today and unpaid (billing roles), money in and out (finance roles), fees owed
+  (Super Admin, Admin, Accounts), a doctor's own pending fees, and stock needing a refill.
+- **English / తెలుగు:** the EN/తె switch in the header (also on the login page) changes the menu,
+  page titles, main buttons, statuses and the dashboard tiles to Telugu; details stay in English.
+  The choice is saved to the person's profile, so it follows them to any device. The Telugu font
+  is only downloaded when Telugu is chosen. Translations are in `src/lib/i18n/te/` (one file per
+  area); have a Telugu-speaking colleague review them.
 
 - **Patients:** registration (with consent capture and ID-card scanning), care notes with
   treatment templates, tests, attachments, conditions, and a printable **Treatment Summary** on
   the hospital's letterhead.
-- **Departments and care teams** (Organization Setup → Departments): each department's doctors
+- **Departments and care teams** (Staff → Departments): each department's doctors
   and nurses and a default doctor fee per case. On a patient, choose the department, attending
   doctor and nurse; the dashboard filters by department or "My Patients".
 - **Doctor fees:** set per case (Super Admin, Admin, Accounts) and paid through
@@ -97,13 +109,13 @@ rules with row level security.
   **Payments → Referral/CC**.
 - **Billing and payments:** filter by period, status/type, payment method and who processed it,
   with totals per method and CSV export. **Payment Methods** (Super Admin) are managed in
-  Organization Setup; renaming one renames it on existing records. Every bill and payment records
+  Setup; renaming one renames it on existing records. Every bill and payment records
   who processed it; only the Super Admin can record or change it to someone else.
 - **Printing bills:** every bill prints on the hospital's letterhead (Print / Save as PDF) with its
   items, total in words, payment method and who received it. Once paid it prints as a **Payment
   Receipt**; saving a bill as Paid opens the receipt straight away. Print buttons are on the bill,
   the Billing list and the patient's bills.
-- **Pharmacy and Inventory:** the Pharmacy list (Organization Setup → Pharmacy) holds what the
+- **Pharmacy and Inventory:** the Pharmacy list (Pharmacy & Stock → Pharmacy) holds what the
   pharmacy sells; Materials holds consumables. **Inventory** shows the stock on hand of both, its
   value at average purchase cost, what came in and went out in any period, and a **Needs refill**
   list (items at or below their refill level, with a suggested order and its cost). Stock updates
@@ -169,6 +181,8 @@ included amounts are generous for a hospital. The app still keeps traffic small:
 
 ## Security and compliance
 
+- **Salaries** are readable only by the roles that manage staff (`staff_salaries()`); other
+  staff can see colleagues' names and roles but not their pay.
 - **Logins:** Supabase Auth (email and password). Staff are invited from the app; there is no
   public sign-up. Roles: Super Admin, Admin, Doctor, Nurse, Receptionist, Accounts.
 - **Row level security** on every table: only signed-in, active staff can read or write; deletes
@@ -187,7 +201,7 @@ included amounts are generous for a hospital. The app still keeps traffic small:
 ## Sample data
 
 For trying the app out (never on a live hospital): log in as the Super Admin and open
-**Organization Setup → Sample Data**. **Load Sample Data** adds about six months of activity:
+**Setup → Sample Data**. **Load Sample Data** adds about six months of activity:
 8 staff in 3 departments, 30 patients with notes, tests, bills and fees, referring doctors on
 fixed and percentage terms, payments, and a duty roster with clock-ins. It only loads into a
 database with no patients. **Remove Sample Data** deletes all of it and nothing else. Sample
@@ -219,11 +233,20 @@ npm run typecheck
 | `src/lib/payments/` | Online payment provider interface |
 | `src/lib/branding.ts`, `src/components/branding-provider.tsx` | Hospital name, logo and colour |
 | `src/lib/storage.ts`, `src/lib/images.ts` | Image upload, signed links and compression |
-| `src/config/permissions.ts` | Which roles open which screens |
+| `src/config/navigation.ts` | Every page: menu section, label, icon, roles and feature (drives the menu and the page guard) |
+| `src/config/permissions.ts` | Role lists per screen and action (mirrored by the database rules) |
+| `src/components/page-guard.tsx`, `src/components/page.tsx` | Sign-in, role and feature check for every page; page header and layout |
+| `src/lib/i18n/`, `src/components/language-provider.tsx` | English/Telugu: `t('text')`, translations per area |
+| `src/lib/format.ts`, `src/lib/csv.ts`, `src/components/date-field.tsx`, `src/components/csv-import.tsx` | Shared money/date formatting, CSV export/import, date input |
 | `src/config/modules.ts`, `src/hooks/use-features.ts` | Features a hospital can switch off |
 | `src/lib/inventory.ts`, `src/app/inventory/` | Stock status, value and refill suggestions |
 | `scripts/migrate-hospitals.mjs` | Applies the database files to every hospital |
 
-Database changes: add a new file to `supabase/migrations` written so it can be re-run (`if not
+Adding a page: create it under `src/app/`, add it to `NAV_ITEMS` in `src/config/navigation.ts`
+(section, roles, feature) and start it with `PageBody` and `PageHeader`; the guard handles sign-in,
+roles and switched-off features, so the page itself has no access checks. Wrap its title and main
+buttons in `t()` and add the Telugu to `src/lib/i18n/te/`.
+
+Database changes: edit `supabase/migrations/20261016000000_seva_schema.sql` (or add a file) so it can be re-run (`if not
 exists`, `create or replace`, drop-then-create for policies and triggers), and keep column names
 the snake_case form of the TypeScript fields in `src/types`.

@@ -11,7 +11,3 @@ export function maskAadhaarNumber(value: string): string {
   if (digits.length < 4) return value;
   return `XXXX XXXX ${digits.slice(-4)}`;
 }
-
-export function isMaskedAadhaar(value: string): boolean {
-  return /^XXXX XXXX \d{4}$/.test(value.trim());
-}

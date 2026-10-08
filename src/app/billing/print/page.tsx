@@ -1,9 +1,10 @@
 import { Suspense } from 'react';
+import { PageLoading } from '@/components/page';
 import BillPrint from './BillPrint';
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="flex justify-center items-center min-h-screen"><p>Loading bill...</p></div>}>
+    <Suspense fallback={<PageLoading />}>
       <BillPrint />
     </Suspense>
   );
