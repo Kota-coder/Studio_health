@@ -1,12 +1,16 @@
 "use client";
 
+import { useState } from 'react';
 import Link from '@/components/app-link';
-import { LogIn, LogOut, Menu as MenuIcon, UserCircle } from 'lucide-react';
+import { ArrowLeftRight, Check, LogIn, LogOut, Menu as MenuIcon, PlusCircle, UserCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useT } from '@/components/language-provider';
+import { useBranding } from '@/components/branding-provider';
+import { hospitalLinks as hospitalLinksRepo } from '@/lib/data';
+import type { HospitalLink } from '@/types/hospitalLink';
 import { useAuth } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
 import { NAV_ITEMS, NAV_SECTIONS } from '@/config/navigation';
@@ -16,7 +20,16 @@ import { NAV_ITEMS, NAV_SECTIONS } from '@/config/navigation';
 export function AppMenu() {
   const { currentUser, logout, isLoading } = useAuth();
   const { isOn } = useFeatures();
+  const { profile } = useBranding();
   const t = useT();
+  // The Super Admin's other hospitals, read when the menu opens (from the in-tab cache, so
+  // only the first time or after the list is edited does it reach the database).
+  const [links, setLinks] = useState<HospitalLink[] | null>(null);
+  const superAdmin = currentUser?.role === 'Super Admin';
+  const onOpenChange = (open: boolean) => {
+    if (open && superAdmin) hospitalLinksRepo.list().then(setLinks).catch(() => setLinks(prev => prev ?? []));
+  };
+  const here = typeof window === 'undefined' ? '' : window.location.origin;
 
   if (isLoading) {
     return <Button variant="ghost" size="icon" aria-label={t('Open menu')} disabled><MenuIcon className="h-5 w-5 opacity-50" /></Button>;
@@ -30,7 +43,7 @@ export function AppMenu() {
     : [];
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" aria-label={t('Open menu')}><MenuIcon className="h-5 w-5" /></Button>
       </DropdownMenuTrigger>
@@ -55,6 +68,27 @@ export function AppMenu() {
                 ))}
               </div>
             ))}
+            {superAdmin && links !== null && (
+              <div>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="text-xs uppercase tracking-wide text-muted-foreground">{t('Switch hospital')}</DropdownMenuLabel>
+                <DropdownMenuItem disabled className="flex w-full items-center opacity-100">
+                  <Check className="mr-2 h-4 w-4 text-primary" /><span className="truncate font-medium">{profile.name}</span>
+                </DropdownMenuItem>
+                {links.filter(l => !sameSite(l.url, here)).map(link => (
+                  <DropdownMenuItem key={link.id} asChild>
+                    <a href={link.url} className="flex w-full items-center">
+                      <ArrowLeftRight className="mr-2 h-4 w-4" /><span className="truncate">{link.name}</span>
+                    </a>
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuItem asChild>
+                  <Link href="/hospital-profile#hospitals" className="flex w-full items-center text-muted-foreground">
+                    <PlusCircle className="mr-2 h-4 w-4" /><span>{links.length ? t('Manage hospitals') : t('Add another hospital')}</span>
+                  </Link>
+                </DropdownMenuItem>
+              </div>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={logout} className="flex w-full cursor-pointer items-center">
               <LogOut className="mr-2 h-4 w-4" />
@@ -69,4 +103,9 @@ export function AppMenu() {
       </DropdownMenuContent>
     </DropdownMenu>
   );
+}
+
+// True when a saved link points at the hospital this page is on.
+function sameSite(url: string, origin: string) {
+  try { return new URL(url).origin === origin; } catch { return false; }
 }

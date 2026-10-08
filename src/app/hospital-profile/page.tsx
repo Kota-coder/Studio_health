@@ -22,6 +22,7 @@ import {
 } from '@/lib/branding';
 import { brandingFiles, readFileAsDataUrl, svgToDataUrl } from '@/lib/logo-render';
 import { cn } from '@/lib/utils';
+import { HospitalLinksCard } from '@/components/hospital-links-card';
 
 const SHAPES: Array<{ value: MonogramShape; label: string }> = [
   { value: 'shield', label: 'Shield' }, { value: 'circle', label: 'Circle' },
@@ -259,6 +260,8 @@ export default function HospitalProfilePage() {
               </ul>
             </CardContent>
           </Card>
+
+          <HospitalLinksCard />
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
