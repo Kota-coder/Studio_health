@@ -118,12 +118,20 @@ database enforces the same rules with row level security.
   today) to mark it paid, which prints the receipt. A test is never billed twice: once billed it
   shows its bill instead of "Bill Test". Their dashboard starts on the patients with their
   requests or waiting ones.
-- **Who does what** (while Lab Requests / Pharmacy Orders are on): doctors, nurses and admins
-  *request* tests and *send* medicines from the patient page; only the **Lab Technician** records
-  test results (and bills them), and only the **Pharmacist** dispenses medicines (and bills them).
-  The Super Admin can step in for either. The database enforces this too: results and pharmacy
-  bills from anyone else are refused. Switch a feature off and staff record tests and bill
-  medicines directly, as before.
+- **Departments and responsibilities** (Setup → Hospital Profile): each kind of work belongs to
+  a department, and the hospital chooses which roles do it:
+  **Clinical** (request tests, prescribe medicines for the pharmacy: Doctor, Nurse, Admin),
+  **Laboratory** (carry out tests and record results, which bills them: Lab Technician),
+  **Pharmacy** (dispense medicines, which bills them, and take payment for pharmacy bills:
+  Pharmacist) and **Billing & Payments** (take payment for consultations, procedures and tests:
+  Receptionist, Accounts, Admin). The Super Admin can always step in. Anyone can still raise a
+  bill, but only the department responsible can mark it paid, partly paid or cancelled; the
+  others save it as Unpaid. The database enforces all of it (`responsible()`), and the menu
+  follows it (e.g. whoever takes payments can open Billing). With Lab Requests or Pharmacy
+  Orders off, staff record tests and bill medicines directly, as before.
+- **Medicines on the patient page:** a Medicines card lists everything prescribed for the
+  patient, newest first, with the dosage, notes, who prescribed it and when, and whether the
+  pharmacy has given it (waiting, given × quantity).
 - **Test templates** (Setup → Medical Tests): each test has its price and its own result
   template, set up like care note templates: the parameters the lab fills in (number, short or
   long text, or a choice), with a unit and normal range for numbers. Results outside the range

@@ -45,8 +45,9 @@ export function TestsSection({ patient, staff, bills, onSaved, onBilled }: {
   const { isOn } = useFeatures();
   const currentUser = useStaff();
   // With Lab Requests on, doctors and nurses request tests and the lab records them.
-  const { labOn, canRequest, canProcessLab } = useWorkflow();
+  const { labOn, canRequest, canProcessLab, canCollect } = useWorkflow();
   const canBill = isOn('billing') && canOpen('billing', currentUser.role);
+  const canCollectTests = canCollect('Treatment'); // the billing department
   const catalog = useLoadOnce(loadTestCatalog);
   const [showForm, setShowForm] = useState(false);
   const [requests, setRequests] = useState<TestRequest[]>([]);
@@ -155,7 +156,7 @@ export function TestsSection({ patient, staff, bills, onSaved, onBilled }: {
         )}
         {showForm && (
           <TestForm key={resultFor?.id ?? 'new'} patient={patient} catalog={catalog.data} staff={staff} request={resultFor}
-            onSaved={async () => { closeForm(); await Promise.all([onSaved(), loadRequests(), canBill ? onBilled() : undefined]); }} onCancel={closeForm} />
+            onSaved={async () => { closeForm(); await Promise.all([onSaved(), loadRequests(), isOn('billing') ? onBilled() : undefined]); }} onCancel={closeForm} />
         )}
         {labOn && (
           <RequestTestDialog patient={patient} catalog={catalog.data} open={showRequest} onOpenChange={setShowRequest}
@@ -171,7 +172,7 @@ export function TestsSection({ patient, staff, bills, onSaved, onBilled }: {
                 <div className="max-h-96 space-y-3 overflow-y-auto pr-2">
                   {tests.map(test => (
                     <TestCard key={test.id} test={test} bill={test.billId ? bills.find(b => b.id === test.billId) ?? { id: test.billId } : undefined}
-                      canBill={canBill} canBillTest={canBill && canProcessLab} onBill={() => billTest(test)} />
+                      canCollect={canCollectTests} canBillTest={isOn('billing') && canProcessLab && (canBill || labOn)} onBill={() => billTest(test)} />
                   ))}
                 </div>
               </AccordionContent>
@@ -183,10 +184,10 @@ export function TestsSection({ patient, staff, bills, onSaved, onBilled }: {
   );
 }
 
-function TestCard({ test, bill, canBill, canBillTest, onBill }: {
+function TestCard({ test, bill, canCollect, canBillTest, onBill }: {
   test: TestEntry;
   bill?: Pick<Bill, 'id'> & Partial<Bill>;
-  canBill: boolean; // may collect payment
+  canCollect: boolean; // may take payment (Billing & Payments)
   canBillTest: boolean; // may bill an unbilled test (the lab, with Lab Requests on)
   onBill: () => void;
 }) {
@@ -224,7 +225,7 @@ function TestCard({ test, bill, canBill, canBillTest, onBill }: {
           <span className="text-muted-foreground">
             {t('Billed')}: {bill.id}{bill.totalAmount != null ? ` · ${formatINR(bill.totalAmount)}` : ''}{bill.paymentStatus ? ` · ${t(bill.paymentStatus)}` : ''}
           </span>
-          {canBill && bill.paymentStatus !== 'Paid' && bill.paymentStatus !== 'Cancelled' && (
+          {canCollect && bill.paymentStatus !== 'Paid' && bill.paymentStatus !== 'Cancelled' && (
             <Button variant="outline" size="sm" asChild>
               <Link href={`/billing/form?billId=${bill.id}`}><IndianRupee className="mr-2 h-3 w-3" /> {t('Collect payment')}</Link>
             </Button>

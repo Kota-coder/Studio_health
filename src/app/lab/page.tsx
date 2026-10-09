@@ -14,8 +14,6 @@ import { useStaff } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { testRequests } from '@/lib/data';
 import { cachedAt, invalidate } from '@/lib/data/cache';
-import { canOpen } from '@/config/permissions';
-import { useFeatures } from '@/hooks/use-features';
 import { useWorkflow } from '@/hooks/use-workflow';
 import { formatINR, patientDisplayId } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -32,9 +30,8 @@ export default function LabPage() {
   const { toast } = useToast();
   const currentUser = useStaff();
   const isTechnician = currentUser.role === 'Lab Technician';
-  const { isOn } = useFeatures();
-  const canBill = isOn('billing') && canOpen('billing', currentUser.role);
-  const { canProcessLab } = useWorkflow(); // taking requests and recording results
+  const { canProcessLab, canCollect } = useWorkflow(); // taking requests and recording results
+  const canBill = canCollect('Treatment'); // payment is taken by Billing & Payments
 
   const [open, setOpen] = useState<TestRequest[] | null>(null);
   const [done, setDone] = useState<TestRequest[] | null>(null);

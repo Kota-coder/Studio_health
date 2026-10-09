@@ -11,9 +11,6 @@ import { PageBody, PageHeader, PageLoading } from '@/components/page';
 import { RefreshStamp } from '@/components/refresh-stamp';
 import { DispenseDialog } from '@/components/pharmacy/dispense-dialog';
 import { useFormat, useT } from '@/components/language-provider';
-import { canOpen } from '@/config/permissions';
-import { useStaff } from '@/context/AuthContext';
-import { useFeatures } from '@/hooks/use-features';
 import { useToast } from '@/hooks/use-toast';
 import { useWorkflow } from '@/hooks/use-workflow';
 import { pharmacyOrders } from '@/lib/data';
@@ -31,10 +28,8 @@ export default function PharmacyOrdersPage() {
   const t = useT();
   const { date } = useFormat();
   const { toast } = useToast();
-  const { isOn } = useFeatures();
-  const currentUser = useStaff();
-  const { canProcessPharmacy, canRequest } = useWorkflow();
-  const canBill = isOn('billing') && canOpen('billing', currentUser.role);
+  const { canProcessPharmacy, canSendToPharmacy, canCollect } = useWorkflow();
+  const canBill = canCollect('Pharmacy');
 
   const [waiting, setWaiting] = useState<PharmacyOrder[] | null>(null);
   const [done, setDone] = useState<PharmacyOrder[] | null>(null);
@@ -144,7 +139,7 @@ export default function PharmacyOrdersPage() {
                     {view === 'waiting' && canProcessPharmacy && (
                       <Button size="sm" onClick={() => setDispensing(order)}><PackageCheck className="mr-2 h-4 w-4" /> {t('Dispense')}</Button>
                     )}
-                    {view === 'waiting' && (canRequest || canProcessPharmacy) && (
+                    {view === 'waiting' && (canSendToPharmacy || canProcessPharmacy) && (
                       <Button size="sm" variant="ghost" onClick={() => cancel(order)} aria-label={t('Cancel order')}><X className="h-4 w-4" /></Button>
                     )}
                     {view === 'done' && canBill && order.bill && order.bill.status !== 'Paid' && order.bill.status !== 'Cancelled' && (

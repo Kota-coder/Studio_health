@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { useT } from '@/components/language-provider';
 import { useToast } from '@/hooks/use-toast';
+import { useWorkflow } from '@/hooks/use-workflow';
 import { inventory, medications as medicationsRepo, pharmacyOrders } from '@/lib/data';
 import { formatINR } from '@/lib/format';
 import { formatQty } from '@/lib/inventory';
@@ -27,6 +28,7 @@ export function DispenseDialog({ order, patientName, open, onOpenChange, onDone 
   const t = useT();
   const router = useRouter();
   const { toast } = useToast();
+  const canTakePayment = useWorkflow().canCollect('Pharmacy');
   const [lines, setLines] = useState<Line[] | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -102,7 +104,7 @@ export function DispenseDialog({ order, patientName, open, onOpenChange, onDone 
         <DialogFooter className="gap-2">
           <Button variant="ghost" onClick={() => onOpenChange(false)}>{t('Cancel')}</Button>
           <Button variant="outline" onClick={() => dispense(false)} disabled={isSaving || !lines || !lines.some(l => qty(l) > 0)}>{t('Dispense & bill')}</Button>
-          <Button onClick={() => dispense(true)} disabled={isSaving || !lines || !lines.some(l => qty(l) > 0)}>{t('Dispense & collect payment')}</Button>
+          {canTakePayment && <Button onClick={() => dispense(true)} disabled={isSaving || !lines || !lines.some(l => qty(l) > 0)}>{t('Dispense & collect payment')}</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>

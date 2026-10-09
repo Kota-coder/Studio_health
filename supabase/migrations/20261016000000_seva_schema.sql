@@ -74,14 +74,47 @@ $$;
 
 -- With Lab Requests on, test results are recorded by lab technicians (or the Super Admin);
 -- with Pharmacy Orders on, medicines are dispensed and billed by pharmacists (or the Super Admin).
+-- Departments and their responsibilities: which roles carry out each duty, as set on the
+-- Hospital Profile page (hospital_profile.responsibilities), or these defaults. The Super
+-- Admin can always step in. Keep the defaults in step with src/config/responsibilities.ts.
+create or replace function public.responsible(duty text) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare
+  roles text[];
+begin
+  if public.has_role(array['Super Admin']) then
+    return true;
+  end if;
+  select array(select jsonb_array_elements_text(responsibilities -> duty)) into roles
+  from public.hospital_profile where id = 1 and responsibilities ? duty;
+  if roles is null then
+    roles := case duty
+      when 'requestTests' then array['Admin', 'Doctor', 'Nurse']
+      when 'sendToPharmacy' then array['Admin', 'Doctor', 'Nurse']
+      when 'performTests' then array['Lab Technician']
+      when 'dispense' then array['Pharmacist']
+      when 'collectPharmacy' then array['Pharmacist']
+      when 'collectPayments' then array['Admin', 'Receptionist', 'Accounts']
+      else array[]::text[]
+    end;
+  end if;
+  return public.has_role(roles);
+end
+$$;
+
+-- With Lab Requests on, test results are recorded by the laboratory; with Pharmacy Orders on,
+-- medicines are dispensed and billed by the pharmacy.
+create or replace function public.pharmacy_orders_on() returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.module_on('pharmacyOrders') and public.module_on('medications') and public.module_on('billing')
+$$;
 create or replace function public.can_process_lab() returns boolean
 language sql stable security definer set search_path = public as $$
-  select not public.module_on('labRequests') or public.has_role(array['Lab Technician', 'Super Admin'])
+  select not public.module_on('labRequests') or public.responsible('performTests')
 $$;
 create or replace function public.can_process_pharmacy() returns boolean
 language sql stable security definer set search_path = public as $$
-  select not (public.module_on('pharmacyOrders') and public.module_on('medications') and public.module_on('billing'))
-         or public.has_role(array['Pharmacist', 'Super Admin'])
+  select not public.pharmacy_orders_on() or public.responsible('dispense')
 $$;
 
 -- "dd/MM/yyyy" text -> date; null when it isn't a valid date in that format.
@@ -561,6 +594,8 @@ alter table public.patients
   add column if not exists referral_fee_basis    jsonb;
 
 alter table public.hospital_profile add column if not exists disabled_modules text[] not null default '{}';
+-- Which roles carry out each department's duties (see responsible()); {} uses the defaults.
+alter table public.hospital_profile add column if not exists responsibilities jsonb not null default '{}';
 
 -- A payment method collected online names its provider (e.g. "UPI (online)" -> 'razorpay').
 alter table public.payment_methods add column if not exists gateway text;
@@ -1030,6 +1065,30 @@ drop trigger if exists bills_guard_pharmacy on public.bills;
 create trigger bills_guard_pharmacy before insert or update of bill_type on public.bills
   for each row execute function public.guard_pharmacy_bill();
 
+-- Taking payment (marking a bill paid, partly paid or cancelled, or changing how or when it was
+-- paid) is the billing department's job, or the pharmacy's for pharmacy bills while Pharmacy
+-- Orders is on. Online payments are recorded by the server (service role).
+create or replace function public.guard_bill_payment() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  pharmacy boolean := new.bill_type = 'Pharmacy' and public.pharmacy_orders_on();
+begin
+  if auth.role() is distinct from 'service_role'
+     and ((tg_op = 'INSERT' and new.payment_status <> 'Unpaid')
+          or (tg_op = 'UPDATE' and (new.payment_status is distinct from old.payment_status
+                                    or new.payment_method is distinct from old.payment_method
+                                    or new.payment_date is distinct from old.payment_date)))
+     and not public.responsible(case when pharmacy then 'collectPharmacy' else 'collectPayments' end) then
+    raise exception '%', case when pharmacy then 'Payments for pharmacy bills are taken by the pharmacy.'
+                              else 'Payments are taken by the billing department.' end;
+  end if;
+  return new;
+end
+$$;
+drop trigger if exists bills_guard_payment on public.bills;
+create trigger bills_guard_payment before insert or update on public.bills
+  for each row execute function public.guard_bill_payment();
+
 -- -----------------------------------------------------------------------------
 -- Functions the app calls
 -- -----------------------------------------------------------------------------
@@ -1389,6 +1448,8 @@ revoke all on function public.set_my_language(text) from public;
 grant execute on function public.set_my_language(text) to authenticated;
 revoke all on function public.module_on(text) from public;
 grant execute on function public.module_on(text) to authenticated;
+revoke all on function public.responsible(text) from public;
+grant execute on function public.responsible(text) to authenticated;
 revoke all on function public.lab_technicians() from public;
 grant execute on function public.lab_technicians() to authenticated;
 revoke all on function public.staff_salaries() from public;

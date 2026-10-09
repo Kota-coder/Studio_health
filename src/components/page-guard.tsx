@@ -10,7 +10,8 @@ import { useBranding } from '@/components/branding-provider';
 import { useT } from '@/components/language-provider';
 import { useAuth } from '@/context/AuthContext';
 import { isModuleEnabled, moduleByKey } from '@/config/modules';
-import { navItemForPath, rolesForPath } from '@/config/navigation';
+import { accessForPath, mayOpen, navItemForPath } from '@/config/navigation';
+import { isResponsible } from '@/config/responsibilities';
 import { isPublicPath } from '@/config/public-paths';
 
 function Notice({ icon: Icon, title, children }: { icon: React.ElementType; title: string; children: React.ReactNode }) {
@@ -43,8 +44,8 @@ export function PageGuard({ children }: { children: React.ReactNode }) {
 
   const page = navItemForPath(pathname);
   const pageName = t(page?.label ?? 'this page');
-  const roles = rolesForPath(pathname);
-  if (roles && !roles.includes(currentUser.role)) {
+  const access = accessForPath(pathname);
+  if (access && !mayOpen(access, currentUser.role, duty => isResponsible(duty, currentUser.role, profile.responsibilities))) {
     return (
       <Notice icon={ShieldAlert} title={t("You don't have access to this page")}>
         <p className="text-sm text-muted-foreground">{t('Your role ({role}) cannot open {page}.', { role: t(currentUser.role), page: pageName })}</p>

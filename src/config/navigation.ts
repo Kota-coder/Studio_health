@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { PAGE_ROLES } from '@/config/permissions';
+import type { Duty } from '@/config/responsibilities';
 import type { StaffRole } from '@/types/staff';
 
 export const NAV_SECTIONS = ['Patients', 'Money', 'Pharmacy & Stock', 'Staff', 'Setup'] as const;
@@ -19,20 +20,21 @@ export interface NavItem {
   section: NavSection;
   roles: readonly StaffRole[];
   module?: string; // switchable feature (src/config/modules.ts)
+  duties?: Duty[]; // also open to whoever the hospital makes responsible for these (Hospital Profile)
 }
 
 export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Patient Dashboard', icon: LayoutDashboard, section: 'Patients', roles: PAGE_ROLES.dashboard },
   { href: '/patients/new', label: 'Register Patient', icon: ClipboardPlus, section: 'Patients', roles: PAGE_ROLES.dashboard },
-  { href: '/lab', label: 'Lab Requests', icon: Microscope, section: 'Patients', roles: PAGE_ROLES.lab, module: 'labRequests' },
+  { href: '/lab', label: 'Lab Requests', icon: Microscope, section: 'Patients', roles: PAGE_ROLES.lab, module: 'labRequests', duties: ['requestTests', 'performTests'] },
   { href: '/referring-doctors', label: 'Referring Doctors', icon: HeartHandshake, section: 'Patients', roles: PAGE_ROLES.referringDoctors, module: 'referringDoctors' },
 
-  { href: '/billing', label: 'Billing', icon: CreditCard, section: 'Money', roles: PAGE_ROLES.billing, module: 'billing' },
+  { href: '/billing', label: 'Billing', icon: CreditCard, section: 'Money', roles: PAGE_ROLES.billing, module: 'billing', duties: ['collectPayments', 'collectPharmacy'] },
   { href: '/payments', label: 'Payments', icon: Receipt, section: 'Money', roles: PAGE_ROLES.payments, module: 'payments' },
   { href: '/financial-dashboard', label: 'Financial Dashboard', icon: AreaChart, section: 'Money', roles: PAGE_ROLES.financialDashboard, module: 'financialDashboard' },
 
-  { href: '/inventory', label: 'Inventory', icon: Boxes, section: 'Pharmacy & Stock', roles: PAGE_ROLES.inventory, module: 'inventory' },
-  { href: '/pharmacy-orders', label: 'Pharmacy Orders', icon: ClipboardList, section: 'Pharmacy & Stock', roles: PAGE_ROLES.pharmacyOrders, module: 'pharmacyOrders' },
+  { href: '/inventory', label: 'Inventory', icon: Boxes, section: 'Pharmacy & Stock', roles: PAGE_ROLES.inventory, module: 'inventory', duties: ['dispense'] },
+  { href: '/pharmacy-orders', label: 'Pharmacy Orders', icon: ClipboardList, section: 'Pharmacy & Stock', roles: PAGE_ROLES.pharmacyOrders, module: 'pharmacyOrders', duties: ['sendToPharmacy', 'dispense', 'collectPharmacy'] },
   { href: '/pharmacy', label: 'Pharmacy', icon: Pill, section: 'Pharmacy & Stock', roles: PAGE_ROLES.medications, module: 'medications' },
   { href: '/materials', label: 'Materials', icon: Package, section: 'Pharmacy & Stock', roles: PAGE_ROLES.materials, module: 'materials' },
   { href: '/vendors', label: 'Vendors', icon: Truck, section: 'Pharmacy & Stock', roles: PAGE_ROLES.vendors, module: 'vendors' },
@@ -54,15 +56,19 @@ const OTHER_PAGES: Array<{ prefix: string; roles: readonly StaffRole[] }> = [
 ];
 
 // Who may open a page: the most specific matching prefix wins (e.g. /billing/print uses
-// /billing's roles). Unknown pages are open to any signed-in staff member.
-export function rolesForPath(pathname: string): readonly StaffRole[] | null {
+// /billing's roles), plus whoever is responsible for one of its duties. Unknown pages are open
+// to any signed-in staff member.
+export function accessForPath(pathname: string): { roles: readonly StaffRole[]; duties?: Duty[] } | null {
   const candidates = [
-    ...NAV_ITEMS.map(item => ({ prefix: item.href, roles: item.roles })),
+    ...NAV_ITEMS.map(item => ({ prefix: item.href, roles: item.roles, duties: item.duties })),
     ...OTHER_PAGES,
   ].filter(c => pathname === c.prefix || pathname.startsWith(`${c.prefix}/`));
   if (candidates.length === 0) return null;
-  return candidates.sort((a, b) => b.prefix.length - a.prefix.length)[0].roles;
+  return candidates.sort((a, b) => b.prefix.length - a.prefix.length)[0];
 }
+
+export const mayOpen = (access: { roles: readonly StaffRole[]; duties?: Duty[] }, role: StaffRole, can: (duty: Duty) => boolean) =>
+  access.roles.includes(role) || !!access.duties?.some(can);
 
 export const navItemForPath = (pathname: string) =>
   NAV_ITEMS.filter(i => pathname === i.href || pathname.startsWith(`${i.href}/`)).sort((a, b) => b.href.length - a.href.length)[0];
