@@ -14,10 +14,10 @@ import { RoleSummary } from '@/components/role-summary';
 import { RefreshStamp } from '@/components/refresh-stamp';
 import { useBranding } from '@/components/branding-provider';
 import { useT } from '@/components/language-provider';
-import { canOpen } from '@/config/permissions';
 import { useStaff } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
 import { useToast } from '@/hooks/use-toast';
+import { useWorkflow } from '@/hooks/use-workflow';
 import { isSevaDefault } from '@/lib/branding';
 import { DISCHARGED_DAYS, bills as billsRepo, departments as departmentsRepo, homeSummary, patients as patientsRepo, pharmacyOrders, staff as staffRepo, testRequests, type HomeSummary } from '@/lib/data';
 import { cachedAt, invalidate } from '@/lib/data/cache';
@@ -61,9 +61,10 @@ export default function DashboardPage() {
   const { isOn } = useFeatures();
   const { toast } = useToast();
   const t = useT();
-  const labOn = isOn('labRequests') && canOpen('lab', currentUser.role);
+  const { canOpenPage } = useWorkflow();
+  const labOn = isOn('labRequests') && canOpenPage('lab');
   const isTechnician = currentUser.role === 'Lab Technician';
-  const pharmacyVisible = isOn('pharmacyOrders') && canOpen('pharmacyOrders', currentUser.role);
+  const pharmacyVisible = isOn('pharmacyOrders') && canOpenPage('pharmacyOrders');
   const isPharmacist = currentUser.role === 'Pharmacist';
 
   const [allPatients, setAllPatients] = useState<Patient[]>([]);

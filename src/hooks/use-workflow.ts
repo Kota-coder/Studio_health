@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { useBranding } from '@/components/branding-provider';
+import { mayOpenPage, type PageKey } from '@/config/permissions';
 import { isResponsible, type Duty } from '@/config/responsibilities';
 import { useStaff } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
@@ -17,13 +18,19 @@ export function useWorkflow() {
   const { role } = useStaff();
   const { profile } = useBranding();
   const config = profile.responsibilities;
+  const pageAccess = profile.pageAccess;
   return useMemo(() => {
     const can = (duty: Duty) => isResponsible(duty, role, config);
     const labOn = isOn('labRequests');
     const pharmacyOn = isOn('pharmacyOrders');
     const billingOn = isOn('billing');
+    // Mirrors the database's can_see_bills(): the Billing page's roles, and whoever does the
+    // work that creates or settles bills.
+    const seesBills = mayOpenPage('billing', role, pageAccess) || (['performTests', 'dispense', 'collectPayments', 'collectPharmacy'] as Duty[]).some(can);
     return {
       can,
+      canOpenPage: (page: PageKey) => mayOpenPage(page, role, pageAccess),
+      canSeeBills: billingOn && seesBills,
       labOn,
       pharmacyOn,
       canRequest: can('requestTests'),
@@ -33,5 +40,5 @@ export function useWorkflow() {
       // Taking payment for a bill of this type.
       canCollect: (billType: BillType | string) => billingOn && (billType === 'Pharmacy' && pharmacyOn ? can('collectPharmacy') : can('collectPayments')),
     };
-  }, [isOn, role, config]);
+  }, [isOn, role, config, pageAccess]);
 }

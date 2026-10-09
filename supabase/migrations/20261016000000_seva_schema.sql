@@ -102,6 +102,43 @@ begin
 end
 $$;
 
+-- Page access: which roles may open the pages whose data the database protects (billing,
+-- payments, the financial dashboard and inventory), as set on the Hospital Profile page
+-- (hospital_profile.page_access), or these defaults. Keep the defaults in step with PAGE_ROLES
+-- in src/config/permissions.ts. The Super Admin always may.
+create or replace function public.page_allowed(page text) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+declare
+  roles text[];
+begin
+  if public.has_role(array['Super Admin']) then
+    return true;
+  end if;
+  select array(select jsonb_array_elements_text(page_access -> page)) into roles
+  from public.hospital_profile where id = 1 and page_access ? page;
+  if roles is null then
+    roles := case page
+      when 'billing' then array['Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accounts', 'Pharmacist']
+      when 'payments' then array['Admin', 'Doctor', 'Accounts']
+      when 'financialDashboard' then array['Admin', 'Doctor', 'Accounts']
+      when 'inventory' then array['Admin', 'Doctor', 'Nurse', 'Accounts', 'Pharmacist']
+      else array[]::text[]
+    end;
+  end if;
+  return public.has_role(roles);
+end
+$$;
+
+-- Who may read and change bills: the roles allowed on the Billing page, and whoever the
+-- hospital makes responsible for the work that creates or settles bills (laboratory,
+-- pharmacy, billing & payments).
+create or replace function public.can_see_bills() returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.page_allowed('billing')
+         or public.responsible('performTests') or public.responsible('dispense')
+         or public.responsible('collectPayments') or public.responsible('collectPharmacy')
+$$;
+
 -- With Lab Requests on, test results are recorded by the laboratory; with Pharmacy Orders on,
 -- medicines are dispensed and billed by the pharmacy.
 create or replace function public.pharmacy_orders_on() returns boolean
@@ -604,6 +641,8 @@ alter table public.patients
 alter table public.hospital_profile add column if not exists disabled_modules text[] not null default '{}';
 -- Which roles carry out each department's duties (see responsible()); {} uses the defaults.
 alter table public.hospital_profile add column if not exists responsibilities jsonb not null default '{}';
+-- Which roles may open each page, where the hospital changed it ({} uses the defaults).
+alter table public.hospital_profile add column if not exists page_access jsonb not null default '{}';
 
 -- A payment method collected online names its provider (e.g. "UPI (online)" -> 'razorpay').
 alter table public.payment_methods add column if not exists gateway text;
@@ -1329,7 +1368,7 @@ begin
                   limit 1)));
 
   -- Billing (every role that opens Billing).
-  if public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accounts', 'Lab Technician', 'Pharmacist']) then
+  if public.can_see_bills() then
     result := result || (select jsonb_build_object('billing', jsonb_build_object(
       'todayCount', count(*) filter (where billed_on = today and payment_status <> 'Cancelled'),
       'todayAmount', coalesce(sum(total_amount) filter (where billed_on = today and payment_status <> 'Cancelled'), 0),
@@ -1339,7 +1378,7 @@ begin
   end if;
 
   -- Money in and out (the Financial Dashboard roles).
-  if public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Accounts']) then
+  if public.page_allowed('financialDashboard') then
     result := result || jsonb_build_object('money', jsonb_build_object(
       'collectedToday', (select coalesce(sum(total_amount), 0) from public.bills
                          where payment_status = 'Paid' and public.parse_dmy(payment_date) = today),
@@ -1350,7 +1389,7 @@ begin
   end if;
 
   -- Fees the hospital owes (the roles that settle them).
-  if public.has_role(array['Super Admin', 'Admin', 'Accounts']) then
+  if public.has_role(array['Super Admin', 'Admin', 'Accounts']) and public.page_allowed('payments') then
     result := result || (select jsonb_build_object('feesOwed', jsonb_build_object(
       'doctorAmount', coalesce(sum(doctor_fee) filter (where doctor_fee_status = 'Pending' and attending_doctor_id is not null), 0),
       'doctorCases', count(*) filter (where doctor_fee is not null and doctor_fee_status = 'Pending' and attending_doctor_id is not null),
@@ -1368,7 +1407,7 @@ begin
   end if;
 
   -- Stock needing a refill (the Inventory roles).
-  if public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Accounts', 'Pharmacist']) then
+  if public.page_allowed('inventory') then
     -- Low: at or below the refill level, or less than two weeks' stock at the last 30 days' use.
     result := result || (with movements as (
         select coalesce(medication_id, material_id) as item_id, sum(quantity) as on_hand,
@@ -1456,6 +1495,10 @@ revoke all on function public.set_my_language(text) from public;
 grant execute on function public.set_my_language(text) to authenticated;
 revoke all on function public.module_on(text) from public;
 grant execute on function public.module_on(text) to authenticated;
+revoke all on function public.page_allowed(text) from public;
+grant execute on function public.page_allowed(text) to authenticated;
+revoke all on function public.can_see_bills() from public;
+grant execute on function public.can_see_bills() to authenticated;
 revoke all on function public.responsible(text) from public;
 grant execute on function public.responsible(text) to authenticated;
 revoke all on function public.lab_technicians() from public;
@@ -1516,17 +1559,19 @@ drop policy if exists patient_tests_insert on public.patient_tests;
 create policy patient_tests_insert on public.patient_tests for insert to authenticated
   with check ((select public.is_active_staff()) and (select public.can_process_lab()));
 
--- Bills: any staff member may delete a bill that is still unpaid; others only the Super Admin.
+-- Bills: whoever may see bills may delete one that is still unpaid; others only the Super Admin.
 drop policy if exists bills_select on public.bills;
 drop policy if exists bills_insert on public.bills;
 drop policy if exists bills_update on public.bills;
 drop policy if exists bills_delete on public.bills;
-create policy bills_select on public.bills for select to authenticated using ((select public.is_active_staff()));
-create policy bills_insert on public.bills for insert to authenticated with check ((select public.is_active_staff()));
+-- Bills and payments are visible only to the roles the hospital allows on those pages
+-- (Hospital Profile → Who can see what; can_see_bills() and page_allowed()).
+create policy bills_select on public.bills for select to authenticated using ((select public.can_see_bills()));
+create policy bills_insert on public.bills for insert to authenticated with check ((select public.can_see_bills()));
 create policy bills_update on public.bills for update to authenticated
-  using ((select public.is_active_staff())) with check ((select public.is_active_staff()));
+  using ((select public.can_see_bills())) with check ((select public.can_see_bills()));
 create policy bills_delete on public.bills for delete to authenticated
-  using ((select public.has_role(array['Super Admin'])) or ((select public.is_active_staff()) and payment_status = 'Unpaid'));
+  using ((select public.has_role(array['Super Admin'])) or ((select public.can_see_bills()) and payment_status = 'Unpaid'));
 
 -- Payments (expenses, salaries, fees): the roles that can open the Payments screen
 -- (PAGE_ROLES.payments in src/config/permissions.ts).
@@ -1535,12 +1580,12 @@ drop policy if exists payments_insert on public.payments;
 drop policy if exists payments_update on public.payments;
 drop policy if exists payments_delete on public.payments;
 create policy payments_select on public.payments for select to authenticated
-  using ((select public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Accounts'])));
+  using ((select public.page_allowed('payments')));
 create policy payments_insert on public.payments for insert to authenticated
-  with check ((select public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Accounts'])));
+  with check ((select public.page_allowed('payments')));
 create policy payments_update on public.payments for update to authenticated
-  using ((select public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Accounts'])))
-  with check ((select public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Accounts'])));
+  using ((select public.page_allowed('payments')))
+  with check ((select public.page_allowed('payments')));
 create policy payments_delete on public.payments for delete to authenticated
   using ((select public.has_role(array['Super Admin'])));
 
@@ -1616,7 +1661,7 @@ create policy audit_log_insert on public.audit_log for insert to authenticated
 -- Online payment records: staff can see them; only the server writes them (no write policies).
 drop policy if exists payment_transactions_select on public.payment_transactions;
 create policy payment_transactions_select on public.payment_transactions for select to authenticated
-  using ((select public.is_active_staff()));
+  using ((select public.can_see_bills()));
 
 -- Inventory: everyone reads stock; the roles that run the pharmacy and stores add entries
 -- (PAGE_ROLES.inventory in src/config/permissions.ts). Bill and payment rows are written by
@@ -1630,7 +1675,7 @@ create policy stock_movements_select on public.stock_movements for select to aut
 create policy stock_movements_insert on public.stock_movements for insert to authenticated
   with check (source_type is null
               and reason in ('received', 'opening', 'used', 'expired', 'adjustment')
-              and (select public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Accounts', 'Pharmacist'])));
+              and (select public.page_allowed('inventory')));
 create policy stock_movements_delete on public.stock_movements for delete to authenticated
   using (source_type is null and (select public.has_role(array['Super Admin', 'Admin'])));
 

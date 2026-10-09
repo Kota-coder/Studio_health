@@ -18,8 +18,9 @@ import { RefreshStamp } from '@/components/refresh-stamp';
 import { useT } from '@/components/language-provider';
 import { useStaff } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
+import { useWorkflow } from '@/hooks/use-workflow';
 import { useToast } from '@/hooks/use-toast';
-import { PAGE_ROLES, STOCK_CORRECTION_ROLES } from '@/config/permissions';
+import { STOCK_CORRECTION_ROLES } from '@/config/permissions';
 import { downloadCsv } from '@/lib/csv';
 import { inventory } from '@/lib/data';
 import { cachedAt, invalidate } from '@/lib/data/cache';
@@ -33,7 +34,6 @@ import type { StaffRole } from '@/types/staff';
 const RecordStockDialog = dynamic(() => import('@/components/inventory/record-stock-dialog').then(m => m.RecordStockDialog));
 const StockHistoryDialog = dynamic(() => import('@/components/inventory/stock-history-dialog').then(m => m.StockHistoryDialog));
 
-const PAYMENT_ROLES: readonly StaffRole[] = PAGE_ROLES.payments;
 const STATUS_STYLES: Record<StockStatus, string> = {
   out: 'bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-200 dark:border-red-900',
   low: 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-900',
@@ -47,6 +47,7 @@ export default function InventoryPage() {
   const { toast } = useToast();
   const currentUser = useStaff();
   const { isOn } = useFeatures();
+  const { canOpenPage } = useWorkflow();
   const [items, setItems] = useState<InventoryItem[] | null>(null);
   const [dateFilter, setDateFilter] = useState<DateFilterValue>(DEFAULT_DATE_FILTER);
   const [kind, setKind] = useState<'all' | InventoryKind>('all');
@@ -117,7 +118,7 @@ export default function InventoryPage() {
   if (items === null) return <PageLoading />;
 
   const canDelete = STOCK_CORRECTION_ROLES.includes(currentUser.role);
-  const purchaseLink = isOn('payments') && PAYMENT_ROLES.includes(currentUser.role);
+  const purchaseLink = isOn('payments') && canOpenPage('payments');
   const kindLabel = (i: InventoryItem) => (i.kind === 'pharmacy' ? 'Pharmacy' : 'Material');
 
   return (

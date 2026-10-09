@@ -124,4 +124,9 @@ export const STAFF_SETUP: Record<string, string> = {
   '{feature} is off: everyone works as before until it is on.': '{feature} ఆఫ్‌లో ఉంది: ఆన్ చేసే వరకు అందరూ మునుపటిలాగే పని చేస్తారు.',
   'Payment for pharmacy bills is taken by the Pharmacy department.': 'ఫార్మసీ బిల్లుల చెల్లింపును ఫార్మసీ విభాగం తీసుకుంటుంది.',
   'Payment is taken by the Billing & Payments department. Save the bill as Unpaid.': 'చెల్లింపును బిల్లింగ్ & చెల్లింపుల విభాగం తీసుకుంటుంది. బిల్లును చెల్లించలేదుగా సేవ్ చేయండి.',
+  'Who can see what': 'ఎవరు ఏమి చూడవచ్చు',
+  'Tick the roles that may open each page. People without access do not see the page in their menu, and for billing, payments, the financial dashboard and inventory the database also stops them reading that information. The Super Admin can always open everything.': 'ప్రతి పేజీని తెరవగల పాత్రలను టిక్ చేయండి. అనుమతి లేనివారికి ఆ పేజీ మెనూలో కనిపించదు; బిల్లింగ్, చెల్లింపులు, ఆర్థిక డ్యాష్‌బోర్డ్, ఇన్వెంటరీ సమాచారాన్ని డేటాబేస్ కూడా వారికి చూపదు. సూపర్ అడ్మిన్ ఎప్పుడైనా అన్నీ తెరవవచ్చు.',
+  'Hide billing and payments from doctors and nurses': 'డాక్టర్లు, నర్సుల నుండి బిల్లింగ్, చెల్లింపులు దాచండి',
+  'Show billing and payments to doctors and nurses again': 'డాక్టర్లు, నర్సులకు బిల్లింగ్, చెల్లింపులు మళ్లీ చూపండి',
+  'Could not read the card': 'కార్డును చదవలేకపోయాం',
 };

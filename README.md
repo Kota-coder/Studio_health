@@ -129,6 +129,13 @@ database enforces the same rules with row level security.
   today) to mark it paid, which prints the receipt. A test is never billed twice: once billed it
   shows its bill instead of "Bill Test". Their dashboard starts on the patients with their
   requests or waiting ones.
+- **Who can see what** (Setup → Hospital Profile): tick which roles may open each page, for
+  example to keep billing, payments and the financial dashboard away from doctors and nurses
+  (one button does exactly that). People without access don't see the page in their menu or
+  open it, and for billing, payments, the financial dashboard and inventory the database also
+  refuses to show them the bills, payments and stock entries, so the data is hidden, not just
+  the page. Lab technicians, pharmacists and billing staff keep the bill access their work needs
+  (departments below). The Super Admin always sees everything.
 - **Departments and responsibilities** (Setup → Hospital Profile): each kind of work belongs to
   a department, and the hospital chooses which roles do it:
   **Clinical** (request tests, prescribe medicines for the pharmacy: Doctor, Nurse, Admin),

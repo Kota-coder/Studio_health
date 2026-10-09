@@ -26,7 +26,8 @@ export function BrandingProvider({ initialProfile, children }: { initialProfile:
         const changed = (['name', 'shortName', 'tagline', 'brandColor', 'logoFolder', 'configuredAt'] as const)
           .some(key => (latest[key] ?? null) !== (initialProfile[key] ?? null))
           || (latest.disabledModules ?? []).join() !== (initialProfile.disabledModules ?? []).join()
-          || JSON.stringify(latest.responsibilities ?? {}) !== JSON.stringify(initialProfile.responsibilities ?? {});
+          || JSON.stringify(latest.responsibilities ?? {}) !== JSON.stringify(initialProfile.responsibilities ?? {})
+          || JSON.stringify(latest.pageAccess ?? {}) !== JSON.stringify(initialProfile.pageAccess ?? {});
         if (changed) setProfile(prev => ({ ...prev, ...latest }));
       })
       .catch(() => undefined); // keep what the page was built with

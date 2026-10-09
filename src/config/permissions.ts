@@ -34,6 +34,17 @@ export const PAGE_ROLES = {
   admin: ["Super Admin"],
 } satisfies Record<string, StaffRole[]>;
 
+export type PageKey = keyof typeof PAGE_ROLES;
+// Where the hospital has changed who may open a page (Hospital Profile → Who can see what).
+export type PageAccess = Partial<Record<PageKey, StaffRole[]>>;
+
+// The roles that may open a page: the hospital's setting, or the defaults above. The Super
+// Admin may always open every page. The database enforces this for the pages that hold
+// billing, payment and stock data (page_allowed() in the schema).
+export const rolesForPage = (page: PageKey, overrides?: PageAccess | null): readonly StaffRole[] => overrides?.[page] ?? PAGE_ROLES[page];
+export const mayOpenPage = (page: PageKey, role: StaffRole, overrides?: PageAccess | null) =>
+  role === 'Super Admin' || rolesForPage(page, overrides).includes(role);
+
 // Who plans the duty roster and corrects attendance (the database enforces the same).
 export const DUTY_MANAGER_ROLES: StaffRole[] = ["Super Admin", "Admin"];
 // Who can see everyone's attendance (Accounts for salaries); others see their own.

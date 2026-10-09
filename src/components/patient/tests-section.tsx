@@ -16,7 +16,6 @@ import { RequestTestDialog } from '@/components/lab/request-test-dialog';
 import { AttachmentList } from '@/components/patient/attachment-picker';
 import { TestForm } from '@/components/patient/test-form';
 import { loadTestCatalog, useLoadOnce } from '@/components/patient/use-load-once';
-import { canOpen } from '@/config/permissions';
 import { useStaff } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
 import { useWorkflow } from '@/hooks/use-workflow';
@@ -49,8 +48,8 @@ export function TestsSection({ patient, staff, bills, requests: allRequests, onR
   const { isOn } = useFeatures();
   const currentUser = useStaff();
   // With Lab Requests on, doctors and nurses request tests and the lab records them.
-  const { labOn, canRequest, canProcessLab, canCollect } = useWorkflow();
-  const canBill = isOn('billing') && canOpen('billing', currentUser.role);
+  const { labOn, canRequest, canProcessLab, canCollect, canSeeBills } = useWorkflow();
+  const canBill = canSeeBills;
   const canCollectTests = canCollect('Treatment'); // the billing department
   const catalog = useLoadOnce(loadTestCatalog);
   const [showForm, setShowForm] = useState(false);
