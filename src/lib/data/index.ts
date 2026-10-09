@@ -737,10 +737,10 @@ export const testRequests = invalidatesOnWrite({
     return (rows as Row[]).map(testRequestFromRow);
   },
 
-  // One patient's open requests.
-  async listOpenForPatient(patientId: number): Promise<TestRequest[]> {
+  // One patient's requests (all statuses, newest first), for the patient page.
+  async listForPatient(patientId: number): Promise<TestRequest[]> {
     const rows = check(await db().from('test_requests').select('*')
-      .eq('patient_id', patientId).in('status', OPEN_REQUEST).order('created_at'));
+      .eq('patient_id', patientId).order('created_at', { ascending: false }).limit(200));
     return (rows as Row[]).map(testRequestFromRow);
   },
 

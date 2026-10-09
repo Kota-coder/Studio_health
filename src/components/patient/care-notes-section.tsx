@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from '@/components/app-link';
 import { ClipboardList, IndianRupee, PackageCheck, Pill, PlusCircle, Send, ShoppingCart } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -32,8 +32,10 @@ const newestFirst = (a: CareNote, b: CareNote) => Date.parse(b.createdAt) - Date
 // With Pharmacy Orders on, a note's medicines go to the pharmacy ("Send to Pharmacy"), which
 // dispenses and bills them; each note shows where its order stands. Otherwise "Bill Meds"
 // turns a note's medicines into a pharmacy bill directly.
-export function CareNotesSection({ patient, orders, onOrdersChanged, onSaved, onBilled }: {
+export function CareNotesSection({ patient, orders, onOrdersChanged, openForm: openFormNow, onFormOpened, onSaved, onBilled }: {
   patient: Patient;
+  openForm?: boolean; // the page's "Add Care Note" quick action
+  onFormOpened?: () => void;
   orders: PharmacyOrder[]; // this patient's pharmacy orders (loaded by the patient page)
   onOrdersChanged: () => Promise<void>;
   onSaved: () => Promise<void>;
@@ -71,6 +73,18 @@ export function CareNotesSection({ patient, orders, onOrdersChanged, onSaved, on
   const ensureTemplates = () => { templates.ensure().catch(loadFailed('care note templates')); };
 
   const openForm = () => { ensureTemplates(); setShowForm(true); };
+  // The list starts open, so load the templates its notes use (for their field labels).
+  const usesTemplates = notes.some(n => n.templateId);
+  useEffect(() => {
+    if (usesTemplates) ensureTemplates();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once the notes use templates
+  }, [usesTemplates]);
+  useEffect(() => {
+    if (!openFormNow) return;
+    openForm();
+    onFormOpened?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- each time the quick action is used
+  }, [openFormNow]);
 
   const billMedications = async (note: CareNote) => {
     const mentioned = note.medicationsMentioned ?? [];
@@ -131,7 +145,7 @@ export function CareNotesSection({ patient, orders, onOrdersChanged, onSaved, on
         {notes.length === 0 ? (
           <p className="text-sm italic text-muted-foreground">No care notes added yet.</p>
         ) : (
-          <Accordion type="single" collapsible className="w-full"
+          <Accordion type="single" collapsible defaultValue="care-notes" className="w-full"
             onValueChange={value => { if (value && notes.some(n => n.templateId)) ensureTemplates(); }}>
             <AccordionItem value="care-notes">
               <AccordionTrigger className="py-2 text-sm hover:no-underline">View Recorded Notes ({notes.length})</AccordionTrigger>

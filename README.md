@@ -107,6 +107,17 @@ database enforces the same rules with row level security.
 - **Patients:** registration (with consent capture and ID-card scanning), care notes with
   treatment templates, tests, attachments, conditions, and a printable **Treatment Summary** on
   the hospital's letterhead.
+- **The patient page is the centre of the treatment.** Its header shows the condition, age,
+  and allergies (in red, or "Allergies not recorded"), with quick actions: Add Care Note,
+  Request Test, New Bill and Treatment Summary. Its tabs:
+  **Overview** (day in care, care team, tests and medicines still waiting, unpaid bills, the
+  latest results with values outside the normal range, the latest care note, the patient's
+  details, **Medical History**: allergies, long-term conditions, past illnesses and operations,
+  family history and medicines taken at home, and the care team);
+  **History** (one timeline of everything: admission, notes, tests requested and their results,
+  medicines sent and given, bills and payments, and changes to the record, filterable by kind);
+  **Care Notes**; **Tests & Results** (requests, results, and a table of each test's results over
+  time); **Medicines**; and **Bills**. Links can open a tab directly (`?tab=tests`).
 - **Lab requests** (Patients → Lab Requests): on a patient's page, **Request Test** sends a test
   to the lab: routine or urgent, either to the lab queue (the next available technician takes it)
   or to a particular **Lab Technician**, with who is on duty now and how busy each one is. The

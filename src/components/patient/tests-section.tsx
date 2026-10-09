@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CalendarDays, ClipboardCheck, FlaskConical, IndianRupee, Microscope, PlusCircle, ShoppingCart, UserCircle, X } from 'lucide-react';
 import Link from '@/components/app-link';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -27,16 +27,20 @@ import { normalRange, rangeFlag, resultParameters } from '@/lib/test-templates';
 import type { Bill } from '@/types/billing';
 import type { Patient, TestEntry } from '@/types/patient';
 import type { StaffMember } from '@/types/staff';
-import type { TestRequest } from '@/types/testRequest';
+import { isOpenRequest, type TestRequest } from '@/types/testRequest';
 
 // Tests performed: the form to add one (the test catalog loads when it opens), the list,
 // and "Bill Test" to bill a test at its catalog price. With Lab Requests on, tests can also be
 // requested for the lab; the open requests show here until their result is recorded.
 // /patients/<id>?request=<request id> (from the lab queue) opens the result form for it.
-export function TestsSection({ patient, staff, bills, onSaved, onBilled }: {
+export function TestsSection({ patient, staff, bills, requests: allRequests, onRequestsChanged, action, onActionHandled, onSaved, onBilled }: {
   patient: Patient;
   staff: StaffMember[];
   bills: Bill[];
+  requests: TestRequest[]; // this patient's lab requests (loaded by the patient page)
+  onRequestsChanged: () => Promise<void>;
+  action?: 'request' | 'add'; // opened from the page's quick actions
+  onActionHandled?: () => void;
   onSaved: () => Promise<void>;
   onBilled: () => Promise<void>;
 }) {
@@ -50,28 +54,32 @@ export function TestsSection({ patient, staff, bills, onSaved, onBilled }: {
   const canCollectTests = canCollect('Treatment'); // the billing department
   const catalog = useLoadOnce(loadTestCatalog);
   const [showForm, setShowForm] = useState(false);
-  const [requests, setRequests] = useState<TestRequest[]>([]);
+  const requests = labOn ? allRequests.filter(isOpenRequest).reverse() : []; // oldest first
   const [resultFor, setResultFor] = useState<TestRequest | undefined>();
   const [showRequest, setShowRequest] = useState(false);
+  const loadRequests = () => onRequestsChanged().catch(() => toast({ title: t('Could not load the lab requests'), variant: 'destructive' }));
 
-  const loadRequests = useCallback(async () => {
-    if (!labOn) return [];
-    const list = await testRequests.listOpenForPatient(patient.id);
-    setRequests(list);
-    return list;
-  }, [labOn, patient.id]);
-
+  // From the lab queue (?request=<id>): open the result form for that request, once.
+  const openedFromLink = useRef(false);
   useEffect(() => {
-    loadRequests().then(list => {
-      const wanted = new URLSearchParams(window.location.search).get('request');
-      const request = wanted && list.find(r => r.id === wanted);
-      if (request && canProcessLab) {
-        recordResult(request);
-        document.getElementById('tests')?.scrollIntoView({ block: 'start' });
-      }
-    }).catch(() => toast({ title: t('Could not load the lab requests'), variant: 'destructive' }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per patient
-  }, [loadRequests]);
+    if (openedFromLink.current) return;
+    const wanted = new URLSearchParams(window.location.search).get('request');
+    const request = wanted && requests.find(r => r.id === wanted);
+    if (request && canProcessLab) {
+      openedFromLink.current = true;
+      recordResult(request);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- when the requests arrive
+  }, [allRequests]);
+
+  // Quick actions from the page header.
+  useEffect(() => {
+    if (!action) return;
+    if (action === 'request' && labOn && canRequest) openRequestDialog();
+    if (action === 'add' && canProcessLab) openForm();
+    onActionHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run for each new action
+  }, [action]);
   const tests = [...(patient.tests ?? [])].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 
   const openForm = () => {
@@ -165,7 +173,7 @@ export function TestsSection({ patient, staff, bills, onSaved, onBilled }: {
         {tests.length === 0 ? (
           <p className="mt-3 text-sm italic text-muted-foreground">No test entries added yet.</p>
         ) : (
-          <Accordion type="single" collapsible className="w-full">
+          <Accordion type="single" collapsible defaultValue="tests" className="w-full">
             <AccordionItem value="tests">
               <AccordionTrigger className="py-2 text-sm hover:no-underline">View Recorded Tests ({tests.length})</AccordionTrigger>
               <AccordionContent className="pt-2">
