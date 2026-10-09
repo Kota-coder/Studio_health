@@ -118,6 +118,24 @@ database enforces the same rules with row level security.
   today) to mark it paid, which prints the receipt. A test is never billed twice: once billed it
   shows its bill instead of "Bill Test". Their dashboard starts on the patients with their
   requests or waiting ones.
+- **Who does what** (while Lab Requests / Pharmacy Orders are on): doctors, nurses and admins
+  *request* tests and *send* medicines from the patient page; only the **Lab Technician** records
+  test results (and bills them), and only the **Pharmacist** dispenses medicines (and bills them).
+  The Super Admin can step in for either. The database enforces this too: results and pharmacy
+  bills from anyone else are refused. Switch a feature off and staff record tests and bill
+  medicines directly, as before.
+- **Test templates** (Setup → Medical Tests): each test has its price and its own result
+  template, set up like care note templates: the parameters the lab fills in (number, short or
+  long text, or a choice), with a unit and normal range for numbers. Results outside the range
+  are marked High or Low on the form, on the patient page and in the Treatment Summary. Each
+  result keeps a copy of the template it was recorded with. Known tests (ECG, X-Ray, Blood Panel)
+  start from a built-in template you can change.
+- **Pharmacy orders** (Pharmacy & Stock → Pharmacy Orders): medicines added to a care note are
+  sent to the pharmacy (or later with **Send to Pharmacy** on the note). The **Pharmacist** sees
+  what is waiting (also on their dashboard), opens **Dispense**, sets how much of each medicine
+  is given, with the stock on hand and prices, and confirms: that makes the pharmacy bill
+  (Unpaid), takes the medicines out of stock, and offers **Collect payment** straight away.
+  Each care note shows where its medicines stand (waiting, dispensed, bill and its status).
 - **Departments and care teams** (Staff → Departments): each department's doctors
   and nurses and a default doctor fee per case. On a patient, choose the department, attending
   doctor and nurse; the dashboard filters by department or "My Patients".
@@ -217,7 +235,7 @@ included amounts are generous for a hospital. The app still keeps traffic small:
 - **Salaries** are readable only by the roles that manage staff (`staff_salaries()`); other
   staff can see colleagues' names and roles but not their pay.
 - **Logins:** Supabase Auth (email and password). Staff are invited from the app; there is no
-  public sign-up. Roles: Super Admin, Admin, Doctor, Nurse, Receptionist, Accounts, Lab Technician.
+  public sign-up. Roles: Super Admin, Admin, Doctor, Nurse, Receptionist, Accounts, Lab Technician, Pharmacist.
 - **Row level security** on every table: only signed-in, active staff can read or write; deletes
   need a Super Admin (unpaid bills excepted); payments, fees, attendance and settings are limited
   to the roles that manage them.

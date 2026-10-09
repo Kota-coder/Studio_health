@@ -20,6 +20,8 @@ import type { PaymentMethodOption } from '@/types/paymentMethod';
 import type { InventoryItem, InventoryKind, NewStockMovement, StockMovement } from '@/types/inventory';
 import type { HospitalLink } from '@/types/hospitalLink';
 import type { LabTechnician, TestRequest } from '@/types/testRequest';
+import type { PharmacyOrder, PharmacyOrderItem } from '@/types/pharmacyOrder';
+import type { BillItem } from '@/types/billing';
 import { DEFAULT_PROFILE, type HospitalProfile } from '@/lib/branding';
 import { toDMY } from '@/lib/format';
 
@@ -452,6 +454,7 @@ export interface HomeSummary {
   myFees?: { pendingAmount: number; pendingCases: number };
   stock?: { outOfStock: number; low: number };
   lab?: { mine: number; waiting: number; urgent: number };
+  pharmacy?: { waiting: number; dispensedToday: number };
 }
 
 export function homeSummary(): Promise<HomeSummary | null> {
@@ -779,6 +782,86 @@ export const testRequests = invalidatesOnWrite({
     await updateOpenRequest(id, { status: 'Done', test_id: testId, assigned_to_staff_id: staffId });
   },
 }, ['create', 'take', 'release', 'cancel', 'complete'], ['lab:', 'summary:']);
+
+// ---------------------------------------------------------------------------
+// Pharmacy orders (the pharmacy's queue)
+// ---------------------------------------------------------------------------
+
+type BillSummaryRow = { id: string; payment_status: string; total_amount: number } | null;
+
+function pharmacyOrderFromRow(row: Row): PharmacyOrder {
+  const { patients: patient, bills: bill, ...rest } = row as Row & { patients?: { first_name: string; last_name: string } | null; bills?: BillSummaryRow };
+  const order = fromRow<PharmacyOrder>(rest);
+  order.items = order.items ?? [];
+  if (patient) order.patientName = `${patient.first_name} ${patient.last_name}`;
+  if (bill) order.bill = { id: bill.id, status: bill.payment_status, amount: Number(bill.total_amount) };
+  return order;
+}
+
+const PHARMACY_ORDER_COLUMNS = '*, patients(first_name, last_name), bills(id, payment_status, total_amount)';
+
+export const pharmacyOrders = invalidatesOnWrite({
+  // Orders waiting to be dispensed, oldest first.
+  async listOpen(): Promise<PharmacyOrder[]> {
+    return cached('pharmacy:open', DASHBOARD_TTL, async () => {
+      const rows = check(await db().from('pharmacy_orders').select(PHARMACY_ORDER_COLUMNS).eq('status', 'Requested').order('created_at'));
+      return (rows as Row[]).map(pharmacyOrderFromRow);
+    });
+  },
+
+  // Dispensed in the last day, newest first, with their bills.
+  async listRecentlyDispensed(): Promise<PharmacyOrder[]> {
+    const since = new Date(Date.now() - 86400000).toISOString();
+    const rows = check(await db().from('pharmacy_orders').select(PHARMACY_ORDER_COLUMNS)
+      .eq('status', 'Dispensed').gte('dispensed_at', since).order('dispensed_at', { ascending: false }).limit(50));
+    return (rows as Row[]).map(pharmacyOrderFromRow);
+  },
+
+  // One patient's orders (newest first), for the care notes they came from.
+  async listForPatient(patientId: number): Promise<PharmacyOrder[]> {
+    const rows = check(await db().from('pharmacy_orders').select('*, bills(id, payment_status, total_amount)')
+      .eq('patient_id', patientId).order('created_at', { ascending: false }).limit(100));
+    return (rows as Row[]).map(pharmacyOrderFromRow);
+  },
+
+  async create(order: { patientId: number; careNoteId?: string; items: PharmacyOrderItem[]; notes?: string }): Promise<PharmacyOrder> {
+    const row = check(await db().from('pharmacy_orders').insert(toRow(order)).select().single());
+    await addAuditEntry('patient', order.patientId, 'Sent to Pharmacy', `Medicines sent to the pharmacy: ${order.items.map(i => i.medicationName).join(', ')}.`);
+    return pharmacyOrderFromRow(row as Row);
+  },
+
+  // Dispenses an order: makes its pharmacy bill (Unpaid; taking the medicines out of stock)
+  // and marks the order dispensed. Items with quantity 0 are left out of the bill.
+  async dispense(order: PharmacyOrder, patientName: string, lines: Array<PharmacyOrderItem & { quantity: number; unitPrice: number }>): Promise<string> {
+    const items: BillItem[] = lines.filter(l => l.quantity > 0).map((l, i) => ({
+      id: `${order.id}-${i}`, description: l.medicationName, medicationId: l.medicationId,
+      quantity: l.quantity, originalUnitPrice: l.unitPrice, unitPrice: l.unitPrice, total: l.quantity * l.unitPrice,
+    }));
+    if (items.length === 0) throw new Error('Enter a quantity for at least one medicine.');
+    const dosages = lines.filter(l => l.dosage).map(l => `${l.medicationName} - ${l.dosage}`).join('; ');
+    const fields: Omit<Bill, 'id' | 'createdAt' | 'auditLog'> = {
+      patientId: order.patientId, patientName, billDate: toDMY(new Date()), billType: 'Pharmacy', items,
+      totalAmount: items.reduce((sum, item) => sum + item.total, 0), paymentMethod: '', paymentStatus: 'Unpaid',
+      notes: `Dispensed for pharmacy order${order.requestedByStaffName ? ` from ${order.requestedByStaffName}` : ''}.${dosages ? ` Dosages: ${dosages}` : ''}`,
+    };
+    const bill = billFromRow(check(await db().from('bills').insert(toRow(fields)).select().single()) as Row);
+    const updated = check(await db().from('pharmacy_orders')
+      .update({ status: 'Dispensed', bill_id: bill.id, items: lines.map(({ unitPrice: _price, ...item }) => item) })
+      .eq('id', order.id).eq('status', 'Requested').select('id')) as Row[];
+    if (updated.length === 0) {
+      await db().from('bills').delete().eq('id', bill.id);
+      throw new Error('This order has already been dispensed or cancelled.');
+    }
+    await addAuditEntry('bill', bill.id, 'Bill Created', 'Pharmacy bill created when the order was dispensed.');
+    return bill.id;
+  },
+
+  async cancel(order: PharmacyOrder): Promise<void> {
+    const rows = check(await db().from('pharmacy_orders').update({ status: 'Cancelled' }).eq('id', order.id).eq('status', 'Requested').select('id')) as Row[];
+    if (rows.length === 0) throw new Error('This order is no longer waiting.');
+    await addAuditEntry('patient', order.patientId, 'Pharmacy Order Cancelled', `Pharmacy order cancelled: ${order.items.map(i => i.medicationName).join(', ')}.`);
+  },
+}, ['create', 'dispense', 'cancel'], ['pharmacy:', 'summary:', 'dashboard:']);
 
 // ---------------------------------------------------------------------------
 // Bills

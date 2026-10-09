@@ -5,17 +5,20 @@ import Link from '@/components/app-link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FlaskConical, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { PageBody, PageHeader, PageLoading } from '@/components/page';
 import { useT } from '@/components/language-provider';
+import { TestParametersEditor, fromDrafts, toDrafts, type ParameterDraft } from '@/components/test-parameters-editor';
+import { builtinParameters } from '@/lib/test-templates';
 import { useToast } from '@/hooks/use-toast';
 import { testCatalog as testCatalogRepo } from '@/lib/data';
 import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 
-// Add or edit a medical test. Access is checked by PageGuard.
+// Add or edit a medical test: its price and its result template (the parameters the lab
+// fills in). Access is checked by PageGuard.
 export default function MedicalTestFormPage() {
   const t = useT();
   const router = useRouter();
@@ -27,6 +30,7 @@ export default function MedicalTestFormPage() {
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
   const [defaultPrice, setDefaultPrice] = useState('');
+  const [parameters, setParameters] = useState<ParameterDraft[]>([]);
   const [isLoading, setIsLoading] = useState(!!editId);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -42,6 +46,8 @@ export default function MedicalTestFormPage() {
       setCategory(item.category);
       setDescription(item.description || '');
       setDefaultPrice(item.defaultPrice != null ? String(item.defaultPrice) : '');
+      // A test without its own template starts from the built-in one for its name, if any.
+      setParameters(toDrafts(item.fields?.length ? item.fields : builtinParameters(item.name)));
     }).catch(() => toast({ title: 'Could not load the medical test', variant: 'destructive' }))
       .finally(() => setIsLoading(false));
   }, [editId, router, toast]);
@@ -56,11 +62,14 @@ export default function MedicalTestFormPage() {
       price = Number(defaultPrice);
       if (!Number.isFinite(price) || price < 0) return invalid('Check the price', 'Price must be 0 or more, or left empty.');
     }
+    const fields = fromDrafts(parameters);
+    if (typeof fields === 'string') return invalid('Check the result parameters', fields);
     const data: Omit<MedicalTestCatalogItem, 'id'> = {
       name: name.trim(),
       category: category.trim(),
       description: description.trim() || undefined,
       defaultPrice: price,
+      fields,
     };
     setIsSaving(true);
     try {
@@ -99,6 +108,15 @@ export default function MedicalTestFormPage() {
             <Label htmlFor="defaultPrice">Price (₹) (optional)</Label>
             <Input id="defaultPrice" type="number" inputMode="decimal" value={defaultPrice} onChange={e => setDefaultPrice(e.target.value)} placeholder="e.g., 1200.00" min="0" step="0.01" />
           </div>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">{t('Result template')}</CardTitle>
+          <CardDescription>{t('What the lab technician fills in for this test. Numbers can have a unit and a normal range; results outside it are marked High or Low.')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <TestParametersEditor value={parameters} onChange={setParameters} />
         </CardContent>
         <CardFooter className="flex justify-between gap-2">
           <Button variant="outline" asChild><Link href="/medical-tests">{t('Cancel')}</Link></Button>

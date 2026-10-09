@@ -4,13 +4,14 @@
 // removed again with removeSampleDataFromDatabase().
 
 import {
-  bills, countRows, departments, inventory, materials, medications, patients, payments, referringDoctors, testCatalog, testRequests, vendors,
+  bills, countRows, departments, inventory, materials, medications, patients, payments, pharmacyOrders, referringDoctors, testCatalog, testRequests, vendors,
 } from '@/lib/data';
 import { maskAadhaarNumber, isAadhaarCard } from '@/lib/aadhaar';
 import { SHIFT_PRESETS, dateKey, shiftWindow, weekStartOf } from '@/lib/duty';
 import { billedProcedures, referralLines, referralTotal } from '@/lib/referralFee';
 import type { Bill, BillItem, PaymentMethod, PaymentStatus } from '@/types/billing';
 import type { CareNote, PatientCondition, PatientAdmissionCondition, TestEntry, TestFieldData } from '@/types/patient';
+import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 import type { Payment } from '@/types/payment';
 import type { ShiftType, StaffShift } from '@/types/duty';
 import { SEED_PATIENTS } from './patients';
@@ -110,13 +111,32 @@ const SAMPLE_VENDORS = [
   { name: 'City Surgicals', contactPerson: 'Abdul Rahman', phoneNumber: '9811100004', email: 'citysurgicals@example.com', address: 'Koti, Hyderabad' },
 ];
 // Names matching the built-in test forms (ECG, Blood Panel, X-Ray) get their result fields.
-const SAMPLE_TESTS = [
+// Tests without fields use the built-in result template for their name (ECG, X-Ray).
+const SAMPLE_TESTS: Array<Omit<MedicalTestCatalogItem, 'id' | 'description'>> = [
   { name: 'ECG', category: 'Cardiology', defaultPrice: 300 },
-  { name: 'Blood Panel', category: 'Blood Work', defaultPrice: 650 },
+  { name: 'Blood Panel', category: 'Blood Work', defaultPrice: 650, fields: [
+    { id: 'hemoglobin', label: 'Hemoglobin', type: 'number', unit: 'g/dL', low: 12, high: 17, required: true },
+    { id: 'wbc_count', label: 'WBC Count', type: 'number', unit: 'x10^9/L', low: 4, high: 11 },
+    { id: 'platelets', label: 'Platelets', type: 'number', unit: 'x10^9/L', low: 150, high: 400 },
+    { id: 'rbc_count', label: 'RBC Count', type: 'number', unit: 'x10^12/L', low: 4.2, high: 5.9 },
+  ] },
   { name: 'X-Ray', category: 'Imaging', defaultPrice: 500 },
-  { name: '2D Echo', category: 'Cardiology', defaultPrice: 1800 },
-  { name: 'TMT (Treadmill Test)', category: 'Cardiology', defaultPrice: 2200 },
-  { name: 'Lipid Profile', category: 'Blood Work', defaultPrice: 550 },
+  { name: '2D Echo', category: 'Cardiology', defaultPrice: 1800, fields: [
+    { id: 'ejection_fraction', label: 'Ejection Fraction', type: 'number', unit: '%', low: 55, high: 70, required: true },
+    { id: 'valves', label: 'Valves', type: 'choice', options: ['Normal', 'Mild regurgitation', 'Moderate regurgitation', 'Severe regurgitation'] },
+    { id: 'impression', label: 'Impression', type: 'textarea' },
+  ] },
+  { name: 'TMT (Treadmill Test)', category: 'Cardiology', defaultPrice: 2200, fields: [
+    { id: 'result', label: 'Result', type: 'choice', options: ['Negative', 'Positive', 'Inconclusive'], required: true },
+    { id: 'max_heart_rate', label: 'Max Heart Rate', type: 'number', unit: 'bpm' },
+    { id: 'duration_min', label: 'Exercise Duration', type: 'number', unit: 'min' },
+  ] },
+  { name: 'Lipid Profile', category: 'Blood Work', defaultPrice: 550, fields: [
+    { id: 'total_cholesterol', label: 'Total Cholesterol', type: 'number', unit: 'mg/dL', high: 200, required: true },
+    { id: 'ldl', label: 'LDL', type: 'number', unit: 'mg/dL', high: 100 },
+    { id: 'hdl', label: 'HDL', type: 'number', unit: 'mg/dL', low: 40 },
+    { id: 'triglycerides', label: 'Triglycerides', type: 'number', unit: 'mg/dL', high: 150 },
+  ] },
 ];
 
 async function sampleStaffApi(method: 'POST' | 'DELETE'): Promise<SampleStaff[]> {
@@ -416,6 +436,15 @@ export async function loadSampleDataIntoDatabase(
     summary.testRequests++;
   }
 
+  // Two prescriptions waiting at the pharmacy.
+  for (const patientCase of inCare.slice(0, 2)) {
+    const meds = [random.pick(createdMedications), random.pick(createdMedications)].filter((m, i, all) => all.indexOf(m) === i);
+    await pharmacyOrders.create({
+      patientId: patientCase.id,
+      items: meds.map(m => ({ medicationId: m.id, medicationName: m.name, dosage: random.pick(['1-0-1 after food for 5 days', '0-0-1 at night for 10 days']) })),
+    });
+  }
+
   onProgress?.('Adding bills...');
   billPlans.sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
   for (const bill of billPlans) {
@@ -444,7 +473,7 @@ export async function loadSampleDataIntoDatabase(
     for (const member of staff.filter(s => s.role !== 'Doctor')) {
       addPayment(monthDays, {
         paymentDate: '', paymentType: 'Salary', payeeId: member.id, payeeName: member.name, payeeType: 'StaffMember',
-        description: `Monthly salary – ${member.name}`, amount: ({ Nurse: 15000, Receptionist: 10000, Accounts: 12000, 'Lab Technician': 14000 } as Record<string, number>)[member.role] ?? 10000,
+        description: `Monthly salary – ${member.name}`, amount: ({ Nurse: 15000, Receptionist: 10000, Accounts: 12000, 'Lab Technician': 14000, Pharmacist: 16000 } as Record<string, number>)[member.role] ?? 10000,
         paymentMethod: 'Bank Transfer',
       });
     }
@@ -604,7 +633,7 @@ function buildSampleDuty(
     });
     for (const person of staff.filter(s => s.role === 'Receptionist')) if (weekday < 6) add(person, 'Morning');
     for (const person of staff.filter(s => s.role === 'Accounts')) if (weekday < 5) add(person, 'Day');
-    for (const person of staff.filter(s => s.role === 'Lab Technician')) if (weekday < 6) add(person, 'Day');
+    for (const person of staff.filter(s => s.role === 'Lab Technician' || s.role === 'Pharmacist')) if (weekday < 6) add(person, 'Day');
   }
 
   const now = new Date();

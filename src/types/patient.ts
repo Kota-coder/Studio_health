@@ -1,3 +1,4 @@
+import type { TestParameter } from '@/types/medicalTestCatalogItem';
 
 export type DoctorFeeStatus = "Pending" | "Paid";
 export type PatientCondition = "Critical" | "Medium" | "Low" | "Discharged" | "Unassigned";
@@ -47,6 +48,7 @@ export interface TestEntry {
   createdAt: string;
   attachments?: string[]; // Storage paths in the patient-files bucket (data: URLs only before upload)
   billId?: string; // the bill it was charged on
+  resultFields?: TestParameter[]; // the template's parameters when the result was recorded
 }
 
 // One billed procedure type and the referral % applied to it.

@@ -1,4 +1,4 @@
-export type StaffRole = "Super Admin" | "Admin" | "Doctor" | "Nurse" | "Receptionist" | "Accounts" | "Lab Technician";
+export type StaffRole = "Super Admin" | "Admin" | "Doctor" | "Nurse" | "Receptionist" | "Accounts" | "Lab Technician" | "Pharmacist";
 
 export interface StaffMember {
   id: number;

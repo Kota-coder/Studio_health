@@ -16,6 +16,7 @@ import {
   referringDoctors as referringDoctorsRepo, staff as staffRepo,
 } from '@/lib/data';
 import { formatINR, parseStoredDate as toDate, patientDisplayId } from '@/lib/format';
+import { resultParameters } from '@/lib/test-templates';
 import type { Bill } from '@/types/billing';
 import type { Department } from '@/types/department';
 import type { Patient } from '@/types/patient';
@@ -82,7 +83,10 @@ export default function PatientSummaryPage() {
       kind: 'Test',
       date: toDate(test.datePerformed) ?? toDate(test.createdAt),
       name: test.testTypeName,
-      detail: test.overallResults || Object.entries(test.testData ?? {}).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join(', '),
+      detail: test.overallResults || Object.entries(test.testData ?? {}).map(([k, v]) => {
+        const field = resultParameters(test).find(f => f.id === k);
+        return `${field?.label ?? k.replace(/_/g, ' ')}: ${v}${field?.unit ? ` ${field.unit}` : ''}`;
+      }).join(', '),
       by: test.performedByStaffName,
     }));
     for (const bill of bills.filter(b => b.billType === 'Treatment')) {

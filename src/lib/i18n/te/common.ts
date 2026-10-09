@@ -116,6 +116,7 @@ export const COMMON: Record<string, string> = {
   'Nurse': 'నర్స్',
   'Receptionist': 'రిసెప్షనిస్ట్',
   'Lab Technician': 'ల్యాబ్ టెక్నీషియన్',
+  'Pharmacist': 'ఫార్మసిస్ట్',
   'Accounts': 'అకౌంట్స్',
   // Statuses and conditions (stored in English, shown translated)
   'Paid': 'చెల్లించారు',

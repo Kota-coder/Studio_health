@@ -16,6 +16,7 @@ import { useT } from '@/components/language-provider';
 import { useToast } from '@/hooks/use-toast';
 import { testCatalog as testCatalogRepo } from '@/lib/data';
 import { formatINR } from '@/lib/format';
+import { parametersFor } from '@/lib/test-templates';
 import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 
 // The tests the hospital offers, with their usual price.
@@ -64,7 +65,7 @@ export default function MedicalTestsPage() {
 
   return (
     <PageBody>
-      <PageHeader icon={FlaskConical} title={t('Medical Tests')} description={t('The tests the hospital offers, with their usual price.')}
+      <PageHeader icon={FlaskConical} title={t('Medical Tests')} description={t('The tests the hospital offers, with their price and the results the lab records for each.')}
         actions={<>
           <CsvImport what={t('medical tests')} importRows={importRows}
             columns={[
@@ -87,6 +88,7 @@ export default function MedicalTestsPage() {
                 <TableRow>
                   <TableHead>Test name</TableHead>
                   <TableHead className="hidden sm:table-cell">Category</TableHead>
+                  <TableHead className="hidden md:table-cell">Result template</TableHead>
                   <TableHead className="text-right">Price</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -99,6 +101,9 @@ export default function MedicalTestsPage() {
                       <span className="block text-xs text-muted-foreground sm:hidden">{item.category}</span>
                     </TableCell>
                     <TableCell className="hidden sm:table-cell">{item.category}</TableCell>
+                    <TableCell className="hidden max-w-xs truncate text-sm text-muted-foreground md:table-cell">
+                      {parametersFor(item).map(p => p.label).join(', ') || '—'}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{item.defaultPrice != null ? formatINR(item.defaultPrice) : '—'}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">

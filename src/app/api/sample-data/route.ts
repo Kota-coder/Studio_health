@@ -22,6 +22,7 @@ const SAMPLE_STAFF = [
   { name: 'Meena Joshi', role: 'Receptionist', phone_number: '9800000005', salary: 10000 },
   { name: 'Suresh Rao', role: 'Accounts', phone_number: '9800000006', salary: 12000 },
   { name: 'Ravi Kumar', role: 'Lab Technician', phone_number: '9800000009', salary: 14000 },
+  { name: 'Farah Siddiqui', role: 'Pharmacist', phone_number: '9800000010', salary: 16000 },
 ];
 
 async function requireSuperAdmin() {

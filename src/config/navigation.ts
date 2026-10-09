@@ -2,7 +2,7 @@
 // database also enforces) and which switchable feature it belongs to (src/config/modules.ts).
 // The menu, the page guard (components/page-guard.tsx) and the page titles all come from here.
 import {
-  AreaChart, Boxes, Building2, CalendarClock, ClipboardPlus, CreditCard, Database, FileText, FlaskConical, Microscope,
+  AreaChart, Boxes, Building2, CalendarClock, ClipboardPlus, CreditCard, Database, FileText, FlaskConical, Microscope, ClipboardList,
   HeartHandshake, Hospital, LayoutDashboard, Package, Pill, Receipt, Truck, Users, Wallet,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -32,6 +32,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/financial-dashboard', label: 'Financial Dashboard', icon: AreaChart, section: 'Money', roles: PAGE_ROLES.financialDashboard, module: 'financialDashboard' },
 
   { href: '/inventory', label: 'Inventory', icon: Boxes, section: 'Pharmacy & Stock', roles: PAGE_ROLES.inventory, module: 'inventory' },
+  { href: '/pharmacy-orders', label: 'Pharmacy Orders', icon: ClipboardList, section: 'Pharmacy & Stock', roles: PAGE_ROLES.pharmacyOrders, module: 'pharmacyOrders' },
   { href: '/pharmacy', label: 'Pharmacy', icon: Pill, section: 'Pharmacy & Stock', roles: PAGE_ROLES.medications, module: 'medications' },
   { href: '/materials', label: 'Materials', icon: Package, section: 'Pharmacy & Stock', roles: PAGE_ROLES.materials, module: 'materials' },
   { href: '/vendors', label: 'Vendors', icon: Truck, section: 'Pharmacy & Stock', roles: PAGE_ROLES.vendors, module: 'vendors' },

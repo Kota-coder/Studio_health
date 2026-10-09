@@ -14,14 +14,16 @@ import { useFormat, useT } from '@/components/language-provider';
 import { RequestSummary } from '@/components/lab/request-summary';
 import { RequestTestDialog } from '@/components/lab/request-test-dialog';
 import { AttachmentList } from '@/components/patient/attachment-picker';
-import { TestForm, testDefinitionFor } from '@/components/patient/test-form';
+import { TestForm } from '@/components/patient/test-form';
 import { loadTestCatalog, useLoadOnce } from '@/components/patient/use-load-once';
 import { canOpen } from '@/config/permissions';
 import { useStaff } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
+import { useWorkflow } from '@/hooks/use-workflow';
 import { useToast } from '@/hooks/use-toast';
 import { bills as billsRepo, testRequests } from '@/lib/data';
 import { formatINR } from '@/lib/format';
+import { normalRange, rangeFlag, resultParameters } from '@/lib/test-templates';
 import type { Bill } from '@/types/billing';
 import type { Patient, TestEntry } from '@/types/patient';
 import type { StaffMember } from '@/types/staff';
@@ -42,7 +44,8 @@ export function TestsSection({ patient, staff, bills, onSaved, onBilled }: {
   const { toast } = useToast();
   const { isOn } = useFeatures();
   const currentUser = useStaff();
-  const labOn = isOn('labRequests');
+  // With Lab Requests on, doctors and nurses request tests and the lab records them.
+  const { labOn, canRequest, canProcessLab } = useWorkflow();
   const canBill = isOn('billing') && canOpen('billing', currentUser.role);
   const catalog = useLoadOnce(loadTestCatalog);
   const [showForm, setShowForm] = useState(false);
@@ -61,7 +64,7 @@ export function TestsSection({ patient, staff, bills, onSaved, onBilled }: {
     loadRequests().then(list => {
       const wanted = new URLSearchParams(window.location.search).get('request');
       const request = wanted && list.find(r => r.id === wanted);
-      if (request) {
+      if (request && canProcessLab) {
         recordResult(request);
         document.getElementById('tests')?.scrollIntoView({ block: 'start' });
       }
@@ -120,8 +123,8 @@ export function TestsSection({ patient, staff, bills, onSaved, onBilled }: {
         <CardTitle className="flex items-center"><FlaskConical className="mr-2 h-5 w-5 text-primary" />{t('Tests Performed')}</CardTitle>
         {!showForm && (
           <div className="flex flex-wrap gap-2">
-            {labOn && <Button size="sm" onClick={openRequestDialog}><Microscope className="mr-2 h-4 w-4" /> {t('Request Test')}</Button>}
-            <Button variant="outline" size="sm" onClick={openForm}><PlusCircle className="mr-2 h-4 w-4" /> {t('Add Test')}</Button>
+            {labOn && canRequest && <Button size="sm" onClick={openRequestDialog}><Microscope className="mr-2 h-4 w-4" /> {t('Request Test')}</Button>}
+            {canProcessLab && <Button variant="outline" size="sm" onClick={openForm}><PlusCircle className="mr-2 h-4 w-4" /> {t('Add Test')}</Button>}
           </div>
         )}
       </CardHeader>
@@ -134,12 +137,16 @@ export function TestsSection({ patient, staff, bills, onSaved, onBilled }: {
                 <li key={request.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start sm:justify-between">
                   <RequestSummary request={request} />
                   <div className="flex shrink-0 gap-2">
-                    <Button size="sm" onClick={() => recordResult(request)} disabled={showForm}>
-                      <ClipboardCheck className="mr-2 h-4 w-4" /> {t('Record result')}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => cancelRequest(request)} aria-label={t('Cancel request')}>
-                      <X className="h-4 w-4" />
-                    </Button>
+                    {canProcessLab && (
+                      <Button size="sm" onClick={() => recordResult(request)} disabled={showForm}>
+                        <ClipboardCheck className="mr-2 h-4 w-4" /> {t('Record result')}
+                      </Button>
+                    )}
+                    {(canRequest || canProcessLab) && (
+                      <Button size="sm" variant="ghost" onClick={() => cancelRequest(request)} aria-label={t('Cancel request')}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </li>
               ))}
@@ -164,7 +171,7 @@ export function TestsSection({ patient, staff, bills, onSaved, onBilled }: {
                 <div className="max-h-96 space-y-3 overflow-y-auto pr-2">
                   {tests.map(test => (
                     <TestCard key={test.id} test={test} bill={test.billId ? bills.find(b => b.id === test.billId) ?? { id: test.billId } : undefined}
-                      canBill={canBill} onBill={() => billTest(test)} />
+                      canBill={canBill} canBillTest={canBill && canProcessLab} onBill={() => billTest(test)} />
                   ))}
                 </div>
               </AccordionContent>
@@ -176,10 +183,16 @@ export function TestsSection({ patient, staff, bills, onSaved, onBilled }: {
   );
 }
 
-function TestCard({ test, bill, canBill, onBill }: { test: TestEntry; bill?: Pick<Bill, 'id'> & Partial<Bill>; canBill: boolean; onBill: () => void }) {
+function TestCard({ test, bill, canBill, canBillTest, onBill }: {
+  test: TestEntry;
+  bill?: Pick<Bill, 'id'> & Partial<Bill>;
+  canBill: boolean; // may collect payment
+  canBillTest: boolean; // may bill an unbilled test (the lab, with Lab Requests on)
+  onBill: () => void;
+}) {
   const t = useT();
   const { date } = useFormat();
-  const fields = (testDefinitionFor(test.testTypeId, test.testTypeName)?.fields ?? [])
+  const fields = resultParameters(test)
     .filter(field => test.testData?.[field.id] !== undefined && String(test.testData[field.id]).trim() !== '');
 
   return (
@@ -189,10 +202,19 @@ function TestCard({ test, bill, canBill, onBill }: { test: TestEntry; bill?: Pic
       {test.performedByStaffName && <p className="flex items-center text-xs text-muted-foreground"><UserCircle className="mr-1.5 h-3 w-3" />Logged by: {test.performedByStaffName}</p>}
       {fields.length > 0 && (
         <div className="mt-1.5 space-y-0.5">
-          <p className="text-xs font-medium">Test Specific Data:</p>
-          {fields.map(field => (
-            <p key={field.id} className="pl-2 text-xs"><span className="font-medium">{field.label}:</span> {String(test.testData?.[field.id])}</p>
-          ))}
+          <p className="text-xs font-medium">{t('Results')}:</p>
+          {fields.map(field => {
+            const value = test.testData?.[field.id];
+            const flag = rangeFlag(field, value);
+            const range = normalRange(field);
+            return (
+              <p key={field.id} className="pl-2 text-xs">
+                <span className="font-medium">{field.label}:</span>{' '}
+                <span className={flag ? 'font-semibold text-destructive' : undefined}>{String(value)}{field.type === 'number' && field.unit ? ` ${field.unit}` : ''}{flag ? ` (${t(flag)})` : ''}</span>
+                {range && <span className="text-muted-foreground"> · {t('Normal: {range}', { range })}</span>}
+              </p>
+            );
+          })}
         </div>
       )}
       {test.overallResults && <div className="mt-1.5"><p className="text-xs font-medium">Overall Results:</p><p className="whitespace-pre-wrap text-xs">{test.overallResults}</p></div>}
@@ -209,7 +231,7 @@ function TestCard({ test, bill, canBill, onBill }: { test: TestEntry; bill?: Pic
           )}
         </div>
       )}
-      {canBill && !bill && (
+      {canBillTest && !bill && (
         <div className="mt-2 flex justify-end">
           <AlertDialog>
             <AlertDialogTrigger asChild>

@@ -16,6 +16,7 @@ import { testRequests } from '@/lib/data';
 import { cachedAt, invalidate } from '@/lib/data/cache';
 import { canOpen } from '@/config/permissions';
 import { useFeatures } from '@/hooks/use-features';
+import { useWorkflow } from '@/hooks/use-workflow';
 import { formatINR, patientDisplayId } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { TestRequest } from '@/types/testRequest';
@@ -33,6 +34,7 @@ export default function LabPage() {
   const isTechnician = currentUser.role === 'Lab Technician';
   const { isOn } = useFeatures();
   const canBill = isOn('billing') && canOpen('billing', currentUser.role);
+  const { canProcessLab } = useWorkflow(); // taking requests and recording results
 
   const [open, setOpen] = useState<TestRequest[] | null>(null);
   const [done, setDone] = useState<TestRequest[] | null>(null);
@@ -169,14 +171,16 @@ export default function LabPage() {
                     )}
                     {view !== 'done' && (
                       <div className="flex shrink-0 flex-wrap gap-2">
-                        {(!request.assignedToStaffId || (mine && request.status === 'Requested')) && (
+                        {canProcessLab && (!request.assignedToStaffId || (mine && request.status === 'Requested')) && (
                           <Button size="sm" variant="outline" disabled={busy} onClick={() => act(request, () => testRequests.take(request.id, currentUser.id))}>
                             <Hand className="mr-2 h-4 w-4" /> {mine ? t('Start') : t('Take')}
                           </Button>
                         )}
-                        <Button size="sm" asChild>
-                          <Link href={resultLink(request)}><ClipboardCheck className="mr-2 h-4 w-4" /> {t('Record result')}</Link>
-                        </Button>
+                        {canProcessLab && (
+                          <Button size="sm" asChild>
+                            <Link href={resultLink(request)}><ClipboardCheck className="mr-2 h-4 w-4" /> {t('Record result')}</Link>
+                          </Button>
+                        )}
                         {request.assignedToStaffId && (mine || !isTechnician) && (
                           <Button size="sm" variant="ghost" disabled={busy} onClick={() => act(request, () => testRequests.release(request.id))}>
                             <Undo2 className="mr-2 h-4 w-4" /> {t('Back to queue')}
