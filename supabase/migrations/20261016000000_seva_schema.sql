@@ -554,6 +554,8 @@ alter table public.patient_tests add column if not exists bill_id text reference
 -- Test templates: the result parameters each test asks for (name, unit, normal range, ...),
 -- and a copy of them on each result so it reads the same if the template changes later.
 alter table public.medical_test_catalog add column if not exists fields jsonb not null default '[]';
+-- No template is stored as null too (rows added together may send it as null).
+alter table public.medical_test_catalog alter column fields drop not null;
 alter table public.patient_tests add column if not exists result_fields jsonb;
 -- Medical history, kept on the patient and shown at the top of the patient page.
 alter table public.patients add column if not exists allergies           text;
