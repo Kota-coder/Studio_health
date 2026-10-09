@@ -129,6 +129,9 @@ database enforces the same rules with row level security.
   today) to mark it paid, which prints the receipt. A test is never billed twice: once billed it
   shows its bill instead of "Bill Test". Their dashboard starts on the patients with their
   requests or waiting ones.
+- **My Profile** (click your name in the menu): every signed-in person can update their own name
+  and phone number, language and password. Email, role, hire date and pay are shown but changed
+  only by the people who manage staff; the database lets people change only their own record.
 - **Who can see what** (Setup → Hospital Profile): tick which roles may open each page, for
   example to keep billing, payments and the financial dashboard away from doctors and nurses
   (one button does exactly that). People without access don't see the page in their menu or

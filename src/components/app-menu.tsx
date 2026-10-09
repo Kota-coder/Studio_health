@@ -52,10 +52,12 @@ export function AppMenu() {
       <DropdownMenuContent align="end" className="max-h-[80vh] w-64 overflow-y-auto">
         {currentUser ? (
           <>
-            <DropdownMenuLabel className="flex items-center font-normal">
-              <UserCircle className="mr-2 h-4 w-4 shrink-0" />
-              <span className="truncate"><span className="font-semibold">{currentUser.name}</span> · {t(currentUser.role)}</span>
-            </DropdownMenuLabel>
+            <DropdownMenuItem asChild>
+              <Link href="/profile" className="flex w-full items-center" title={t('My Profile')}>
+                <UserCircle className="mr-2 h-4 w-4 shrink-0" />
+                <span className="truncate"><span className="font-semibold">{currentUser.name}</span> · {t(currentUser.role)}</span>
+              </Link>
+            </DropdownMenuItem>
             {sections.map(({ section, items }) => (
               <div key={section}>
                 <DropdownMenuSeparator />

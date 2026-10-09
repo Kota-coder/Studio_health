@@ -12,6 +12,7 @@ interface AuthContextType {
   currentUser: StaffMember | null;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
+  reloadUser: () => Promise<void>; // after the person changes their own details
   isLoading: boolean;
 }
 
@@ -132,8 +133,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     toast({ title: "Logged Out", description: "You have been successfully logged out." });
   }, [router, toast]);
 
+  const reloadUser = useCallback(async () => {
+    if (!loadedFor.current) return;
+    const fresh = await loadStaffForUser(loadedFor.current);
+    if (fresh) setCurrentUser(fresh);
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ currentUser, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ currentUser, login, logout, reloadUser, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1473,6 +1473,25 @@ begin
 end
 $$;
 
+-- Anyone signed in can update their own name and phone number (not their email, role, hire
+-- date or pay: those are managed by the people who manage staff).
+create or replace function public.update_my_profile(new_name text, new_phone text) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.current_staff_id() is null then
+    raise exception 'Not signed in.';
+  end if;
+  if length(trim(coalesce(new_name, ''))) < 2 or length(trim(new_name)) > 100 then
+    raise exception 'Enter your name (2 to 100 characters).';
+  end if;
+  if length(coalesce(new_phone, '')) > 20 or coalesce(new_phone, '') !~ '^[0-9+()\- ]*$' then
+    raise exception 'Enter a valid phone number.';
+  end if;
+  update public.staff set name = trim(new_name), phone_number = trim(coalesce(new_phone, ''))
+  where id = public.current_staff_id();
+end
+$$;
+
 -- Salaries, for the roles that open Staff Management (PAGE_ROLES.staff).
 create or replace function public.staff_salaries()
 returns table (id bigint, salary numeric)
@@ -1493,6 +1512,8 @@ revoke all on function public.home_summary(text) from public;
 grant execute on function public.home_summary(text) to authenticated;
 revoke all on function public.set_my_language(text) from public;
 grant execute on function public.set_my_language(text) to authenticated;
+revoke all on function public.update_my_profile(text, text) from public;
+grant execute on function public.update_my_profile(text, text) to authenticated;
 revoke all on function public.module_on(text) from public;
 grant execute on function public.module_on(text) to authenticated;
 revoke all on function public.page_allowed(text) from public;
