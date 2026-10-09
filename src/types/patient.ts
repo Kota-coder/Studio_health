@@ -96,6 +96,13 @@ export interface Patient {
   tests?: TestEntry[];
   auditLog?: AuditLogEntry[];
 
+  // Medical history (free text; "None known" is worth recording for allergies).
+  allergies?: string;
+  chronicConditions?: string;
+  pastHistory?: string; // past illnesses, operations, hospital stays
+  familyHistory?: string;
+  homeMedications?: string; // medicines taken before coming in
+
   // Department and care team. The attending doctor earns doctorFee for this case,
   // paid through a "Doctor Fee" payment (which sets doctorFeeStatus to Paid).
   departmentId?: number | null;

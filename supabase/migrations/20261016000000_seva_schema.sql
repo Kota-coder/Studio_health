@@ -555,6 +555,12 @@ alter table public.patient_tests add column if not exists bill_id text reference
 -- and a copy of them on each result so it reads the same if the template changes later.
 alter table public.medical_test_catalog add column if not exists fields jsonb not null default '[]';
 alter table public.patient_tests add column if not exists result_fields jsonb;
+-- Medical history, kept on the patient and shown at the top of the patient page.
+alter table public.patients add column if not exists allergies           text;
+alter table public.patients add column if not exists chronic_conditions  text;
+alter table public.patients add column if not exists past_history        text;
+alter table public.patients add column if not exists family_history      text;
+alter table public.patients add column if not exists home_medications    text;
 do $$
 declare
   moves constant text[][] := array[

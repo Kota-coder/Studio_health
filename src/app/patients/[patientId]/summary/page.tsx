@@ -17,6 +17,7 @@ import {
 } from '@/lib/data';
 import { formatINR, parseStoredDate as toDate, patientDisplayId } from '@/lib/format';
 import { resultParameters } from '@/lib/test-templates';
+import { HISTORY_FIELDS, hasAllergies } from '@/components/patient/medical-history-card';
 import type { Bill } from '@/types/billing';
 import type { Department } from '@/types/department';
 import type { Patient } from '@/types/patient';
@@ -181,6 +182,16 @@ export default function PatientSummaryPage() {
           </dl>
           {patient.initialObservationsText && (
             <p className="mt-4 text-sm"><span className="font-medium">Observations at admission: </span>{patient.initialObservationsText}</p>
+          )}
+          {HISTORY_FIELDS.some(f => patient[f.key]?.trim()) && (
+            <dl className="mt-4 grid grid-cols-1 gap-3 border-t pt-4 text-sm sm:grid-cols-2">
+              {HISTORY_FIELDS.filter(f => patient[f.key]?.trim()).map(f => (
+                <div key={f.key} className={f.key === 'allergies' ? 'sm:col-span-2' : undefined}>
+                  <dt className="font-medium text-muted-foreground">{t(f.label)}</dt>
+                  <dd className={f.key === 'allergies' && hasAllergies(patient.allergies) ? 'whitespace-pre-wrap font-semibold text-destructive' : 'whitespace-pre-wrap'}>{patient[f.key]}</dd>
+                </div>
+              ))}
+            </dl>
           )}
         </CardContent>
       </Card>
