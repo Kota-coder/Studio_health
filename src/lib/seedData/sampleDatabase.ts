@@ -225,7 +225,7 @@ export async function loadSampleDataIntoDatabase(
   summary.materials = createdMaterials.length;
   const createdVendors = await vendors.createMany(SAMPLE_VENDORS.map(v => ({ ...v, notes: SAMPLE_MARK })));
   summary.vendors = createdVendors.length;
-  const createdTests = await testCatalog.createMany(SAMPLE_TESTS.map(t => ({ ...t, description: SAMPLE_MARK })));
+  const createdTests = await testCatalog.createMany(SAMPLE_TESTS.map(t => ({ ...t, fields: t.fields ?? [], description: SAMPLE_MARK })));
   summary.testCatalog = createdTests.length;
 
   // Stock on the shelves six months ago, so the Inventory page starts from real numbers.
