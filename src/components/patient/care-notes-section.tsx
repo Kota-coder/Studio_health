@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from '@/components/app-link';
 import { ClipboardList, IndianRupee, PackageCheck, Pill, PlusCircle, Send, ShoppingCart } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -14,7 +14,6 @@ import { useFormat, useT } from '@/components/language-provider';
 import { AttachmentList } from '@/components/patient/attachment-picker';
 import { CareNoteForm } from '@/components/patient/care-note-form';
 import { DispenseDialog } from '@/components/pharmacy/dispense-dialog';
-import { canOpen } from '@/config/permissions';
 import { loadMedications, loadTreatmentTemplates, useLoadOnce } from '@/components/patient/use-load-once';
 import { useStaff } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
@@ -33,8 +32,10 @@ const newestFirst = (a: CareNote, b: CareNote) => Date.parse(b.createdAt) - Date
 // With Pharmacy Orders on, a note's medicines go to the pharmacy ("Send to Pharmacy"), which
 // dispenses and bills them; each note shows where its order stands. Otherwise "Bill Meds"
 // turns a note's medicines into a pharmacy bill directly.
-export function CareNotesSection({ patient, onSaved, onBilled }: {
+export function CareNotesSection({ patient, orders, onOrdersChanged, onSaved, onBilled }: {
   patient: Patient;
+  orders: PharmacyOrder[]; // this patient's pharmacy orders (loaded by the patient page)
+  onOrdersChanged: () => Promise<void>;
   onSaved: () => Promise<void>;
   onBilled: () => Promise<void>;
 }) {
@@ -45,16 +46,12 @@ export function CareNotesSection({ patient, onSaved, onBilled }: {
   const templates = useLoadOnce(loadTreatmentTemplates);
   const medications = useLoadOnce(loadMedications);
   const [showForm, setShowForm] = useState(false);
-  const { pharmacyOn, canRequest, canProcessPharmacy } = useWorkflow();
-  const canCollect = isOn('billing') && canOpen('billing', currentUser.role);
-  const [orders, setOrders] = useState<PharmacyOrder[]>([]);
+  const { pharmacyOn, canSendToPharmacy, canProcessPharmacy, canCollect: canCollectFor } = useWorkflow();
+  const canCollect = canCollectFor('Pharmacy');
   const [dispensing, setDispensing] = useState<PharmacyOrder | null>(null);
   const patientName = `${patient.firstName} ${patient.lastName}`;
 
-  const loadOrders = useCallback(async () => {
-    if (pharmacyOn) setOrders(await pharmacyOrders.listForPatient(patient.id));
-  }, [pharmacyOn, patient.id]);
-  useEffect(() => { loadOrders().catch(() => undefined); }, [loadOrders]);
+  const loadOrders = () => onOrdersChanged().catch(() => undefined);
 
   const sendToPharmacy = async (note: CareNote) => {
     try {
@@ -149,7 +146,7 @@ export function CareNotesSection({ patient, onSaved, onBilled }: {
                         onBill={!pharmacyOn && isOn('billing') && hasMeds ? () => billMedications(note) : undefined}
                         pharmacy={pharmacyOn && hasMeds ? {
                           order,
-                          onSend: !order && canRequest ? () => sendToPharmacy(note) : undefined,
+                          onSend: !order && canSendToPharmacy ? () => sendToPharmacy(note) : undefined,
                           onDispense: order?.status === 'Requested' && canProcessPharmacy ? () => setDispensing(order) : undefined,
                           canCollect,
                         } : undefined} />

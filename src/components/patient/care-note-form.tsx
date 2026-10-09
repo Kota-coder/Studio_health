@@ -42,9 +42,9 @@ export function CareNoteForm({ patient, templates, medications, loadMedications,
   const [text, setText] = useState('');
   const [noteMedications, setNoteMedications] = useState<NoteMedication[]>([]);
   const [attachments, setAttachments] = useState<string[]>([]);
-  const { pharmacyOn, canRequest } = useWorkflow();
+  const { pharmacyOn, canSendToPharmacy } = useWorkflow();
   const [sendToPharmacy, setSendToPharmacy] = useState(true);
-  const offerPharmacy = pharmacyOn && canRequest && noteMedications.length > 0;
+  const offerPharmacy = pharmacyOn && canSendToPharmacy && noteMedications.length > 0;
   const [isSaving, setIsSaving] = useState(false);
 
   const template = templateId === 'none' ? null : templates?.find(tpl => tpl.id === templateId) ?? null;

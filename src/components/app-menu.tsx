@@ -13,9 +13,10 @@ import { hospitalLinks as hospitalLinksRepo } from '@/lib/data';
 import type { HospitalLink } from '@/types/hospitalLink';
 import { useAuth } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
-import { NAV_ITEMS, NAV_SECTIONS } from '@/config/navigation';
+import { NAV_ITEMS, NAV_SECTIONS, mayOpen } from '@/config/navigation';
+import { isResponsible, type Duty } from '@/config/responsibilities';
 
-// The header menu: the pages this person's role may open, grouped by section, without the
+// The header menu: the pages this person's role (or department duties) may open, grouped by section, without the
 // features the hospital has switched off.
 export function AppMenu() {
   const { currentUser, logout, isLoading } = useAuth();
@@ -30,6 +31,7 @@ export function AppMenu() {
     if (open && superAdmin) hospitalLinksRepo.list().then(setLinks).catch(() => setLinks(prev => prev ?? []));
   };
   const here = typeof window === 'undefined' ? '' : window.location.origin;
+  const can = (duty: Duty) => !!currentUser && isResponsible(duty, currentUser.role, profile.responsibilities);
 
   if (isLoading) {
     return <Button variant="ghost" size="icon" aria-label={t('Open menu')} disabled><MenuIcon className="h-5 w-5 opacity-50" /></Button>;
@@ -38,7 +40,7 @@ export function AppMenu() {
   const sections = currentUser
     ? NAV_SECTIONS.map(section => ({
         section,
-        items: NAV_ITEMS.filter(i => i.section === section && i.roles.includes(currentUser.role) && (!i.module || isOn(i.module))),
+        items: NAV_ITEMS.filter(i => i.section === section && mayOpen(i, currentUser.role, can) && (!i.module || isOn(i.module))),
       })).filter(s => s.items.length > 0)
     : [];
 

@@ -1,4 +1,5 @@
 // The hospital's branding (hospital_profile table), shared by server and browser code.
+import type { Responsibilities } from '@/config/responsibilities';
 
 export interface HospitalProfile {
   name: string;
@@ -12,6 +13,7 @@ export interface HospitalProfile {
   brandColor: string; // #rrggbb
   logoFolder?: string | null;
   disabledModules?: string[]; // menu sections switched off (src/config/modules.ts)
+  responsibilities?: Responsibilities; // which roles do each department's duties (src/config/responsibilities.ts)
   configuredAt?: string | null;
 }
 

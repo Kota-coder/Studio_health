@@ -50,7 +50,7 @@ export default function BillingForm() {
   const { toast } = useToast();
   const currentUser = useStaff();
   const { isOn } = useFeatures();
-  const { canProcessPharmacy } = useWorkflow();
+  const { canProcessPharmacy, canCollect, pharmacyOn } = useWorkflow();
   const methodOptions = usePaymentMethods();
 
   const billIdToEdit = searchParams.get('billId');
@@ -188,8 +188,8 @@ export default function BillingForm() {
     if (billItems.some(item => !item.description.trim() || item.quantity <= 0 || item.unitPrice < 0)) {
       return invalid('Check the items', 'Every item needs a description, a quantity above 0 and a price of 0 or more.');
     }
-    if (!paymentMethod) return invalid('Choose the payment method');
     if (!paymentStatus) return invalid('Choose the payment status');
+    if (!paymentMethod && paymentStatus !== 'Unpaid') return invalid('Choose the payment method');
     let finalPaymentDate: string | undefined;
     if (paymentStatus === 'Paid') {
       if (paymentDate && !parseDMY(paymentDate)) return invalid('Check the payment date', 'Use the form dd/mm/yyyy.');
@@ -240,6 +240,13 @@ export default function BillingForm() {
       setIsSaving(false);
     }
   };
+
+  // Only the department responsible takes payment (src/config/responsibilities.ts); others
+  // make the bill Unpaid for them.
+  const canTakePayment = canCollect(billType || 'Treatment');
+  useEffect(() => {
+    if (!isEditMode && !canTakePayment && paymentStatus !== 'Unpaid') setPaymentStatus('Unpaid');
+  }, [isEditMode, canTakePayment, paymentStatus]);
 
   if (isLoading) return <PageLoading />;
 
@@ -370,10 +377,17 @@ export default function BillingForm() {
             <span className="ml-2 text-xl font-bold">{formatINR(grandTotal)}</span>
           </p>
 
+          {!canTakePayment && (
+            <p className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">
+              {billType === 'Pharmacy' && pharmacyOn
+                ? t('Payment for pharmacy bills is taken by the Pharmacy department.')
+                : t('Payment is taken by the Billing & Payments department. Save the bill as Unpaid.')}
+            </p>
+          )}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <Label htmlFor="paymentMethod">Payment method *</Label>
-              <Select onValueChange={setPaymentMethod} value={paymentMethod}>
+              <Label htmlFor="paymentMethod">Payment method{paymentStatus !== 'Unpaid' ? ' *' : ''}</Label>
+              <Select onValueChange={setPaymentMethod} value={paymentMethod} disabled={!canTakePayment}>
                 <SelectTrigger id="paymentMethod"><SelectValue placeholder="Select payment method" /></SelectTrigger>
                 <SelectContent>
                   {methodChoices(methodOptions, 'Bills', paymentMethod).map(method => <SelectItem key={method} value={method}>{method}</SelectItem>)}
@@ -382,7 +396,7 @@ export default function BillingForm() {
             </div>
             <div>
               <Label htmlFor="paymentStatus">Payment status *</Label>
-              <Select onValueChange={value => handlePaymentStatusChange(value as PaymentStatus)} value={paymentStatus}>
+              <Select onValueChange={value => handlePaymentStatusChange(value as PaymentStatus)} value={paymentStatus} disabled={!canTakePayment}>
                 <SelectTrigger id="paymentStatus"><SelectValue placeholder="Select payment status" /></SelectTrigger>
                 <SelectContent>
                   {PAYMENT_STATUSES.map(status => <SelectItem key={status} value={status}>{t(status)}</SelectItem>)}

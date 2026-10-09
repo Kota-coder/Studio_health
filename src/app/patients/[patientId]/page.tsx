@@ -11,6 +11,7 @@ import { useFormat, useT } from '@/components/language-provider';
 import { AssignedStaffCard } from '@/components/patient/assigned-staff-card';
 import { AuditTrail } from '@/components/patient/audit-trail';
 import { CareNotesSection } from '@/components/patient/care-notes-section';
+import { MedicinesCard } from '@/components/patient/medicines-card';
 import { ConditionBadge } from '@/components/patient/condition-badge';
 import { PatientBillsCard } from '@/components/patient/patient-bills-card';
 import { PatientDataRequests } from '@/components/patient/patient-data-requests';
@@ -20,10 +21,11 @@ import { PATIENT_DATA_REQUESTS_ENABLED } from '@/config/features';
 import { useStaff } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
 import { useToast } from '@/hooks/use-toast';
-import { bills as billsRepo, patients as patientsRepo, referringDoctors as referringDoctorsRepo, staff as staffRepo } from '@/lib/data';
+import { bills as billsRepo, patients as patientsRepo, pharmacyOrders, referringDoctors as referringDoctorsRepo, staff as staffRepo } from '@/lib/data';
 import { patientDisplayId } from '@/lib/format';
 import type { Bill } from '@/types/billing';
 import type { Patient } from '@/types/patient';
+import type { PharmacyOrder } from '@/types/pharmacyOrder';
 import type { ReferringDoctor } from '@/types/referringDoctor';
 import type { StaffMember } from '@/types/staff';
 
@@ -41,12 +43,14 @@ export default function PatientDetailPage() {
   const patientId = parseInt(String(params.patientId ?? ''), 10);
   const billingOn = isOn('billing');
   const referralsOn = isOn('referringDoctors');
+  const pharmacyOn = isOn('pharmacyOrders');
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
   const [referringDoctor, setReferringDoctor] = useState<ReferringDoctor | null>(null);
+  const [orders, setOrders] = useState<PharmacyOrder[]>([]);
 
   useEffect(() => {
     if (Number.isNaN(patientId)) {
@@ -86,6 +90,14 @@ export default function PatientDetailPage() {
     const fresh = await patientsRepo.get(patientId);
     if (fresh) setPatient(fresh);
   }, [patientId]);
+
+  // The patient's pharmacy orders, for the Medicines card and the care notes.
+  const reloadOrders = useCallback(async () => {
+    if (pharmacyOn) setOrders(await pharmacyOrders.listForPatient(patientId));
+  }, [pharmacyOn, patientId]);
+  useEffect(() => {
+    if (!Number.isNaN(patientId)) reloadOrders().catch(error => console.error('Could not load the pharmacy orders', error));
+  }, [patientId, reloadOrders]);
 
   const reloadBills = useCallback(async () => {
     setBills(await billsRepo.list({ patientId }));
@@ -130,7 +142,8 @@ export default function PatientDetailPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="min-w-0 space-y-6 lg:col-span-2">
           <PatientDetailsCard patient={patient} referredBy={referredBy} />
-          <CareNotesSection patient={patient} onSaved={reloadPatient} onBilled={reloadBills} />
+          <MedicinesCard patient={patient} orders={orders} pharmacyOn={pharmacyOn} />
+          <CareNotesSection patient={patient} orders={orders} onOrdersChanged={reloadOrders} onSaved={reloadPatient} onBilled={reloadBills} />
           <TestsSection patient={patient} staff={staff} bills={bills} onSaved={reloadPatient} onBilled={reloadBills} />
           <AuditTrail patientId={patient.id} />
         </div>

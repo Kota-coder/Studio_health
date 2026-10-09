@@ -13,8 +13,9 @@ export const PAGE_ROLES = {
   lab: ["Super Admin", "Admin", "Doctor", "Nurse", "Lab Technician"],
   // The pharmacy's queue of medicines ordered on patient pages (home_summary() likewise).
   pharmacyOrders: ["Super Admin", "Admin", "Doctor", "Nurse", "Pharmacist"],
-  // Lab technicians and pharmacists collect payment for what they complete.
-  billing: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist", "Accounts", "Lab Technician", "Pharmacist"],
+  // Pharmacists take payment for pharmacy bills; whoever else the hospital makes responsible
+  // for taking payments can open it too (src/config/responsibilities.ts).
+  billing: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist", "Accounts", "Pharmacist"],
   payments: ["Super Admin", "Admin", "Doctor", "Accounts"],
   financialDashboard: ["Super Admin", "Admin", "Doctor", "Accounts"],
   patientCare: ["Super Admin", "Admin", "Doctor", "Nurse"],
@@ -32,13 +33,6 @@ export const PAGE_ROLES = {
   referringDoctors: ["Super Admin", "Admin", "Doctor", "Nurse", "Receptionist"],
   admin: ["Super Admin"],
 } satisfies Record<string, StaffRole[]>;
-
-// Who asks for tests and medicines on the patient page, and who carries them out and bills
-// them while Lab Requests / Pharmacy Orders are on (the database's can_process_lab() and
-// can_process_pharmacy() enforce the processing side). The Super Admin can step in for both.
-export const REQUEST_ROLES: StaffRole[] = ["Super Admin", "Admin", "Doctor", "Nurse"];
-export const LAB_ROLES: StaffRole[] = ["Lab Technician", "Super Admin"];
-export const PHARMACY_ROLES: StaffRole[] = ["Pharmacist", "Super Admin"];
 
 // Who plans the duty roster and corrects attendance (the database enforces the same).
 export const DUTY_MANAGER_ROLES: StaffRole[] = ["Super Admin", "Admin"];
