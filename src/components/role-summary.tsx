@@ -2,7 +2,7 @@
 
 import Link from '@/components/app-link';
 import { format, parseISO } from 'date-fns';
-import { AlertTriangle, Boxes, CalendarClock, HandCoins, IndianRupee, Microscope, Receipt, Stethoscope, Users } from 'lucide-react';
+import { AlertTriangle, Boxes, CalendarClock, ClipboardList, HandCoins, IndianRupee, Microscope, Receipt, Stethoscope, Users } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { useT } from '@/components/language-provider';
 import { useFeatures } from '@/hooks/use-features';
@@ -74,6 +74,13 @@ export function RoleSummary({ summary, user, onShowMine }: { summary: HomeSummar
     tiles[technician ? 'unshift' : 'push'](<Tile key="lab" icon={Microscope} title={t('Lab requests')} href="/lab" tone={l.urgent ? 'warn' : undefined}
       value={technician ? t('{n} assigned to me', { n: l.mine }) : t('{n} waiting', { n: l.waiting })}
       detail={[technician && t('{n} waiting in queue', { n: l.waiting }), l.urgent && t('{n} urgent', { n: l.urgent })].filter(Boolean).join(' · ') || undefined} />);
+  }
+  if (summary.pharmacy && isOn('pharmacyOrders')) {
+    const p = summary.pharmacy;
+    const pharmacist = user.role === 'Pharmacist';
+    tiles[pharmacist ? 'unshift' : 'push'](<Tile key="pharmacy" icon={ClipboardList} title={t('Pharmacy orders')} href="/pharmacy-orders"
+      tone={p.waiting ? 'warn' : undefined} value={t('{n} waiting', { n: p.waiting })}
+      detail={t('{n} dispensed today', { n: p.dispensedToday })} />);
   }
   if (summary.billing && isOn('billing')) {
     const b = summary.billing;

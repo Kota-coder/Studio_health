@@ -9,26 +9,20 @@ import { Textarea } from '@/components/ui/textarea';
 import { DateField, parseDMY } from '@/components/date-field';
 import { useT } from '@/components/language-provider';
 import { AttachmentPicker } from '@/components/patient/attachment-picker';
-import { TEST_DEFINITIONS } from '@/config/testTypes';
 import { useStaff } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
 import { useToast } from '@/hooks/use-toast';
 import { bills as billsRepo, patients as patientsRepo, testRequests } from '@/lib/data';
 import { formatINR, toDMY } from '@/lib/format';
 import { uploadNewImages } from '@/lib/storage';
+import { normalRange, parametersFor, rangeFlag } from '@/lib/test-templates';
 import type { MedicalTestCatalogItem } from '@/types/medicalTestCatalogItem';
 import type { Patient, TestFieldData } from '@/types/patient';
 import type { StaffMember } from '@/types/staff';
 import type { TestRequest } from '@/types/testRequest';
 
-// The built-in result form for a test: by id, or for catalog tests (ids like "test_cat_3")
-// by name, e.g. "ECG".
-export function testDefinitionFor(testTypeId: string, testName?: string) {
-  const name = testName?.trim().toLowerCase();
-  return TEST_DEFINITIONS.find(def => def.id === testTypeId || def.name.toLowerCase() === name) ?? null;
-}
-
-// A new test result: type from the test catalog, its result fields, date, who did it, images.
+// A new test result: type from the test catalog, the parameters of its result template
+// (Setup → Medical Tests) with units and normal ranges, date, who did it, images.
 // For a lab request, the test is fixed and saving marks the request done and, with Billing
 // on, bills the test at its catalog price (Unpaid, for payment to be collected).
 export function TestForm({ patient, catalog, staff, request, onSaved, onCancel }: {
@@ -52,8 +46,9 @@ export function TestForm({ patient, catalog, staff, request, onSaved, onCancel }
   const [attachments, setAttachments] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
-  const catalogName = catalog?.find(test => test.id === testTypeId)?.name ?? request?.testTypeName;
-  const definition = testTypeId ? testDefinitionFor(testTypeId, catalogName) : null;
+  const catalogItem = catalog?.find(test => test.id === testTypeId);
+  const catalogName = catalogItem?.name ?? request?.testTypeName;
+  const parameters = testTypeId ? parametersFor(catalogItem, catalogName) : [];
   const setField = (fieldId: string, value: string | number) => setFields(prev => ({ ...prev, [fieldId]: value }));
 
   const save = async () => {
@@ -65,7 +60,7 @@ export function TestForm({ patient, catalog, staff, request, onSaved, onCancel }
       toast({ title: 'Check the date', description: 'Enter the test date as dd/mm/yyyy.', variant: 'destructive' });
       return;
     }
-    const missing = definition?.fields.find(field => field.required && String(fields[field.id] ?? '').trim() === '');
+    const missing = parameters.find(field => field.required && String(fields[field.id] ?? '').trim() === '');
     if (missing) {
       toast({ title: 'Missing details', description: `${missing.label} is required for this test type.`, variant: 'destructive' });
       return;
@@ -76,7 +71,8 @@ export function TestForm({ patient, catalog, staff, request, onSaved, onCancel }
     try {
       const saved = await patientsRepo.addTest(patient.id, {
         testTypeId,
-        testTypeName: catalogName || definition?.name || 'Unknown Test',
+        testTypeName: catalogName || 'Unknown Test',
+        resultFields: parameters.length ? parameters : undefined,
         datePerformed: testDate.trim(),
         testData: { ...fields },
         overallResults: results.trim() || undefined,
@@ -120,21 +116,38 @@ export function TestForm({ patient, catalog, staff, request, onSaved, onCancel }
         </Select>
       </div>
 
-      {definition?.fields.map(field => {
-        const id = `testField-${field.id}`;
-        return (
-          <div key={field.id}>
-            <Label htmlFor={id}>{field.label}{field.required ? ' *' : ''}</Label>
-            {field.type === 'textarea' ? (
-              <Textarea id={id} rows={3} placeholder={field.placeholder} value={String(fields[field.id] ?? '')} onChange={e => setField(field.id, e.target.value)} />
-            ) : (
-              <Input id={id} type={field.type} placeholder={field.placeholder} min={field.type === 'number' ? 0 : undefined}
-                value={String(fields[field.id] ?? '')}
-                onChange={e => setField(field.id, field.type === 'number' ? parseFloat(e.target.value) || '' : e.target.value)} />
-            )}
-          </div>
-        );
-      })}
+      {parameters.length > 0 && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {parameters.map(field => {
+            const id = `testField-${field.id}`;
+            const value = fields[field.id];
+            const range = normalRange(field);
+            const flag = rangeFlag(field, value);
+            return (
+              <div key={field.id} className={field.type === 'textarea' ? 'sm:col-span-2' : undefined}>
+                <Label htmlFor={id}>{field.label}{field.type === 'number' && field.unit ? ` (${field.unit})` : ''}{field.required ? ' *' : ''}</Label>
+                {field.type === 'textarea' ? (
+                  <Textarea id={id} rows={3} value={String(value ?? '')} onChange={e => setField(field.id, e.target.value)} />
+                ) : field.type === 'choice' ? (
+                  <Select value={String(value ?? '')} onValueChange={v => setField(field.id, v)}>
+                    <SelectTrigger id={id}><SelectValue placeholder={t('Select')} /></SelectTrigger>
+                    <SelectContent>{(field.options ?? []).map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent>
+                  </Select>
+                ) : (
+                  <Input id={id} type={field.type === 'number' ? 'number' : 'text'} inputMode={field.type === 'number' ? 'decimal' : undefined} step="any"
+                    value={String(value ?? '')} className={flag ? 'border-destructive' : undefined}
+                    onChange={e => setField(field.id, field.type === 'number' && e.target.value !== '' ? Number(e.target.value) : e.target.value)} />
+                )}
+                {(range || flag) && (
+                  <p className={`mt-1 text-xs ${flag ? 'font-semibold text-destructive' : 'text-muted-foreground'}`}>
+                    {flag ? `${t(flag)} · ` : ''}{range ? t('Normal: {range}', { range }) : ''}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div>
         <Label htmlFor="newTestDate">Date Performed *</Label>

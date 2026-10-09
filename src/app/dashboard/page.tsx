@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from '@/components/app-link';
-import { Activity, AlertTriangle, Building2, CheckCircle2, ClipboardList, HelpCircle, LayoutDashboard, Microscope, ShieldCheck, UserPlus, Users as UsersIcon } from 'lucide-react';
+import { Activity, AlertTriangle, Building2, CheckCircle2, ClipboardList, HelpCircle, LayoutDashboard, Microscope, Pill, ShieldCheck, UserPlus, Users as UsersIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -19,13 +19,14 @@ import { useStaff } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
 import { useToast } from '@/hooks/use-toast';
 import { isSevaDefault } from '@/lib/branding';
-import { DISCHARGED_DAYS, bills as billsRepo, departments as departmentsRepo, homeSummary, patients as patientsRepo, staff as staffRepo, testRequests, type HomeSummary } from '@/lib/data';
+import { DISCHARGED_DAYS, bills as billsRepo, departments as departmentsRepo, homeSummary, patients as patientsRepo, pharmacyOrders, staff as staffRepo, testRequests, type HomeSummary } from '@/lib/data';
 import { cachedAt, invalidate } from '@/lib/data/cache';
 import { formatDate, formatINR, patientDisplayId } from '@/lib/format';
 import type { Department } from '@/types/department';
 import type { Patient, PatientCondition } from '@/types/patient';
 import type { StaffMember } from '@/types/staff';
 import type { TestRequest } from '@/types/testRequest';
+import type { PharmacyOrder } from '@/types/pharmacyOrder';
 
 const CONDITION_ORDER: PatientCondition[] = ["Critical", "Medium", "Low", "Unassigned", "Discharged"];
 
@@ -62,12 +63,15 @@ export default function DashboardPage() {
   const t = useT();
   const labOn = isOn('labRequests') && canOpen('lab', currentUser.role);
   const isTechnician = currentUser.role === 'Lab Technician';
+  const pharmacyVisible = isOn('pharmacyOrders') && canOpen('pharmacyOrders', currentUser.role);
+  const isPharmacist = currentUser.role === 'Pharmacist';
 
   const [allPatients, setAllPatients] = useState<Patient[]>([]);
   const [availableStaff, setAvailableStaff] = useState<StaffMember[]>([]);
   const [departmentList, setDepartmentList] = useState<Department[]>([]);
   const [summary, setSummary] = useState<HomeSummary | null>(null);
   const [labRequests, setLabRequests] = useState<TestRequest[]>([]);
+  const [pharmacyWaiting, setPharmacyWaiting] = useState<PharmacyOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -86,10 +90,11 @@ export default function DashboardPage() {
   // Patients, staff and departments come from a short-lived cache (see lib/data/cache.ts);
   // Refresh fetches them again.
   const loadDashboard = useCallback(async (refresh = false) => {
-    if (refresh) invalidate('dashboard:', 'staff:', 'departments:', 'summary:home', 'lab:');
+    if (refresh) invalidate('dashboard:', 'staff:', 'departments:', 'summary:home', 'lab:', 'pharmacy:');
     // The summary and lab requests are optional: the patient list still shows if they fail.
     homeSummary().then(setSummary).catch(error => console.error('Could not load the summary', error));
     if (labOn) testRequests.listOpen().then(setLabRequests).catch(error => console.error('Could not load the lab requests', error));
+    if (pharmacyVisible) pharmacyOrders.listOpen().then(setPharmacyWaiting).catch(error => console.error('Could not load the pharmacy orders', error));
     try {
       const [patientList, staffList, departmentsLoaded] = await Promise.all([patientsRepo.listForDashboard(), staffRepo.list(), departmentsRepo.list()]);
       setDepartmentList(departmentsLoaded);
@@ -100,7 +105,7 @@ export default function DashboardPage() {
       console.error("Error loading patients or staff:", error);
       toast({ title: "Error", description: "Could not load patient or staff data.", variant: "destructive" });
     }
-  }, [toast, labOn]);
+  }, [toast, labOn, pharmacyVisible]);
 
   useEffect(() => {
     loadDashboard().finally(() => setIsLoading(false));
@@ -112,8 +117,9 @@ export default function DashboardPage() {
     if (filterChosen || !summary) return;
     if ((currentUser.role === 'Doctor' || currentUser.role === 'Nurse') && summary.patients.mine > 0) setFilterDepartment('mine');
     if (isTechnician && labOn && summary.lab && summary.lab.mine + summary.lab.waiting > 0) setFilterDepartment('lab');
+    if (isPharmacist && pharmacyVisible && summary.pharmacy && summary.pharmacy.waiting > 0) setFilterDepartment('pharmacy');
     setFilterChosen(true);
-  }, [summary, currentUser, filterChosen, isTechnician, labOn]);
+  }, [summary, currentUser, filterChosen, isTechnician, labOn, isPharmacist, pharmacyVisible]);
 
   const showMyPatients = () => {
     setFilterDepartment('mine');
@@ -150,6 +156,13 @@ export default function DashboardPage() {
     return map;
   }, [labRequests, isTechnician, currentUser.id]);
 
+  // Medicines waiting at the pharmacy, by patient.
+  const pharmacyByPatient = useMemo(() => {
+    const map = new Map<number, string[]>();
+    for (const o of pharmacyWaiting) map.set(o.patientId, [...(map.get(o.patientId) ?? []), ...o.items.map(i => i.medicationName)]);
+    return map;
+  }, [pharmacyWaiting]);
+
   const groupedPatients = useMemo(() => {
     const search = searchTerm.trim().toLowerCase();
     const matches = (patient: Patient) => {
@@ -157,6 +170,7 @@ export default function DashboardPage() {
       if (filterCondition !== "All" && (patient.condition || "Unassigned") !== filterCondition) return false;
       if (filterDepartment === "none") return !patient.departmentId;
       if (filterDepartment === "lab") return labByPatient.has(patient.id);
+      if (filterDepartment === "pharmacy") return pharmacyByPatient.has(patient.id);
       if (filterDepartment === "mine") {
         return patient.attendingDoctorId === currentUser.id || patient.attendingNurseId === currentUser.id || !!patient.assignedStaffIds?.includes(currentUser.id);
       }
@@ -169,7 +183,7 @@ export default function DashboardPage() {
       (grouped[patient.condition || "Unassigned"] ?? grouped.Unassigned).push(patient);
     }
     return grouped;
-  }, [allPatients, olderDischarged, olderMatches, searchTerm, filterCondition, filterDepartment, currentUser, labByPatient]);
+  }, [allPatients, olderDischarged, olderMatches, searchTerm, filterCondition, filterDepartment, currentUser, labByPatient, pharmacyByPatient]);
 
   const changeCondition = useCallback(async (patientId: number, newCondition: PatientCondition) => {
     const patient = allPatients.find(p => p.id === patientId);
@@ -261,6 +275,7 @@ export default function DashboardPage() {
               <SelectContent>
                 <SelectItem value="All">All Departments</SelectItem>
                 <SelectItem value="mine">My Patients</SelectItem>
+                {pharmacyVisible && <SelectItem value="pharmacy">{t('Waiting for the pharmacy')}</SelectItem>}
                 {labOn && <SelectItem value="lab">{isTechnician ? t('My lab requests & queue') : t('Waiting for lab tests')}</SelectItem>}
                 {departmentList.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
                 <SelectItem value="none">No Department</SelectItem>
@@ -302,6 +317,7 @@ export default function DashboardPage() {
                         const staffNames = assignedStaffNames(patient, availableStaff);
                         const noteSummary = latestCareNoteSummary(patient);
                         const labPending = labByPatient.get(patient.id);
+                        const medsPending = pharmacyByPatient.get(patient.id);
                         return (
                           <Link key={patient.id} href={`/patients/${patientDisplayId(patient.id)}`} className="group block min-w-0">
                             <Card className={`flex h-full cursor-pointer flex-col border-2 shadow-lg transition-colors hover:shadow-xl group-hover:border-primary ${config.colorClasses}`}>
@@ -320,6 +336,12 @@ export default function DashboardPage() {
                                     <span className="min-w-0 break-words">
                                       {t('Lab')}: {labPending.map(r => `${r.testTypeName}${r.priority === 'Urgent' ? ` (${t('Urgent')})` : ''}`).join(', ')}
                                     </span>
+                                  </div>
+                                )}
+                                {medsPending && (
+                                  <div className="flex items-start font-medium text-foreground">
+                                    <Pill className="mr-2 mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                                    <span className="min-w-0 break-words">{t('Pharmacy')}: {medsPending.join(', ')}</span>
                                   </div>
                                 )}
                                 {patient.departmentId && (

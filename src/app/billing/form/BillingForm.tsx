@@ -21,6 +21,7 @@ import { useT } from '@/components/language-provider';
 import { useStaff } from '@/context/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { useFeatures } from '@/hooks/use-features';
+import { useWorkflow } from '@/hooks/use-workflow';
 import { usePaymentMethods } from '@/hooks/use-payment-methods';
 import { compressImageFiles } from '@/lib/images';
 import { uploadNewImages } from '@/lib/storage';
@@ -49,6 +50,7 @@ export default function BillingForm() {
   const { toast } = useToast();
   const currentUser = useStaff();
   const { isOn } = useFeatures();
+  const { canProcessPharmacy } = useWorkflow();
   const methodOptions = usePaymentMethods();
 
   const billIdToEdit = searchParams.get('billId');
@@ -242,13 +244,15 @@ export default function BillingForm() {
   if (isLoading) return <PageLoading />;
 
   if (!isEditMode && !isBillTypeSelected) {
+    const pharmacyNote = !canProcessPharmacy;
     return (
       <PageBody width="narrow">
         <PageHeader icon={CreditCard} title={t('New Bill')} description={t('Choose the bill type')} back={{ href: '/billing' }} />
         <Card>
           <CardContent className="pt-6">
             <RadioGroup value={billType} onValueChange={(value: BillType) => setBillType(value)}>
-              {BILL_TYPES.map(({ value, label, icon: Icon }) => (
+              {/* With Pharmacy Orders on, pharmacy bills are the pharmacy's (the database enforces it too). */}
+              {BILL_TYPES.filter(type => type.value !== 'Pharmacy' || canProcessPharmacy).map(({ value, label, icon: Icon }) => (
                 <Label key={value} htmlFor={`billType-${value}`}
                   className="flex cursor-pointer items-center space-x-3 rounded-md border p-4 hover:bg-muted/50 has-[:checked]:border-primary has-[:checked]:bg-primary/10">
                   <RadioGroupItem value={value} id={`billType-${value}`} className="h-5 w-5" />
@@ -257,6 +261,7 @@ export default function BillingForm() {
                 </Label>
               ))}
             </RadioGroup>
+            {pharmacyNote && <p className="mt-3 text-xs text-muted-foreground">{t('Medicines are billed by the pharmacy: send them from the patient page.')}</p>}
           </CardContent>
           <CardFooter className="justify-end">
             <Button onClick={() => setIsBillTypeSelected(true)} disabled={!billType}>{t('Continue')}</Button>

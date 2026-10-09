@@ -40,7 +40,7 @@ create table if not exists public.staff (
 );
 alter table public.staff drop constraint if exists staff_role_check;
 alter table public.staff add constraint staff_role_check
-  check (role in ('Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accounts', 'Lab Technician'));
+  check (role in ('Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accounts', 'Lab Technician', 'Pharmacist'));
 
 -- SECURITY DEFINER so they can read staff without recursing through staff's own policies.
 create or replace function public.current_staff_id() returns bigint
@@ -61,6 +61,27 @@ $$;
 create or replace function public.has_role(roles text[]) returns boolean
 language sql stable security definer set search_path = public as $$
   select coalesce(public.current_staff_role() = any (roles), false)
+$$;
+
+-- Whether the hospital uses a switchable feature (Hospital Profile → Menus and features).
+-- (plpgsql so it can be created before hospital_profile below.)
+create or replace function public.module_on(module_key text) returns boolean
+language plpgsql stable security definer set search_path = public as $$
+begin
+  return not exists (select 1 from public.hospital_profile where module_key = any (disabled_modules));
+end
+$$;
+
+-- With Lab Requests on, test results are recorded by lab technicians (or the Super Admin);
+-- with Pharmacy Orders on, medicines are dispensed and billed by pharmacists (or the Super Admin).
+create or replace function public.can_process_lab() returns boolean
+language sql stable security definer set search_path = public as $$
+  select not public.module_on('labRequests') or public.has_role(array['Lab Technician', 'Super Admin'])
+$$;
+create or replace function public.can_process_pharmacy() returns boolean
+language sql stable security definer set search_path = public as $$
+  select not (public.module_on('pharmacyOrders') and public.module_on('medications') and public.module_on('billing'))
+         or public.has_role(array['Pharmacist', 'Super Admin'])
 $$;
 
 -- "dd/MM/yyyy" text -> date; null when it isn't a valid date in that format.
@@ -396,6 +417,25 @@ create table if not exists public.payment_transactions (
 -- source are entered on the Inventory page (opening stock, received, used, expired, counts).
 -- Quantities are in the item's own unit (the unit its price is for); out is negative.
 
+-- Medicines prescribed on the patient page, waiting for the pharmacy. items holds
+-- {medicationId, medicationName, dosage, quantity}; dispensing makes the pharmacy bill.
+create table if not exists public.pharmacy_orders (
+  id                       uuid primary key default gen_random_uuid(),
+  patient_id               bigint not null references public.patients (id) on delete cascade,
+  care_note_id             uuid references public.care_notes (id) on delete set null,
+  items                    jsonb not null default '[]',
+  notes                    text,
+  status                   text not null default 'Requested' check (status in ('Requested', 'Dispensed', 'Cancelled')),
+  requested_by_staff_id    bigint references public.staff (id) on delete set null,
+  requested_by_staff_name  text,
+  dispensed_by_staff_id    bigint references public.staff (id) on delete set null,
+  dispensed_by_staff_name  text,
+  dispensed_at             timestamptz,
+  bill_id                  text references public.bills (id) on delete set null,
+  created_at               timestamptz not null default now(),
+  updated_at               timestamptz not null default now()
+);
+
 create table if not exists public.stock_movements (
   id                      bigint generated always as identity primary key,
   medication_id           text references public.medications (id) on delete cascade,
@@ -478,6 +518,10 @@ alter table public.patient_tests add column if not exists attachments           
 alter table public.bills         add column if not exists attachments                     text[] not null default '{}';
 -- The bill for a test (set when it is billed; cleared if that bill is deleted).
 alter table public.patient_tests add column if not exists bill_id text references public.bills (id) on delete set null;
+-- Test templates: the result parameters each test asks for (name, unit, normal range, ...),
+-- and a copy of them on each result so it reads the same if the template changes later.
+alter table public.medical_test_catalog add column if not exists fields jsonb not null default '[]';
+alter table public.patient_tests add column if not exists result_fields jsonb;
 do $$
 declare
   moves constant text[][] := array[
@@ -618,6 +662,8 @@ create index if not exists stock_movements_material_idx on public.stock_movement
 create index if not exists stock_movements_source_idx on public.stock_movements (source_type, source_id) where source_type is not null;
 create index if not exists test_requests_open_idx on public.test_requests (created_at) where status in ('Requested', 'In progress');
 create index if not exists test_requests_patient_idx on public.test_requests (patient_id, created_at desc);
+create index if not exists pharmacy_orders_open_idx on public.pharmacy_orders (created_at) where status = 'Requested';
+create index if not exists pharmacy_orders_patient_idx on public.pharmacy_orders (patient_id, created_at desc);
 
 -- -----------------------------------------------------------------------------
 -- Triggers
@@ -901,6 +947,11 @@ begin
     new.requested_by_staff_name := (select name from public.staff where id = new.requested_by_staff_id);
     new.created_at := now();
   else
+    -- Taking a request and recording its result is the lab's work.
+    if new.status in ('In progress', 'Done') and new.status is distinct from old.status
+       and auth.role() is distinct from 'service_role' and not public.can_process_lab() then
+      raise exception 'Only a lab technician can take a test request or record its result.';
+    end if;
     new.requested_by_staff_id := old.requested_by_staff_id;
     new.requested_by_staff_name := old.requested_by_staff_name;
     new.created_at := old.created_at;
@@ -917,6 +968,67 @@ $$;
 drop trigger if exists test_requests_stamp on public.test_requests;
 create trigger test_requests_stamp before insert or update on public.test_requests
   for each row execute function public.stamp_test_request();
+
+-- Pharmacy orders: who asked comes from the session; dispensing (which bills the medicines)
+-- is the pharmacy's work and is stamped with who did it. A dispensed or cancelled order
+-- doesn't change again (except losing its bill if that bill is deleted).
+create or replace function public.stamp_pharmacy_order() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  trusted boolean := auth.role() is not distinct from 'service_role';
+begin
+  if tg_op = 'INSERT' then
+    if not trusted or new.requested_by_staff_id is null then
+      new.requested_by_staff_id := coalesce(public.current_staff_id(), new.requested_by_staff_id);
+    end if;
+    new.requested_by_staff_name := (select name from public.staff where id = new.requested_by_staff_id);
+    if not trusted then
+      new.status := 'Requested';
+      new.bill_id := null;
+    end if;
+    new.created_at := now();
+  else
+    new.requested_by_staff_id := old.requested_by_staff_id;
+    new.requested_by_staff_name := old.requested_by_staff_name;
+    new.created_at := old.created_at;
+    if not trusted then
+      if old.status <> 'Requested' and (new.status is distinct from old.status or new.items is distinct from old.items
+                                        or new.bill_id is not null and new.bill_id is distinct from old.bill_id) then
+        raise exception 'This pharmacy order has already been %.', lower(old.status);
+      end if;
+      if new.status = 'Dispensed' and old.status = 'Requested' and not public.can_process_pharmacy() then
+        raise exception 'Only a pharmacist can dispense medicines.';
+      end if;
+    end if;
+    if new.status = 'Dispensed' and old.status <> 'Dispensed' then
+      new.dispensed_by_staff_id := coalesce(public.current_staff_id(), new.dispensed_by_staff_id);
+      new.dispensed_at := now();
+    end if;
+  end if;
+  new.dispensed_by_staff_name := (select name from public.staff where id = new.dispensed_by_staff_id);
+  new.updated_at := now();
+  return new;
+end
+$$;
+drop trigger if exists pharmacy_orders_stamp on public.pharmacy_orders;
+create trigger pharmacy_orders_stamp before insert or update on public.pharmacy_orders
+  for each row execute function public.stamp_pharmacy_order();
+
+-- With Pharmacy Orders on, pharmacy bills are made by the pharmacy (dispensing an order, or a
+-- counter sale on the Billing page).
+create or replace function public.guard_pharmacy_bill() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.bill_type = 'Pharmacy' and (tg_op = 'INSERT' or old.bill_type is distinct from 'Pharmacy')
+     and auth.role() is distinct from 'service_role' and not public.can_process_pharmacy() then
+    raise exception 'Pharmacy bills are made by the pharmacy. Send the medicines to the pharmacy from the patient page.';
+  end if;
+  return new;
+end
+$$;
+drop trigger if exists bills_guard_pharmacy on public.bills;
+create trigger bills_guard_pharmacy before insert or update of bill_type on public.bills
+  for each row execute function public.guard_pharmacy_bill();
 
 -- -----------------------------------------------------------------------------
 -- Functions the app calls
@@ -1150,7 +1262,7 @@ begin
                   limit 1)));
 
   -- Billing (every role that opens Billing).
-  if public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accounts', 'Lab Technician']) then
+  if public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Receptionist', 'Accounts', 'Lab Technician', 'Pharmacist']) then
     result := result || (select jsonb_build_object('billing', jsonb_build_object(
       'todayCount', count(*) filter (where billed_on = today and payment_status <> 'Cancelled'),
       'todayAmount', coalesce(sum(total_amount) filter (where billed_on = today and payment_status <> 'Cancelled'), 0),
@@ -1189,7 +1301,7 @@ begin
   end if;
 
   -- Stock needing a refill (the Inventory roles).
-  if public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Accounts']) then
+  if public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Accounts', 'Pharmacist']) then
     -- Low: at or below the refill level, or less than two weeks' stock at the last 30 days' use.
     result := result || (with movements as (
         select coalesce(medication_id, material_id) as item_id, sum(quantity) as on_hand,
@@ -1206,6 +1318,15 @@ begin
         'low', count(*) filter (where on_hand > 0 and ((reorder_level is not null and on_hand <= reorder_level)
                                                       or on_hand < ceil(used_30_days * 14 / 30.0)))))
       from items);
+  end if;
+
+  -- Pharmacy orders waiting to be dispensed, and dispensed today.
+  if public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Pharmacist']) then
+    result := result || (select jsonb_build_object('pharmacy', jsonb_build_object(
+      'waiting', count(*) filter (where status = 'Requested'),
+      'dispensedToday', count(*) filter (where status = 'Dispensed' and (dispensed_at at time zone tz)::date = today)))
+      from public.pharmacy_orders
+      where status = 'Requested' or dispensed_at > now() - interval '2 days');
   end if;
 
   -- Lab requests: assigned to me, and waiting in the queue for a technician.
@@ -1266,6 +1387,8 @@ revoke all on function public.home_summary(text) from public;
 grant execute on function public.home_summary(text) to authenticated;
 revoke all on function public.set_my_language(text) from public;
 grant execute on function public.set_my_language(text) to authenticated;
+revoke all on function public.module_on(text) from public;
+grant execute on function public.module_on(text) to authenticated;
 revoke all on function public.lab_technicians() from public;
 grant execute on function public.lab_technicians() to authenticated;
 revoke all on function public.staff_salaries() from public;
@@ -1282,7 +1405,7 @@ begin
     'staff', 'referring_doctors', 'medical_test_catalog', 'medications', 'materials', 'vendors',
     'treatment_templates', 'payment_methods', 'hospital_profile', 'departments', 'department_staff',
     'patients', 'care_notes', 'patient_tests', 'bills', 'payments', 'staff_shifts', 'staff_attendance', 'audit_log',
-    'payment_transactions', 'stock_movements', 'hospital_links', 'test_requests'
+    'payment_transactions', 'stock_movements', 'hospital_links', 'test_requests', 'pharmacy_orders'
   ] loop
     execute format('alter table public.%I enable row level security', t);
   end loop;
@@ -1305,7 +1428,7 @@ declare t text;
 begin
   foreach t in array array[
     'referring_doctors', 'medical_test_catalog', 'medications', 'materials', 'vendors',
-    'treatment_templates', 'patients', 'care_notes', 'patient_tests', 'test_requests'
+    'treatment_templates', 'patients', 'care_notes', 'patient_tests', 'test_requests', 'pharmacy_orders'
   ] loop
     execute format('drop policy if exists %1$s_select on public.%1$s', t);
     execute format('drop policy if exists %1$s_insert on public.%1$s', t);
@@ -1318,6 +1441,11 @@ begin
   end loop;
 end
 $$;
+
+-- Test results: with Lab Requests on, only the lab records them (can_process_lab()).
+drop policy if exists patient_tests_insert on public.patient_tests;
+create policy patient_tests_insert on public.patient_tests for insert to authenticated
+  with check ((select public.is_active_staff()) and (select public.can_process_lab()));
 
 -- Bills: any staff member may delete a bill that is still unpaid; others only the Super Admin.
 drop policy if exists bills_select on public.bills;
@@ -1433,7 +1561,7 @@ create policy stock_movements_select on public.stock_movements for select to aut
 create policy stock_movements_insert on public.stock_movements for insert to authenticated
   with check (source_type is null
               and reason in ('received', 'opening', 'used', 'expired', 'adjustment')
-              and (select public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Accounts'])));
+              and (select public.has_role(array['Super Admin', 'Admin', 'Doctor', 'Nurse', 'Accounts', 'Pharmacist'])));
 create policy stock_movements_delete on public.stock_movements for delete to authenticated
   using (source_type is null and (select public.has_role(array['Super Admin', 'Admin'])));
 

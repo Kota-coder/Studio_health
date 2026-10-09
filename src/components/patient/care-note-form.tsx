@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { PlusCircle, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -13,7 +14,8 @@ import { AttachmentPicker } from '@/components/patient/attachment-picker';
 import { useStaff } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
 import { useToast } from '@/hooks/use-toast';
-import { patients as patientsRepo } from '@/lib/data';
+import { useWorkflow } from '@/hooks/use-workflow';
+import { patients as patientsRepo, pharmacyOrders } from '@/lib/data';
 import { uploadNewImages } from '@/lib/storage';
 import type { TreatmentTemplate } from '@/config/treatmentTemplates';
 import type { Medication } from '@/types/medication';
@@ -21,7 +23,8 @@ import type { Patient } from '@/types/patient';
 
 type FieldValue = string | number | boolean;
 
-// A new care note: optional template fields, free text, medications and images.
+// A new care note: optional template fields, free text, medications and images. With
+// Pharmacy Orders on, the medications can be sent straight to the pharmacy.
 export function CareNoteForm({ patient, templates, medications, loadMedications, onSaved, onCancel }: {
   patient: Patient;
   templates: TreatmentTemplate[] | null;
@@ -39,6 +42,9 @@ export function CareNoteForm({ patient, templates, medications, loadMedications,
   const [text, setText] = useState('');
   const [noteMedications, setNoteMedications] = useState<NoteMedication[]>([]);
   const [attachments, setAttachments] = useState<string[]>([]);
+  const { pharmacyOn, canRequest } = useWorkflow();
+  const [sendToPharmacy, setSendToPharmacy] = useState(true);
+  const offerPharmacy = pharmacyOn && canRequest && noteMedications.length > 0;
   const [isSaving, setIsSaving] = useState(false);
 
   const template = templateId === 'none' ? null : templates?.find(tpl => tpl.id === templateId) ?? null;
@@ -62,7 +68,7 @@ export function CareNoteForm({ patient, templates, medications, loadMedications,
 
     setIsSaving(true);
     try {
-      await patientsRepo.addCareNote(patient.id, {
+      const note = await patientsRepo.addCareNote(patient.id, {
         text: text.trim(),
         staffId: currentUser.id,
         staffName: currentUser.name,
@@ -72,8 +78,15 @@ export function CareNoteForm({ patient, templates, medications, loadMedications,
         medicationsMentioned: [...noteMedications],
         attachments: await uploadNewImages(attachments, `patients/${patient.id}/care-notes`),
       });
+      if (offerPharmacy && sendToPharmacy) {
+        await pharmacyOrders.create({
+          patientId: patient.id, careNoteId: note.id,
+          items: noteMedications.map(m => ({ medicationId: m.medicationId, medicationName: m.medicationName, dosage: m.dosage })),
+          notes: noteMedications.filter(m => m.notes).map(m => `${m.medicationName}: ${m.notes}`).join('\n') || undefined,
+        });
+      }
       await onSaved();
-      toast({ title: 'Note added' });
+      toast({ title: 'Note added', description: offerPharmacy && sendToPharmacy ? t('The medicines were sent to the pharmacy.') : undefined });
     } catch (e) {
       console.error('Failed to save care note:', e);
       toast({ title: 'Could not save the note', description: e instanceof Error ? e.message : undefined, variant: 'destructive' });
@@ -147,6 +160,11 @@ export function CareNoteForm({ patient, templates, medications, loadMedications,
           </div>
         ) : (
           <p className="text-xs italic text-muted-foreground">No medications added to this note yet.</p>
+        )}
+        {offerPharmacy && (
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={sendToPharmacy} onCheckedChange={v => setSendToPharmacy(v === true)} /> {t('Send these medicines to the pharmacy')}
+          </label>
         )}
       </div>
 
