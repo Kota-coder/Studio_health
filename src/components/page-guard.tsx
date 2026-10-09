@@ -45,7 +45,7 @@ export function PageGuard({ children }: { children: React.ReactNode }) {
   const page = navItemForPath(pathname);
   const pageName = t(page?.label ?? 'this page');
   const access = accessForPath(pathname);
-  if (access && !mayOpen(access, currentUser.role, duty => isResponsible(duty, currentUser.role, profile.responsibilities))) {
+  if (access && !mayOpen(access, currentUser.role, duty => isResponsible(duty, currentUser.role, profile.responsibilities), profile.pageAccess)) {
     return (
       <Notice icon={ShieldAlert} title={t("You don't have access to this page")}>
         <p className="text-sm text-muted-foreground">{t('Your role ({role}) cannot open {page}.', { role: t(currentUser.role), page: pageName })}</p>

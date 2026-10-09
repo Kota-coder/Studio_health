@@ -24,7 +24,6 @@ import { PatientDataRequests } from '@/components/patient/patient-data-requests'
 import { PatientDetailsCard } from '@/components/patient/patient-details-card';
 import { TestsSection } from '@/components/patient/tests-section';
 import { PATIENT_DATA_REQUESTS_ENABLED } from '@/config/features';
-import { canOpen } from '@/config/permissions';
 import { useStaff } from '@/context/AuthContext';
 import { useFeatures } from '@/hooks/use-features';
 import { useToast } from '@/hooks/use-toast';
@@ -51,12 +50,12 @@ export default function PatientDetailPage() {
   const params = useParams();
   const router = useRouter();
   const t = useT();
-  const { labOn, canRequest, canProcessLab } = useWorkflow();
+  const { labOn, canRequest, canProcessLab, canSeeBills, canOpenPage } = useWorkflow();
   const { toast } = useToast();
   const { isOn } = useFeatures();
   const currentUser = useStaff();
   const patientId = parseInt(String(params.patientId ?? ''), 10);
-  const billingOn = isOn('billing');
+  const billingOn = canSeeBills; // billing is on and this person may see bills
   const referralsOn = isOn('referringDoctors');
   const pharmacyOn = isOn('pharmacyOrders');
 
@@ -161,7 +160,7 @@ export default function PatientDetailPage() {
     patient.gender ? t(patient.gender) : null,
   ].filter(Boolean).join(' · ');
   const allergic = hasAllergies(patient.allergies);
-  const canBill = billingOn && canOpen('billing', currentUser.role);
+  const canBill = billingOn && canOpenPage('billing');
   const openTests = requests.filter(isOpenRequest).length;
   const waitingMeds = orders.filter(o => o.status === 'Requested').length;
   const unpaidBills = bills.filter(b => b.paymentStatus === 'Unpaid' || b.paymentStatus === 'Partially Paid').length;
@@ -219,7 +218,7 @@ export default function PatientDetailPage() {
         <TabsContent value="overview" className="mt-6">
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <div className="min-w-0 space-y-6 lg:col-span-2">
-              <PatientOverview patient={patient} staff={staff} requests={requests} orders={orders} bills={bills} onOpen={openTab} />
+              <PatientOverview patient={patient} staff={staff} requests={requests} orders={orders} bills={bills} showBilling={billingOn} onOpen={openTab} />
               <PatientDetailsCard patient={patient} referredBy={referredBy} />
             </div>
             <div className="min-w-0 space-y-6">

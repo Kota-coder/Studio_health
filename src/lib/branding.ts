@@ -1,5 +1,6 @@
 // The hospital's branding (hospital_profile table), shared by server and browser code.
 import type { Responsibilities } from '@/config/responsibilities';
+import type { PageAccess } from '@/config/permissions';
 
 export interface HospitalProfile {
   name: string;
@@ -14,6 +15,7 @@ export interface HospitalProfile {
   logoFolder?: string | null;
   disabledModules?: string[]; // menu sections switched off (src/config/modules.ts)
   responsibilities?: Responsibilities; // which roles do each department's duties (src/config/responsibilities.ts)
+  pageAccess?: PageAccess; // which roles may open each page, where changed (src/config/permissions.ts)
   configuredAt?: string | null;
 }
 

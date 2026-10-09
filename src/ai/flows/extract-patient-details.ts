@@ -27,7 +27,9 @@ const ExtractPatientDetailsOutputSchema = z.object({
     dateOfBirth: z.string().describe('The date of birth of the patient.'),
     address: z.string().describe('The address of the patient.'),
     idNumber: z.string().describe('The ID number of the patient.'),
-  }).optional().describe('Extracted patient details, if available.')
+  }).optional().describe('Extracted patient details, if available.'),
+  error: z.enum(['no-key', 'bad-key', 'model', 'quota', 'unreadable', 'failed']).optional()
+    .describe('Why nothing was read: no API key set, key refused, model unavailable, quota used up, card not readable, or another error.'),
 });
 export type ExtractPatientDetailsOutput = z.infer<typeof ExtractPatientDetailsOutputSchema>;
 
@@ -36,7 +38,17 @@ export async function extractPatientDetails(input: ExtractPatientDetailsInput): 
   if (!(await getCurrentStaff())) {
     throw new Error('Not authorised');
   }
+  if (!process.env.GOOGLE_GENAI_API_KEY) return { error: 'no-key' };
   return extractPatientDetailsFlow(input);
+}
+
+// Tells the person what to fix, instead of one message for every failure.
+function classify(error: unknown): NonNullable<ExtractPatientDetailsOutput['error']> {
+  const text = String((error as { message?: string })?.message ?? error).toLowerCase();
+  if (/api key|api_key|permission_denied|unauthenticated|\b(401|403)\b/.test(text)) return 'bad-key';
+  if (/not found|not_found|no longer available|\b404\b|unsupported model|is not supported/.test(text)) return 'model';
+  if (/quota|resource_exhausted|rate limit|\b429\b/.test(text)) return 'quota';
+  return 'failed';
 }
 
 const prompt = ai.definePrompt({
@@ -88,10 +100,15 @@ const extractPatientDetailsFlow = ai.defineFlow<
   async input => {
     try {
       const {output} = await prompt(input);
-      return { identityData: output?.identityData };
+      const data = output?.identityData;
+      // A card that could not be read comes back empty.
+      if (!data || !(data.name?.trim() || data.idNumber?.trim() || data.dateOfBirth?.trim() || data.address?.trim())) {
+        return { identityData: undefined, error: 'unreadable' };
+      }
+      return { identityData: data };
     } catch (error) {
       console.error('Error extracting identity data:', error);
-      return { identityData: undefined };
+      return { identityData: undefined, error: classify(error) };
     }
   }
 );

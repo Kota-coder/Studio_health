@@ -30,6 +30,15 @@ async function toDataUrl(image: string): Promise<string> {
   });
 }
 
+const SCAN_ERRORS: Record<NonNullable<Awaited<ReturnType<typeof extractPatientDetails>>['error']>, string> = {
+  'no-key': 'The ID-card reader is not set up: the Super Admin needs to add the Google Gemini key (GOOGLE_GENAI_API_KEY) to this app\'s settings. Meanwhile, type the details in.',
+  'bad-key': 'Google refused the ID-card reader\'s key. The Super Admin needs to check the Gemini key (GOOGLE_GENAI_API_KEY) in this app\'s settings.',
+  'model': 'The ID-card reader\'s Gemini model is no longer available. The Super Admin needs to set GEMINI_MODEL to a current model.',
+  'quota': 'The ID-card reader has used up its Google quota for now. Try again in a minute, or type the details in.',
+  'unreadable': 'No details could be read from this picture. Take it again, flat and in good light with the whole card in view, and check the card type is right.',
+  'failed': 'The ID-card reader could not process this picture. Try again, or type the details in.',
+};
+
 // Reads name, date of birth, address and ID number from the first ID card image (server
 // action extractPatientDetails), and offers that image as a download afterwards (not for
 // Aadhaar, whose copies must not be kept). Loaded with next/dynamic by the registration page.
@@ -50,9 +59,9 @@ export default function IdCardScan({ images, idCardType, firstName, onExtracted 
     setExtracting(true);
     try {
       toast({ title: 'Extracting details...', description: 'Please wait while we process the first image.' });
-      const { identityData } = await extractPatientDetails({ imageBase64: await toDataUrl(images[0]), idCardType });
+      const { identityData, error } = await extractPatientDetails({ imageBase64: await toDataUrl(images[0]), idCardType });
       if (!identityData) {
-        toast({ title: 'Extraction failed', description: 'Could not extract patient details from the image.', variant: 'destructive' });
+        toast({ title: 'Could not read the card', description: SCAN_ERRORS[error ?? 'failed'], variant: 'destructive' });
         setExtracted(false);
         return;
       }

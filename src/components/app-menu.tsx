@@ -40,7 +40,7 @@ export function AppMenu() {
   const sections = currentUser
     ? NAV_SECTIONS.map(section => ({
         section,
-        items: NAV_ITEMS.filter(i => i.section === section && mayOpen(i, currentUser.role, can) && (!i.module || isOn(i.module))),
+        items: NAV_ITEMS.filter(i => i.section === section && mayOpen(i, currentUser.role, can, profile.pageAccess) && (!i.module || isOn(i.module))),
       })).filter(s => s.items.length > 0)
     : [];
 

@@ -2,6 +2,7 @@ import 'server-only';
 import { unstable_cache } from 'next/cache';
 import { DEFAULT_PROFILE, type HospitalProfile } from '@/lib/branding';
 import type { Responsibilities } from '@/config/responsibilities';
+import type { PageAccess } from '@/config/permissions';
 
 export const HOSPITAL_PROFILE_TAG = 'hospital-profile';
 
@@ -23,7 +24,7 @@ async function loadHospitalProfile(): Promise<HospitalProfile> {
       cache: 'no-store', // cached by unstable_cache above
     });
     if (!response.ok) return DEFAULT_PROFILE; // e.g. the migration hasn't been run yet
-    const [row] = (await response.json()) as Array<Record<string, string | null> & { disabled_modules?: string[] | null; responsibilities?: Responsibilities | null }>;
+    const [row] = (await response.json()) as Array<Record<string, string | null> & { disabled_modules?: string[] | null; responsibilities?: Responsibilities | null; page_access?: PageAccess | null }>;
     if (!row) return DEFAULT_PROFILE;
     return {
       name: row.name || DEFAULT_PROFILE.name,
@@ -39,6 +40,7 @@ async function loadHospitalProfile(): Promise<HospitalProfile> {
       configuredAt: row.configured_at,
       disabledModules: row.disabled_modules ?? [],
       responsibilities: row.responsibilities ?? {},
+      pageAccess: row.page_access ?? {},
     };
   } catch {
     return DEFAULT_PROFILE;

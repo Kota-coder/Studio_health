@@ -40,12 +40,13 @@ function Tile({ icon: Icon, label, value, detail, onClick, warn }: {
 // The patient at a glance: how long they have been in care, who is looking after them, what
 // is still pending (tests, medicines, unpaid bills), the latest results (with values outside
 // the normal range) and the latest care note. Each part opens its tab.
-export function PatientOverview({ patient, staff, requests, orders, bills, onOpen }: {
+export function PatientOverview({ patient, staff, requests, orders, bills, showBilling, onOpen }: {
   patient: Patient;
   staff: StaffMember[];
   requests: TestRequest[];
   orders: PharmacyOrder[];
   bills: Bill[];
+  showBilling: boolean; // this person may see bills
   onOpen: (tab: PatientTab) => void;
 }) {
   const t = useT();
@@ -78,7 +79,7 @@ export function PatientOverview({ patient, staff, requests, orders, bills, onOpe
           <Tile icon={Pill} label={t('Medicines waiting at the pharmacy')} value={String(waitingMeds.length)}
             detail={waitingMeds.flatMap(o => o.items.map(i => i.medicationName)).join(', ') || undefined} onClick={() => onOpen('medicines')} />
         )}
-        {isOn('billing') && (
+        {showBilling && (
           <Tile icon={IndianRupee} label={t('Unpaid bills')} value={unpaid.length ? formatINR(unpaidTotal) : t('None')} warn={unpaid.length > 0}
             detail={unpaid.length ? t('{n} bills', { n: unpaid.length }) : undefined} onClick={() => onOpen('bills')} />
         )}

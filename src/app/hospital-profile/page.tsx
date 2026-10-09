@@ -23,7 +23,9 @@ import {
 import { brandingFiles, readFileAsDataUrl, svgToDataUrl } from '@/lib/logo-render';
 import { cn } from '@/lib/utils';
 import { HospitalLinksCard } from '@/components/hospital-links-card';
+import { PageAccessCard } from '@/components/page-access-card';
 import { ResponsibilitiesCard } from '@/components/responsibilities-card';
+import type { PageAccess } from '@/config/permissions';
 import type { Responsibilities } from '@/config/responsibilities';
 
 const SHAPES: Array<{ value: MonogramShape; label: string }> = [
@@ -54,6 +56,7 @@ export default function HospitalProfilePage() {
   const [upload, setUpload] = useState<string | null>(null);
   const [disabledModules, setDisabledModules] = useState<string[]>(current.disabledModules ?? []);
   const [responsibilities, setResponsibilities] = useState<Responsibilities>(current.responsibilities ?? {});
+  const [pageAccess, setPageAccess] = useState<PageAccess>(current.pageAccess ?? {});
   const [isSaving, setIsSaving] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -64,6 +67,7 @@ export default function HospitalProfilePage() {
       setLogoChoice(p.logoFolder ? 'keep' : 'design');
       setDisabledModules(p.disabledModules ?? []);
       setResponsibilities(p.responsibilities ?? {});
+      setPageAccess(p.pageAccess ?? {});
       if (!initialsEdited && p.configuredAt) setInitials(initialsFor(p.name));
     }).catch(error => console.error('Could not load the hospital profile', error));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once
@@ -106,6 +110,7 @@ export default function HospitalProfilePage() {
         registrationNumber: details.registrationNumber?.trim() || null,
         disabledModules: MODULES.map(m => m.key).filter(key => disabledModules.includes(key)),
         responsibilities,
+        pageAccess,
       };
       if (logoChoice !== 'keep') {
         const src = logoChoice === 'upload' ? upload! : svgToDataUrl(designed);
@@ -265,6 +270,8 @@ export default function HospitalProfilePage() {
               </ul>
             </CardContent>
           </Card>
+
+          <PageAccessCard value={pageAccess} onChange={setPageAccess} />
 
           <ResponsibilitiesCard value={responsibilities} onChange={setResponsibilities} disabledModules={disabledModules} />
 
